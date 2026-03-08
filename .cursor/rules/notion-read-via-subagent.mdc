@@ -1,8 +1,0 @@
----
-description: Notion 페이지를 읽을 때 notion-reader subagent를 사용한다
-alwaysApply: true
----
-# Notion 읽기 규칙
-Notion 페이지나 데이터베이스 내용을 읽어야 할 때는 **notion-reader** subagent를 사용한다.
-- Notion URL 또는 페이지 ID가 주어지면, 직접 `notion-fetch`를 호출하지 않고 notion-reader subagent를 호출한다.
-- notion-reader가 원문을 정제·요약하여 전달하므로, 본 에이전트는 그 결과를 활용한다.
