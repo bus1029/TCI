@@ -1,0 +1,112 @@
+@startuml tci-03-component-analysis-engine
+!include <C4/C4_Component>
+!include <tupadr3/font-awesome-5/brain>
+
+LAYOUT_AS_SKETCH()
+LAYOUT_TOP_DOWN()
+LAYOUT_WITH_LEGEND()
+
+skinparam nodesep 60
+skinparam ranksep 80
+
+' ── 외부 TCI 컨테이너 ──
+Container_Ext(assistant, "Interactive Assistant", "Python · LLM · WebSocket", "자연어 Q&A · 코드베이스 설명\n문서-코드 갭 분석 · 분석 결과 설명")
+Container_Ext(workflow, "Workflow & Integration", "Python · REST/MCP/Webhook", "PR 자동화 · CI/CD 연동 · Policy Gate\nDocs Studio · 외부 연동 · ChatOps 알림\n분석 자동화 · 비즈니스 리포팅")
+ContainerDb_Ext(kb, "Knowledge Base", "Graph DB · Object Storage · Vector DB", "CPG 그래프 · 원본 스냅샷 · 분석 산출물\n임베딩 벡터")
+
+' ── 외부 시스템 ──
+System_Ext(llm, "LLM Service", "OpenAI / Azure 등", $sprite="brain")
+
+' ══════ Analysis Engine Boundary ══════
+Container_Boundary(ae, "Analysis Engine") {
+
+  Component(ae_coordinator, "Analysis Coordinator", "Python · Internal API", "분석 요청 수신(IA/W&I)\n파이프라인 오케스트레이션\n작업 상태 관리")
+
+  Component(ae_structure, "Structure Analyzer", "Python · CPG Query", "CPG 기반 정적 구조 분석\n컴포넌트/레이어 식별\n아키텍처 관계 추출\nExternal Integration 분석")
+
+  Component(ae_techstack, "Tech Stack Detector", "Python · Pattern Matching", "언어/프레임워크/빌드시스템\n런타임/API스타일/SDK 식별")
+
+  Component(ae_dependency, "Dependency Analyzer", "Python · CPG Query · Git", "정적 호출/의존 관계 그래프\n순환 의존 탐지\nA2A/서비스-DB-API 관계\nChange Coupling (Git 이력 기반)")
+
+  Component(ae_impact, "Impact Analyzer", "Python · CPG Query · Diff", "변경 Diff 기반 영향 범위 추적\nCross-System Boundary 분석")
+
+  Component(ae_bizrule, "Business Rule Extractor", "Python · CPG Query · LLM", "비즈니스 규칙 추출\n자연어 스펙 변환 (LLM 보조)\n도메인별 카탈로그 분류")
+
+  Component(ae_dataflow, "Data Flow Tracer", "Python · CPG Query", "변수/화면 흐름 추적\n제어 흐름 분석\n데이터 변환 체인")
+
+  Component(ae_risk, "Risk Scorer", "Python", "복잡도/결합도/변경규모 기반\n리스크 점수 산정\n우선 점검 대상 추천")
+
+  Component(ae_tradeoff, "Trade-off Analyzer", "Python · LLM", "변경안 A vs B 영향 비교\n지표 변화 시각화\n의사결정 근거 리포트 (LLM 보조)")
+
+  Component(ae_testimpact, "Test Impact Analyzer", "Python · CPG Query", "변경 코드 기준 영향 테스트 식별\n테스트-코드 매핑 · 커버리지 분석\n누락 테스트 탐지 · 실행 우선순위")
+
+  Component(ae_kbwriter, "KB Writer", "Python", "분석 결과 + 자연어 번역 결과를\nKB 스키마에 맞춰 정규화/변환 후 적재")
+}
+
+' ── 인바운드: 외부 → AE ──
+Rel_D(assistant, ae_coordinator, "온디맨드 분석 요청", "async · gRPC")
+Rel_D(workflow, ae_coordinator, "분석 실행 트리거", "Internal API")
+
+' ── 내부 관계: Coordinator → 분석 컴포넌트 ──
+Rel(ae_coordinator, ae_structure, "구조 분석 실행")
+Rel(ae_coordinator, ae_techstack, "기술 스택 탐지 실행")
+Rel(ae_coordinator, ae_dependency, "의존 관계 분석 실행")
+Rel(ae_coordinator, ae_impact, "영향도 분석 실행")
+Rel(ae_coordinator, ae_bizrule, "비즈니스 규칙 추출 실행")
+Rel(ae_coordinator, ae_dataflow, "데이터 흐름 추적 실행")
+Rel(ae_coordinator, ae_risk, "리스크 산정 실행")
+Rel(ae_coordinator, ae_tradeoff, "트레이드오프 분석 실행")
+Rel(ae_coordinator, ae_testimpact, "테스트 영향 분석 실행")
+
+' ── 내부 관계: 컴포넌트 간 ──
+Rel(ae_impact, ae_dependency, "의존 관계 그래프 조회")
+Rel(ae_impact, ae_bizrule, "규칙 변경 여부 확인")
+Rel(ae_risk, ae_dependency, "결합도 지표 조회")
+Rel(ae_risk, ae_impact, "영향 범위 지표 조회")
+Rel(ae_tradeoff, ae_impact, "변경안별 영향 비교")
+Rel(ae_testimpact, ae_dependency, "의존 관계 그래프 조회")
+Rel(ae_testimpact, ae_impact, "변경 영향 범위 조회")
+
+' ── 내부 관계: Coordinator → KB Writer ──
+Rel(ae_coordinator, ae_kbwriter, "수집된 분석 결과 일괄 적재 요청")
+
+note right of ae_coordinator
+  <b>결과 흐름</b>
+  1. Coordinator가 분석기 실행 후 결과 수신
+  2. 모든 분석기의 결과를 Coordinator가 수집
+  3. 수집된 결과를 KB Writer에 일괄 전달
+  4. KB Writer가 KB 스키마에 맞춰 정규화/적재
+end note
+
+' ── 아웃바운드: AE → KB ──
+Rel(ae_structure, kb, "CPG 그래프 질의", "Graph Query")
+Rel(ae_dependency, kb, "의존 관계 그래프 질의", "Graph Query")
+Rel(ae_impact, kb, "CPG + 분석 이력 질의", "Graph Query")
+Rel(ae_testimpact, kb, "테스트-코드 매핑 질의", "Graph Query")
+Rel_D(ae_kbwriter, kb, "분석 결과 + 자연어 번역 적재", "Graph Write")
+
+note bottom of ae_kbwriter
+  ae_bizrule/ae_tradeoff의 LLM 자연어 번역 결과도
+  Coordinator를 경유하여 KB Writer가 적재
+  → W&I가 KB에서 직접 소비 (LLM 미호출)
+end note
+
+' ── 아웃바운드: AE → LLM (결과 가공 한정) ──
+Rel(ae_bizrule, llm, "규칙 의미 해석\n(결과 가공 한정)", "REST/HTTPS")
+Rel(ae_tradeoff, llm, "비즈니스 언어 번역\n(결과 가공 한정)", "REST/HTTPS")
+
+note top of assistant
+  사용자 접근은 Web Application 경유 (C2 참조)
+end note
+
+' ══════ 레이아웃 힌트 ══════
+Lay_R(assistant, workflow)
+Lay_D(ae_coordinator, ae_structure)
+Lay_R(ae_structure, ae_techstack)
+Lay_R(ae_techstack, ae_dependency)
+Lay_R(ae_impact, ae_bizrule)
+Lay_R(ae_bizrule, ae_dataflow)
+Lay_R(ae_risk, ae_tradeoff)
+Lay_R(ae_tradeoff, ae_testimpact)
+
+@enduml

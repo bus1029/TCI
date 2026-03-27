@@ -1,0 +1,89 @@
+@startuml tci-03-component-web-application
+!include <C4/C4_Component>
+!include <tupadr3/font-awesome-5/laptop_code>
+!include <tupadr3/font-awesome-5/user_check>
+!include <tupadr3/font-awesome-5/tasks>
+!include <tupadr3/font-awesome-5/server>
+
+LAYOUT_AS_SKETCH()
+LAYOUT_TOP_DOWN()
+LAYOUT_WITH_LEGEND()
+
+skinparam nodesep 60
+skinparam ranksep 80
+
+' ── 액터 ──
+Person(developer, "Developer", "미드~시니어 · AI 에이전트 활용", $sprite="laptop_code")
+Person(reviewer, "Reviewer", "PR 리뷰 담당", $sprite="user_check")
+Person(pmpo, "PM / PO", "요구사항 정의 · 의사결정", $sprite="tasks")
+
+' ── 외부 TCI 컨테이너 ──
+Container_Ext(assistant, "Interactive Assistant", "Python · LLM · WebSocket", "자연어 Q&A · 코드베이스 설명\n문서-코드 갭 분석 · 분석 결과 설명")
+Container_Ext(workflow, "Workflow & Integration", "Python · REST/MCP/Webhook", "PR 자동화 · CI/CD 연동 · Policy Gate\nDocs Studio · 외부 연동 · ChatOps 알림\n분석 자동화 · 비즈니스 리포팅")
+
+' ── 외부 시스템 ──
+System_Ext(platform, "Platform & Infra", "Admin · 별도 제품", $sprite="server")
+
+' ══════ Web Application Boundary ══════
+Container_Boundary(wa, "Web Application") {
+
+  Component(wa_uishell, "UI Shell", "React · TypeScript", "SPA 엔트리포인트\n페이지 라우팅 · 테마/레이아웃\n상태 관리")
+
+  together {
+    Component(wa_auth, "Auth Gateway", "TypeScript · OAuth2/OIDC", "Platform SSO 연동\n토큰 관리 · RBAC 프론트 체크")
+    Component(wa_session, "Session Manager", "TypeScript · Redis(옵션)", "HTTP 인증 세션 생명주기\n동시 세션 제한")
+  }
+
+  together {
+    Component(wa_apirouter, "API Router", "TypeScript · Express/Fastify", "W&I REST API 프록시\nRate Limiting · 에러 정규화")
+    Component(wa_wsproxy, "WebSocket Proxy", "TypeScript · ws/Socket.IO", "IA 방향 WebSocket 연결 중계\n연결 풀 · 하트비트/재연결")
+  }
+
+  Component(wa_notify, "Notification Hub", "TypeScript · SSE/WebSocket", "W&I → 사용자 실시간 푸시 수신\n알림 큐 · 배지 관리")
+
+  Component(wa_assets, "Asset Server", "CDN · Static Files", "정적 자산(JS/CSS/이미지) 서빙\n캐싱 · 버전 관리")
+}
+
+' ── 인바운드: 액터 → Web Application ──
+Rel_D(developer, wa_uishell, "코드 탐색 · Q&A\n영향 분석", "HTTPS")
+Rel_D(reviewer, wa_uishell, "PR 리뷰\n리스크 판단", "HTTPS")
+Rel_D(pmpo, wa_uishell, "갭 분석 · 리포트\n대시보드", "HTTPS")
+
+' ── 내부: UI Shell → Auth ──
+Rel(wa_uishell, wa_auth, "인증 확인")
+Rel(wa_auth, wa_session, "세션 생성/검증")
+
+' ── 내부: UI Shell → 기능별 프록시 ──
+Rel(wa_uishell, wa_apirouter, "REST API 요청")
+Rel(wa_uishell, wa_wsproxy, "WebSocket 연결 요청")
+Rel(wa_uishell, wa_notify, "알림 구독")
+
+' ── 내부: 프록시 → Auth (요청별 인가 검증) ──
+Rel(wa_apirouter, wa_auth, "요청별 인가 검증")
+Rel(wa_wsproxy, wa_auth, "연결별 인가 검증")
+
+note right of wa_session
+  <b>IA Session Manager와의 구분</b>
+  WA Session Manager: HTTP 인증 세션 생명주기
+  IA Session Manager: WebSocket 대화 세션 · 이력
+  → 역할과 프로토콜이 다름
+end note
+
+' ── 아웃바운드: WA → 외부 시스템 ──
+Rel(wa_auth, platform, "SSO 인증 위임", "REST/HTTPS")
+
+' ── 아웃바운드: WA → 백엔드 컨테이너 ──
+Rel_D(wa_apirouter, workflow, "PR/리포트/문서 API", "HTTPS")
+Rel_D(wa_wsproxy, assistant, "대화형 세션 중계", "WebSocket")
+
+' ── 인바운드: W&I → Notification Hub ──
+Rel(workflow, wa_notify, "실시간 알림 푸시", "SSE/WebSocket")
+
+' ══════ 레이아웃 힌트 ══════
+Lay_R(developer, reviewer)
+Lay_R(reviewer, pmpo)
+Lay_R(wa_auth, wa_session)
+Lay_R(wa_apirouter, wa_wsproxy)
+Lay_R(assistant, workflow)
+
+@enduml

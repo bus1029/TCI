@@ -1,0 +1,98 @@
+@startuml tci-02-container
+!include <C4/C4_Container>
+!include <tupadr3/font-awesome-5/laptop_code>
+!include <tupadr3/font-awesome-5/user_check>
+!include <tupadr3/font-awesome-5/tasks>
+!include <tupadr3/font-awesome-5/brain>
+!include <tupadr3/font-awesome-5/server>
+
+title TCI Container Diagram
+
+LAYOUT_AS_SKETCH()
+LAYOUT_TOP_DOWN()
+LAYOUT_WITH_LEGEND()
+
+skinparam nodesep 70
+skinparam ranksep 90
+
+' ── Actors ──
+Person(developer, "Developer", "신규 투입 / 유지보수", $sprite="laptop_code")
+Person(reviewer, "Reviewer", "PR 리뷰 담당", $sprite="user_check")
+Person(pmpo, "PM / PO", "요구사항 정의 · 의사결정", $sprite="tasks")
+
+' ── Foundation Services ──
+System_Boundary(foundation, "Foundation Services") {
+  System_Ext(llm, "LLM Service", "OpenAI / Azure 등", $sprite="brain")
+  System_Ext(platform, "Platform & Infra", "Admin · 별도 제품", $sprite="server")
+}
+
+' ── TCI System Boundary ──
+System_Boundary(tci, "TCI") {
+  Container(webapp, "Web Application", "React · TypeScript", "사용자 인터페이스\n인증/인가 · 세션 관리\nAPI 라우팅")
+
+  together {
+    Container(assistant, "Interactive Assistant", "Python · LLM · WebSocket", "자연어 Q&A · 코드베이스 설명\n문서-코드 갭 분석 · 분석 결과 설명")
+    Container(analysisEngine, "Analysis Engine", "Python · CPG Query · LLM", "CPG 기반 구조 분석 · 영향도 분석\n비즈니스 규칙 추출 · Risk Insight · KB 구축")
+    Container(workflow, "Workflow & Integration", "Python · REST/MCP/Webhook", "PR 자동화 · CI/CD 연동 · Policy Gate\nDocs Studio · 외부 연동 · ChatOps 알림")
+  }
+  ContainerDb(kb, "Knowledge Base", "Graph DB · Object Storage", "CPG 그래프 · 원본 스냅샷 · 분석 산출물")
+  together {
+    Container(processing, "Data Processing", "Joern · Python · LLM", "CPG 생성 · LLM 임베딩 · 원시 규칙 패턴 식별 · KB 적재")
+    Container(collection, "Data Collection", "Git · OAuth · REST", "Git / Doc / Ticket / PR 수집 · 증분 동기화")
+  }
+}
+
+' ── External Integration (grouped) ──
+System_Ext(devops, "DevOps Pipeline", "CI/CD (Jenkins / GitHub Actions)")
+System_Ext(collab, "Collaboration Tools", "ChatOps · Jira · Confluence")
+System_Ext(aiAgent, "AI Coding Agent", "MCP / API")
+
+' ── Data Sources ──
+System_Ext(codeRepo, "Code Repository", "GitHub / GitLab / Bitbucket")
+System_Ext(devContext, "Development Context", "문서 · 티켓 · PR · ADR · Wiki")
+
+' ── Actor → Web Application ──
+Rel(developer, webapp, "코드 탐색 · Q&A · 영향 분석", "HTTPS")
+Rel(reviewer, webapp, "PR 리뷰 · 리스크 판단", "HTTPS")
+Rel(pmpo, webapp, "갭 분석 · 리포트 · 대시보드", "HTTPS")
+
+' ── Web Application → Backend Containers ──
+Rel(webapp, assistant, "대화형 세션 중계", "WebSocket")
+Rel(webapp, workflow, "PR/리포트/문서 API 호출", "HTTPS")
+
+' ── Inter-container ──
+Rel(assistant, kb, "그래프 읽기 질의", "Graph Read")
+Rel(assistant, analysisEngine, "온디맨드 분석 요청", "async · gRPC")
+BiRel(analysisEngine, kb, "그래프 질의 ↔ 분석 결과 적재", "Graph R/W")
+Rel(workflow, kb, "분석 산출물 읽기", "Graph Read")
+Rel(workflow, analysisEngine, "분석 실행 트리거", "Internal API")
+BiRel(kb, processing, "CPG 데이터 적재", "Graph Write")
+BiRel(processing, collection, "수집 데이터 전달", "Internal")
+
+' ── Foundation Services ──
+Rel_L(assistant, llm, "대화형 추론", "REST/HTTPS")
+Rel_L(analysisEngine, llm, "비즈니스 규칙 해석 · 자연어 변환", "REST/HTTPS")
+Rel_L(processing, llm, "임베딩 / 추론", "REST/HTTPS")
+Rel_R(webapp, platform, "인증/인가 위임 · SSO", "REST/HTTPS")
+Rel_R(workflow, platform, "인증 / 로그 / 모니터링", "REST/HTTPS")
+
+' ── W&I → External Integration ──
+Rel(workflow, devops, "PR 이벤트 ↔ Gate 결과", "Webhook / REST")
+Rel(workflow, collab, "알림 · 코멘트 · 문서 발행", "REST API / Bot API")
+Rel(workflow, aiAgent, "컨텍스트 패키지 교환", "MCP / REST")
+
+' ── Data Collection → Data Sources ──
+Rel_D(collection, codeRepo, "소스 코드 · 커밋 · 브랜치", "Git")
+Rel_D(collection, devContext, "문서 · 티켓 · 스펙", "REST / Upload")
+
+' ══════ 레이아웃 힌트 ══════
+Lay_R(reviewer, developer)
+Lay_R(developer, pmpo)
+Lay_D(developer, webapp)
+Lay_D(webapp, assistant)
+' 외부 시스템을 KB 오른쪽에 배치
+Lay_R(kb, devops)
+Lay_R(devops, collab)
+Lay_R(collab, aiAgent)
+
+@enduml

@@ -1,0 +1,97 @@
+@startuml tci-03-component-data-processing
+!include <C4/C4_Component>
+!include <tupadr3/font-awesome-5/brain>
+
+LAYOUT_AS_SKETCH()
+LAYOUT_TOP_DOWN()
+LAYOUT_WITH_LEGEND()
+
+skinparam nodesep 60
+skinparam ranksep 80
+
+' ── 외부 TCI 컨테이너 ──
+Container_Ext(collection, "Data Collection", "Git · OAuth · REST", "Git / Doc / Ticket / PR 수집 · 증분 동기화\n파일 업로드")
+ContainerDb_Ext(kb, "Knowledge Base", "Graph DB · Object Storage · Vector DB", "CPG 그래프 · 원본 스냅샷\n분석 산출물 · 임베딩 벡터")
+
+' ── 외부 시스템 ──
+System_Ext(llm, "LLM Service", "OpenAI / Azure 등", $sprite="brain")
+
+' ══════ Data Processing Boundary ══════
+Container_Boundary(dp, "Data Processing") {
+
+  Component(dp_coordinator, "Pipeline Coordinator", "Python", "처리 파이프라인 오케스트레이션\n작업 상태 관리 · 재시도\n처리 순서 제어")
+
+  Component(dp_normalizer, "Source Normalizer", "Python", "수집 원시 데이터 정규화\n언어별 파서 선택\n인코딩 통일 · 포맷 변환")
+
+  Component(dp_cpg, "CPG Generator", "Joern · Python", "Joern 기반 CPG 생성\nAST/CFG/PDG 통합 그래프\n언어별 프론트엔드 선택")
+
+  together {
+    Component(dp_embedding, "Embedding Generator", "Python · LLM", "코드/문서 LLM 임베딩 생성\n청킹 전략 · 벡터 정규화")
+    Component(dp_pattern, "Pattern Identifier", "Python · Pattern Matching", "원시 비즈니스 규칙 패턴 사전 식별\n코드 패턴 태깅\n구문적 패턴만 식별")
+    Component(dp_snapshot, "Snapshot Builder", "Python", "소스 코드 버전별 스냅샷 생성\ndelta 계산 · 버전 관리")
+  }
+
+  Component(dp_kbloader, "KB Loader", "Python", "CPG/임베딩/패턴/스냅샷\n→ KB 스키마 정규화 후 적재\n적재 전 검증")
+
+  Component(dp_jobqueue, "Job Queue", "Python · Celery/RQ", "비동기 작업 큐\n워커 풀 관리\n동시 처리 제한 · 우선순위")
+}
+
+' ── 인바운드: DC → DP ──
+Rel_D(collection, dp_coordinator, "수집 데이터 전달", "Internal")
+
+' ── 내부: Coordinator → Normalizer ──
+Rel(dp_coordinator, dp_normalizer, "정규화 실행")
+
+' ── 내부: Normalizer → CPG Generator ──
+Rel(dp_normalizer, dp_cpg, "정규화된 소스 전달")
+
+' ── 내부: CPG → 병렬 처리 ──
+Rel(dp_cpg, dp_embedding, "CPG + 소스 → 임베딩 요청")
+Rel(dp_cpg, dp_pattern, "CPG → 패턴 식별 요청")
+Rel(dp_cpg, dp_snapshot, "소스 → 스냅샷 생성 요청")
+
+' ── 내부: 병렬 결과 → KB Loader ──
+Rel(dp_embedding, dp_kbloader, "임베딩 벡터 전달")
+Rel(dp_pattern, dp_kbloader, "패턴 태그 전달")
+Rel(dp_snapshot, dp_kbloader, "스냅샷 전달")
+Rel(dp_cpg, dp_kbloader, "CPG 그래프 전달")
+
+' ── 내부: CPU/GPU 집약 작업 → Job Queue ──
+Rel(dp_cpg, dp_jobqueue, "CPG 생성 작업 등록")
+Rel(dp_embedding, dp_jobqueue, "임베딩 생성 작업 등록")
+
+note right of dp_coordinator
+  <b>파이프라인 순서</b>
+  1. Normalize (정규화)
+  2. CPG Generate (그래프 생성)
+  3. Embed / Pattern / Snapshot (병렬)
+  4. KB Load (적재)
+  ──
+  CPG 생성과 임베딩은 Job Queue를
+  통해 동시 처리량을 제한한다.
+end note
+
+note bottom of dp_pattern
+  <b>Pattern Identifier vs AE BizRule 경계</b>
+  DP: **구문적** 패턴 사전 식별
+  (if/switch 조건, 상태 전이 코드 패턴)
+  AE: **의미적** 규칙 추출 (LLM 보조)
+  (비즈니스 "의미" 해석, 도메인 분류)
+end note
+
+' ── 아웃바운드: KB Loader → KB ──
+Rel_D(dp_kbloader, kb, "CPG 그래프 적재", "Graph Write")
+Rel_D(dp_snapshot, kb, "스냅샷 적재", "Object Write")
+Rel_D(dp_embedding, kb, "임베딩 벡터 적재", "Vector Write")
+
+' ── 아웃바운드: Embedding → LLM ──
+Rel(dp_embedding, llm, "임베딩 생성 요청\n(보조 사용)", "REST/HTTPS")
+
+' ══════ 레이아웃 힌트 ══════
+Lay_D(dp_coordinator, dp_normalizer)
+Lay_D(dp_normalizer, dp_cpg)
+Lay_R(dp_embedding, dp_pattern)
+Lay_R(dp_pattern, dp_snapshot)
+Lay_R(collection, llm)
+
+@enduml

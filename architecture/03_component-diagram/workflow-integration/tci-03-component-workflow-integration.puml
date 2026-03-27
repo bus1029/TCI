@@ -1,0 +1,117 @@
+@startuml tci-03-component-workflow-integration
+!include <C4/C4_Component>
+!include <tupadr3/font-awesome-5/user_check>
+!include <tupadr3/font-awesome-5/tasks>
+
+LAYOUT_AS_SKETCH()
+LAYOUT_TOP_DOWN()
+LAYOUT_WITH_LEGEND()
+
+skinparam nodesep 60
+skinparam ranksep 80
+
+' ── 액터 ──
+Person(reviewer, "Reviewer", "PR 리뷰 담당", $sprite="user_check")
+Person(pmpo, "PM / PO", "요구사항 정의 · 의사결정", $sprite="tasks")
+
+' ── 외부 TCI 컨테이너 ──
+Container_Ext(analysisEngine, "Analysis Engine", "Python · CPG Query · LLM", "CPG 기반 구조 분석 · 영향도 분석\n비즈니스 규칙 추출 · Risk Insight · KB 구축")
+ContainerDb_Ext(kb, "Knowledge Base", "Graph DB · Object Storage · Vector DB", "CPG 그래프 · 원본 스냅샷 · 분석 산출물\n임베딩 벡터")
+
+' ── 외부 시스템 ──
+System_Ext(devops, "DevOps Pipeline", "CI/CD (Jenkins / GitHub Actions)")
+System_Ext(collab, "Collaboration Tools", "ChatOps · Jira · Confluence")
+System_Ext(aiAgent, "AI Coding Agent", "MCP / API")
+System_Ext(platform, "Platform & Infra", "Admin · 별도 제품")
+System_Ext(policyEngine, "Policy Engine", "OPA / Custom Policy")
+
+' ══════ Workflow & Integration Boundary ══════
+Container_Boundary(wi, "Workflow & Integration") {
+
+  Component(wi_eventrouter, "Event Router", "Python · Webhook", "외부 이벤트(PR/Push/Merge/스케줄)\n수신/분류/라우팅")
+
+  Component(wi_prhandler, "PR Automation Handler", "Python · REST", "PR Summary Report\nPR Context Integration\nPR 자동 생성\n인수 검증 체크리스트")
+
+  Component(wi_policygate, "Policy Gate Adapter", "Python · REST", "외부 Policy Gate 시스템 연동\nPR 코드 변경 기준 정책 검증 요청\n위반 여부 결과 수신/요약/표시")
+
+  Component(wi_cicd, "CI/CD Adapter", "Python · REST/Webhook", "Jenkins/GitHub Actions 등\n파이프라인 연계\n배포 전 리스크 체크")
+
+  Component(wi_docsstudio, "Docs Studio Engine", "Python · Jinja2", "템플릿 기반 문서 생성\n문서 자동 업데이트 · 버전 관리\n승인/수정 워크플로우")
+
+  Component(wi_report, "Report Generator", "Python", "KB에서 분석 결과(자연어 번역 포함) 읽기\n비즈니스 리포트 구성/포맷팅\nLLM 직접 호출 없음")
+
+  Component(wi_chatops, "ChatOps Connector", "Python · REST", "Slack/Teams 알림 발송")
+
+  Component(wi_collab, "Collaboration Connector", "Python · REST", "Jira 코멘트 자동 생성\nConfluence 문서 발행")
+
+  Component(wi_mcpgw, "MCP/API Gateway", "Python · MCP/REST", "AI Coding Agent 컨텍스트 패키지 교환\nREST API 외부 공개\nAgent Diff 수신")
+
+  Component(wi_trigger, "Analysis Trigger", "Python", "스케줄/이벤트 기반\n분석 자동 실행 트리거")
+
+  Component(wi_notify, "Notification Dispatcher", "Python", "알림 통합 관리\n대상/채널 결정\n템플릿 적용 · 발송 이력")
+
+  Component(wi_ops, "Operations Manager", "Python · REST", "분석 작업 모니터링\n사용자/권한 관리\n시스템 설정\n에디션/라이선스 기반 기능 관리")
+}
+
+' ── 인바운드: 액터 → W&I ──
+Rel_D(reviewer, wi_prhandler, "PR Summary\nPolicy Gate 결과 조회", "HTTPS")
+Rel_D(pmpo, wi_docsstudio, "리포트 조회 · Docs Studio", "HTTPS")
+Rel_D(pmpo, wi_report, "비즈니스 리포트 조회", "HTTPS")
+
+note top of reviewer
+  사용자 접근은 Web Application 경유 (C2 참조)
+end note
+
+' ── 인바운드: 외부 시스템 → W&I ──
+Rel_D(devops, wi_eventrouter, "PR/빌드/배포 이벤트", "Webhook")
+
+' ── 내부 관계: Event Router → 핸들러 ──
+Rel(wi_eventrouter, wi_prhandler, "PR 이벤트 라우팅")
+Rel(wi_eventrouter, wi_policygate, "정책 검증 이벤트 라우팅")
+Rel(wi_eventrouter, wi_cicd, "빌드/배포 이벤트 라우팅")
+Rel(wi_eventrouter, wi_trigger, "분석 트리거 이벤트 라우팅")
+Rel(wi_eventrouter, wi_report, "리포팅 이벤트 라우팅")
+
+' ── 내부 관계: 컴포넌트 간 ──
+Rel(wi_prhandler, wi_report, "PR Summary 생성 요청")
+Rel(wi_prhandler, wi_notify, "PR 리포트 알림 요청")
+Rel(wi_policygate, wi_cicd, "Gate 결과 전달")
+Rel(wi_docsstudio, wi_notify, "문서 변경 알림 요청")
+Rel(wi_report, wi_notify, "리포트 알림 요청")
+Rel(wi_trigger, wi_report, "스케줄 기반 리포트 생성 트리거")
+Rel(wi_trigger, wi_notify, "분석 완료 알림 요청")
+Rel(wi_ops, wi_trigger, "분석 작업 모니터링/관리")
+Rel(wi_mcpgw, wi_trigger, "Agent Diff → 분석 트리거")
+
+' ── 내부 관계: Notification Dispatcher → 채널 커넥터 ──
+Rel(wi_notify, wi_chatops, "실시간 알림 발송 위임")
+Rel(wi_notify, wi_collab, "자산 CRUD 위임")
+
+' ── 아웃바운드: W&I → KB ──
+Rel(wi_prhandler, kb, "분석 산출물 읽기", "Graph Read")
+Rel(wi_policygate, kb, "규칙/정책 데이터 읽기", "Graph Read")
+Rel(wi_docsstudio, kb, "구조/규칙 데이터 읽기", "Graph Read")
+Rel(wi_report, kb, "분석 결과 + 자연어 번역 읽기", "Graph Read")
+Rel(wi_mcpgw, kb, "컨텍스트 데이터 읽기", "Graph Read")
+
+' ── 아웃바운드: W&I → Analysis Engine ──
+Rel(wi_trigger, analysisEngine, "분석 실행 트리거", "Internal API")
+
+' ── 아웃바운드: W&I → 외부 시스템 ──
+Rel(wi_cicd, devops, "Gate 결과 응답 · 리포트 통합", "REST/Webhook")
+Rel(wi_chatops, collab, "Slack/Teams 알림", "Bot API")
+Rel(wi_collab, collab, "Jira 코멘트 · Confluence 발행", "REST API")
+Rel(wi_mcpgw, aiAgent, "컨텍스트 패키지 교환", "MCP/REST")
+Rel(wi_ops, platform, "인증 · 로그 · 모니터링", "REST/HTTPS")
+Rel(wi_policygate, policyEngine, "정책 검증 요청 · 결과 수신", "REST")
+
+' ══════ 레이아웃 힌트 ══════
+Lay_R(reviewer, pmpo)
+Lay_R(wi_eventrouter, wi_ops)
+Lay_R(wi_prhandler, wi_policygate)
+Lay_R(wi_policygate, wi_cicd)
+Lay_R(wi_docsstudio, wi_report)
+Lay_R(wi_chatops, wi_collab)
+Lay_R(wi_collab, wi_mcpgw)
+
+@enduml

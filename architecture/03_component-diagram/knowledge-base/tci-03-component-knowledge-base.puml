@@ -1,0 +1,94 @@
+@startuml tci-03-component-knowledge-base
+!include <C4/C4_Component>
+
+LAYOUT_AS_SKETCH()
+LAYOUT_TOP_DOWN()
+LAYOUT_WITH_LEGEND()
+
+skinparam nodesep 60
+skinparam ranksep 80
+
+' ── 외부 TCI 컨테이너 ──
+Container_Ext(analysisEngine, "Analysis Engine", "Python · CPG Query · LLM", "CPG 기반 구조 분석 · 영향도 분석\n비즈니스 규칙 추출 · Risk Insight · KB 구축")
+Container_Ext(assistant, "Interactive Assistant", "Python · LLM · WebSocket", "자연어 Q&A · 코드베이스 설명\n문서-코드 갭 분석 · 분석 결과 설명")
+Container_Ext(workflow, "Workflow & Integration", "Python · REST/MCP/Webhook", "PR 자동화 · CI/CD 연동 · Policy Gate\nDocs Studio · 외부 연동 · ChatOps 알림\n분석 자동화 · 비즈니스 리포팅")
+Container_Ext(processing, "Data Processing", "Joern · Python · LLM", "CPG 생성 · LLM 임베딩\n원시 규칙 패턴 식별 · KB 적재")
+
+' ══════ Knowledge Base Boundary ══════
+Container_Boundary(kb, "Knowledge Base") {
+
+  Component(kb_facade, "Query Facade", "Python · GraphQL/REST", "통합 질의 API\nGraph/Vector/Search 결합\n캐싱 · 접근 권한 필터링")
+
+  together {
+    ComponentDb(kb_graph, "Graph Store", "Neo4j / JanusGraph", "CPG 노드/엣지\n구조/의존/호출 관계 그래프\n분석 산출물 · 비즈니스 규칙 카탈로그")
+    ComponentDb(kb_vector, "Vector Store", "pgvector / Milvus", "LLM 임베딩 벡터\nANN 검색\nRAG 컨텍스트 지원")
+  }
+
+  together {
+    ComponentDb(kb_object, "Object Store", "MinIO / S3", "소스 코드 스냅샷\n문서 원본(PDF/DOCX)\n바이너리")
+    ComponentDb(kb_search, "Search Index", "Elasticsearch", "전문 검색\n코드/문서/규칙 텍스트 인덱싱\n자동완성")
+  }
+
+  Component(kb_schema, "Schema Manager", "Python", "Graph DB 스키마 버전 관리\n마이그레이션 · 검증")
+
+  Component(kb_retention, "Retention Manager", "Python · Scheduler", "보존 정책 · 데이터 정리(purge)\n스토리지 모니터링")
+}
+
+note top of kb_facade
+  <b>추상화 수준 차이</b>
+  기존 C3 컴포넌트는 "프로세스 내 모듈"이지만,
+  KB C3 컴포넌트는 "데이터 접근 레이어 +
+  스토리지 서브시스템"으로 추상화 수준이 다르다.
+  ──
+  기존 C3의 '→ kb' 관계는 컨테이너 경계 수준
+  표현으로 유지하고, Query Facade 경유는
+  KB C3에서만 가시화한다.
+end note
+
+' ── 인바운드: 외부 컨테이너 → KB (Query Facade 경유) ──
+Rel_D(analysisEngine, kb_facade, "분석 결과 적재\n그래프 질의", "Graph R/W")
+Rel_D(assistant, kb_facade, "구조/규칙/분석 결과 검색\n답변·이력 적재", "Graph Read/Write")
+Rel_D(workflow, kb_facade, "분석 산출물 읽기", "Graph Read")
+Rel_D(processing, kb_facade, "CPG/임베딩/스냅샷 적재", "Graph/Vector/Object Write")
+
+' ── 내부: Facade → Stores ──
+Rel(kb_facade, kb_graph, "그래프 질의/적재")
+Rel(kb_facade, kb_vector, "벡터 검색/적재")
+Rel(kb_facade, kb_search, "전문 검색 질의")
+Rel(kb_facade, kb_object, "객체 읽기/적재")
+
+' ── 내부: Schema Manager → Graph Store ──
+Rel(kb_schema, kb_graph, "스키마 적용 · 마이그레이션")
+
+' ── 내부: Retention Manager → Stores (데이터 정리) ──
+Rel(kb_retention, kb_graph, "만료 데이터 정리")
+Rel(kb_retention, kb_object, "만료 스냅샷 정리")
+Rel(kb_retention, kb_vector, "만료 벡터 정리")
+
+note bottom of kb_retention
+  <b>보존 정책</b>
+  - 분석 산출물: 최근 N 버전 보존
+  - 코드 스냅샷: TTL 기반 만료
+  - 임베딩 벡터: 소스 삭제 시 동기 삭제
+  - 스토리지 임계값 초과 시 경고
+end note
+
+note right of kb_graph
+  <b>Feature #29 비즈니스 규칙 관리</b>
+  Graph Store가 비즈니스 규칙 저장소 역할 담당:
+  - 추출된 규칙: 카탈로그 형태로 노드/엣지 저장
+  - 규칙-코드 매핑: 규칙 노드 ↔ CPG 노드 엣지 연결
+  - 규칙 버전 이력: 변경 시 이전 버전 노드 보존
+  Query Facade를 통해 Analysis Engine이 조회/갱신
+end note
+
+' ══════ 레이아웃 힌트 ══════
+Lay_R(analysisEngine, assistant)
+Lay_R(assistant, workflow)
+Lay_R(workflow, processing)
+Lay_R(kb_graph, kb_vector)
+Lay_R(kb_object, kb_search)
+Lay_D(kb_facade, kb_graph)
+Lay_R(kb_schema, kb_retention)
+
+@enduml

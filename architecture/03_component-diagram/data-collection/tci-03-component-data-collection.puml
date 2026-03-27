@@ -1,0 +1,99 @@
+@startuml tci-03-component-data-collection
+!include <C4/C4_Component>
+
+LAYOUT_AS_SKETCH()
+LAYOUT_TOP_DOWN()
+LAYOUT_WITH_LEGEND()
+
+skinparam nodesep 60
+skinparam ranksep 80
+
+' ── 외부 TCI 컨테이너 ──
+Container_Ext(processing, "Data Processing", "Joern · Python · LLM", "CPG 생성 · LLM 임베딩\n원시 규칙 패턴 식별 · KB 적재")
+Container_Ext(workflow, "Workflow & Integration", "Python · REST/MCP/Webhook", "PR 자동화 · CI/CD 연동 · Policy Gate\nDocs Studio · 외부 연동 · ChatOps 알림\n분석 자동화 · 비즈니스 리포팅")
+
+' ── 외부 시스템 (Data Sources) ──
+System_Ext(codeRepo, "Code Repository", "GitHub / GitLab / Bitbucket")
+System_Ext(devContext, "Development Context", "문서 · 티켓 · PR · ADR · Wiki")
+
+' ══════ Data Collection Boundary ══════
+Container_Boundary(dc, "Data Collection") {
+
+  Component(dc_orchestrator, "Collection Orchestrator", "Python", "수집 작업 스케줄링\n수집 범위 설정 · 상태 관리\n소스별 Connector 실행 조율")
+
+  together {
+    Component(dc_git, "Git Connector", "Python · GitPython", "Git 레포 클론/풀\n커밋/브랜치 수집 · Diff 생성\n소스 코드 스냅샷 생성")
+    Component(dc_pr, "PR Collector", "Python · REST/GraphQL", "PR 메타데이터 수집\nDiff · 리뷰 코멘트 수집\n플랫폼 API 연동")
+  }
+
+  together {
+    Component(dc_document, "Document Collector", "Python · REST", "문서 업로드 처리\nConfluence/Wiki 연동\n문서 파싱 · 버전 관리")
+    Component(dc_ticket, "Ticket Connector", "Python · REST/OAuth", "Jira 등 이슈트래커 연동\n티켓-코드 메타 추출\n상태/이력 수집")
+  }
+
+  Component(dc_webhook, "Webhook Receiver", "Python · FastAPI", "외부 소스 실시간 변경 이벤트 수신\n증분 동기화 트리거\nWebhook 시그니처 검증")
+
+  Component(dc_sync, "Sync Engine", "Python", "증분 동기화 로직\n변경분 탐지 · 동기화 커서 관리\n전체/부분 동기화 정책")
+
+  Component(dc_dispatcher, "Data Dispatcher", "Python", "수집 완료 데이터 → DP 전달\n배치 그룹핑 · 전달 보장\nCollection↔Processing 버퍼")
+
+}
+
+' ── 인바운드: 외부 시스템 → DC ──
+Rel_D(codeRepo, dc_webhook, "Push/PR/Merge 이벤트", "Webhook")
+Rel_D(devContext, dc_webhook, "문서/티켓 변경 이벤트", "Webhook")
+
+note right of dc_webhook
+  <b>W&I Event Router와의 교차점</b>
+  PR 이벤트는 DC Webhook Receiver와
+  W&I Event Router 양쪽에서 수신 가능.
+  DC: 코드/메타 수집 목적
+  W&I: PR 자동화/알림 목적
+  → 향후 Webhook Gateway 팬아웃 검토 가능
+end note
+
+' ── 내부: Webhook → Orchestrator (이벤트 트리거) ──
+Rel(dc_webhook, dc_orchestrator, "실시간 이벤트 트리거")
+
+' ── 내부: Orchestrator → Connectors (수집 실행) ──
+Rel(dc_orchestrator, dc_git, "Git 수집 실행")
+Rel(dc_orchestrator, dc_pr, "PR 수집 실행")
+Rel(dc_orchestrator, dc_document, "문서 수집 실행")
+Rel(dc_orchestrator, dc_ticket, "티켓 수집 실행")
+
+' ── 내부: Connectors → Sync Engine (증분 동기화) ──
+Rel(dc_git, dc_sync, "증분 동기화 요청")
+Rel(dc_pr, dc_sync, "증분 동기화 요청")
+Rel(dc_document, dc_sync, "증분 동기화 요청")
+Rel(dc_ticket, dc_sync, "증분 동기화 요청")
+
+' ── 내부: Orchestrator → Dispatcher (전달 요청) ──
+Rel(dc_orchestrator, dc_dispatcher, "수집 완료 → 전달 요청")
+
+note right of dc_orchestrator
+  <b>수집 흐름</b>
+  1. Orchestrator가 스케줄/이벤트로 수집 시작
+  2. 소스별 Connector가 데이터 수집
+  3. 각 Connector가 Sync Engine으로 증분 동기화
+  4. Orchestrator가 수집 완료 후 Dispatcher에 전달 요청
+  5. Dispatcher가 Data Processing으로 배치 전달
+end note
+
+' ── 아웃바운드: Connectors → 외부 시스템 ──
+Rel(dc_git, codeRepo, "Git 클론/풀 · 커밋 수집", "Git SSH/HTTPS")
+Rel(dc_pr, codeRepo, "PR 메타/Diff/리뷰 수집", "REST/GraphQL")
+Rel(dc_document, devContext, "문서 수집 · 파싱", "REST")
+Rel(dc_ticket, devContext, "티켓/이슈 수집", "REST/OAuth")
+
+' ── 아웃바운드: Dispatcher → Data Processing ──
+Rel_D(dc_dispatcher, processing, "수집 데이터 전달", "Internal")
+
+' ══════ 레이아웃 힌트 ══════
+Lay_R(codeRepo, devContext)
+Lay_R(dc_git, dc_pr)
+Lay_R(dc_document, dc_ticket)
+Lay_D(dc_orchestrator, dc_git)
+Lay_R(dc_sync, dc_dispatcher)
+Lay_R(processing, workflow)
+
+@enduml
