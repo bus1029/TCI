@@ -1,0 +1,61 @@
+@startuml
+title Advanced UML Deployment Diagram Example
+
+left to right direction
+skinparam shadowing false
+skinparam defaultTextAlignment center
+
+frame "Private App Zone" {
+  node "Application Server" <<device>> as app_server {
+    node "Linux" <<executionEnvironment>> as linux_rt {
+      node "Docker" <<executionEnvironment>> as docker_rt {
+        node "Application Runtime" <<executionEnvironment>> as app_rt {
+          artifact "app-service.jar" as app_art
+          artifact "application-prod.yml" as app_config
+        }
+
+        node "Worker Runtime" <<executionEnvironment>> as worker_rt {
+          artifact "batch-worker.jar" as worker_art
+        }
+      }
+    }
+  }
+}
+
+frame "Data Zone" {
+  node "Message Broker Server" <<device>> as broker_server {
+    node "Message Broker" <<executionEnvironment>> as broker_rt {
+      artifact "job-queue" as queue_art
+    }
+  }
+
+  node "Database Server" <<device>> as db_server {
+    node "PostgreSQL DBMS" <<executionEnvironment>> as db_rt {
+      artifact "app-db-schema" as db_art
+    }
+  }
+}
+
+component "Application Service" as app_component
+component "Batch Worker" as worker_component
+
+' Manifestation relationships
+app_component .. app_art : manifest
+worker_component .. worker_art : manifest
+
+' Communication paths: node-to-node only
+app_rt -- db_rt : TCP / SQL
+app_rt -- broker_rt : AMQP
+worker_rt -- broker_rt : AMQP
+worker_rt -- db_rt : TCP / SQL
+
+legend right
+  Covers advanced concepts:
+  - nested execution environments
+  - deployment artifacts
+  - deployment specification artifact
+  - manifestation
+  - async communication path
+endlegend
+
+@enduml

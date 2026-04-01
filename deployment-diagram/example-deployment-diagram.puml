@@ -1,0 +1,58 @@
+@startuml
+title Simple UML Deployment Diagram Example
+
+left to right direction
+skinparam shadowing false
+skinparam defaultTextAlignment center
+
+frame "User Environment" {
+  node "User Device" <<device>> as user_device {
+    node "Browser Runtime" <<executionEnvironment>> as browser_rt {
+      artifact "Web UI" as web_ui
+    }
+  }
+}
+
+frame "Public Zone" {
+  node "Web Server" <<device>> as web_server {
+    node "Web Hosting" <<executionEnvironment>> as web_host {
+      artifact "frontend-build.zip" as frontend_build
+    }
+  }
+}
+
+frame "Private App Zone" {
+  node "Application Server" <<device>> as app_server {
+    node "Application Runtime" <<executionEnvironment>> as app_rt {
+      artifact "app-service.jar" as app_art
+    }
+  }
+}
+
+frame "Data Zone" {
+  node "Database Server" <<device>> as db_server {
+    node "PostgreSQL DBMS" <<executionEnvironment>> as db_rt {
+      artifact "app-db-schema" as db_art
+    }
+  }
+}
+
+frame "External System" {
+  node "Code Repository" <<executionEnvironment>> as git
+}
+
+' Communication Paths: node-to-node only
+browser_rt -- web_host : HTTPS
+web_host -- app_rt : HTTPS / REST
+app_rt -- db_rt : TCP / SQL
+app_rt -- git : API / Webhook
+
+legend right
+  frame: boundary
+  node <<device>>: deployment target
+  node <<executionEnvironment>>: runtime
+  artifact: deployed unit
+  line between nodes: communication path
+endlegend
+
+@enduml
