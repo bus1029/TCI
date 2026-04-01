@@ -1,0 +1,105 @@
+@startuml
+title TCI Deployment Diagram - Simulation Draft
+
+left to right direction
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam packageStyle rectangle
+
+actor "Developer / Reviewer / PM/PO" as user
+
+frame "public" {
+  node "Web Application Node" as wa {
+    artifact "User Access Artifact" as wa_art
+  }
+}
+
+frame "private" {
+  node "Data Collection Node" as dc {
+    artifact "Collection Service Artifact" as dc_art
+  }
+
+  node "Data Processing Node" as dp {
+    artifact "Processing Service Artifact" as dp_art
+  }
+
+  node "Analysis Engine Node" as ae {
+    artifact "Analysis Service Artifact" as ae_art
+  }
+
+  node "Interactive Assistant Node" as ia {
+    artifact "Assistant Service Artifact" as ia_art
+  }
+
+  node "Workflow & Integration Node" as wi {
+    artifact "Automation Service Artifact" as wi_art
+  }
+
+  node "Operations Manager Node" as om {
+    artifact "Operations Artifact" as om_art
+  }
+}
+
+frame "data" {
+  node "Knowledge Base Node" as kb {
+    artifact "Graph Artifact" as kb_graph
+    artifact "Vector Artifact" as kb_vector
+    artifact "Object Artifact" as kb_object
+    artifact "Search Artifact" as kb_search
+  }
+}
+
+frame "external" {
+  node "Code Repository" as repo
+  node "Ticket System" as ticket
+  node "Docs / Wiki" as docs
+  node "CI/CD / DevOps Pipeline" as cicd
+  node "ChatOps / Collaboration" as chatops
+  node "AI Coding Agent" as agent
+  node "Policy Engine" as policy
+  node "IDE Plugin" as plugin
+}
+
+user --> wa : HTTPS
+
+wa --> ia : WebSocket
+wa --> wi : REST
+wa --> dc : REST / Upload
+wa --> om : REST
+
+dc --> repo : Git / Webhook / REST
+dc --> ticket : REST / OAuth
+dc --> docs : REST / OAuth
+dc --> plugin : REST
+dc --> dp : Internal API
+
+dp --> kb : Internal API
+
+ae --> kb : Internal API
+ia --> kb : Internal API
+ia --> ae : gRPC / Internal API
+wi --> kb : Internal API
+wi --> ae : Internal API
+om --> wi : Internal API
+
+wi --> repo : REST / Webhook
+wi --> cicd : REST / Webhook
+wi --> chatops : REST
+wi --> policy : REST
+wi --> agent : MCP / REST
+wi --> wa : WebSocket / REST
+
+legend right
+  = Scope =
+  This is an architecture-explanation deployment diagram.
+  Execution environments, ports, infra runtime details,
+  instance counts, autoscaling, and failover are omitted.
+
+  = Boundaries =
+  public: user-facing entry
+  private: internal service nodes
+  data: central knowledge hub
+  external: integrated third-party systems/channels
+endlegend
+
+@enduml

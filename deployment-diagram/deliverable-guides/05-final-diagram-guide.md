@@ -1,0 +1,58 @@
+# 최종 Deployment Diagram 초안 가이드
+
+## 목적
+
+앞선 산출물을 모두 흡수해 실제 다이어그램 초안을 만드는 방법을 설명한다.
+
+## 권장 문서 형태
+
+- 한 줄 목적
+- 다이어그램 소스
+- 범례
+- 오픈 이슈
+
+## 필수 항목
+
+- 상위 경계
+- Node
+- Artifact
+- 연결
+- 미확정 사항
+
+## 예시 형태
+
+````md
+# 최종 Deployment Diagram 초안
+
+## 목적
+- TCI 서비스가 어디서 제공되는지 설명
+
+## 다이어그램 소스
+```puml
+@startuml
+frame "public" {
+  node "Web Application"
+}
+frame "private" {
+  node "Data Collection"
+  node "Data Processing"
+  node "Analysis Engine"
+}
+frame "data" {
+  node "Knowledge Base"
+}
+frame "external" {
+  node "Code Repository"
+}
+@enduml
+```
+
+## 오픈 이슈
+- IDE Plugin 접점을 Web Application 경유로 볼지 추가 확인 필요
+````
+
+## 완료 기준
+
+- 앞선 산출물과 이름이 충돌하지 않는다
+- 경계, Node, Artifact, 연결이 모두 들어간다
+- 오픈 이슈가 따로 분리돼 있다
