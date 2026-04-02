@@ -48,7 +48,7 @@ frame "external" {
 ```
 
 ## 오픈 이슈
-- IDE Plugin 접점을 Web Application 경유로 볼지 추가 확인 필요
+- Knowledge Base 내부 세부 저장 계층을 메인 그림에 드러낼지 보조 설명으로 둘지 추가 확인
 ````
 
 ## 완료 기준

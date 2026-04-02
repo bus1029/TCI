@@ -54,7 +54,8 @@
 - 대표 환경은 1개만 다룸
 - C1 외부 시스템은 전체 포함
 - C2 컨테이너는 모두 Node로 매핑
-- Knowledge Base는 단일 Node + 내부 Artifact 구분
+- Execution Environment는 범위에 포함하되 top-level Node 수에는 포함하지 않음
+- Knowledge Base는 단일 Node를 유지하고, 필요 시 내부 Runtime / Artifact를 중첩 표현
 - 상위 경계는 `public / private / external / data`
 - 통신 경로는 프로토콜 형태로 표기
 - 산출물마다 추상화 수준을 섞지 않는다

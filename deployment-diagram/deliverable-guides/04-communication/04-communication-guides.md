@@ -21,10 +21,12 @@
 ```md
 ## 표기 기준
 - HTTPS
+- IDE UI
+- Plugin API
 - WebSocket
 - REST
 - Webhook
-- Git
+- Git Protocol
 - MCP
 
 ## 규칙
@@ -34,6 +36,8 @@
 | 출발 Node | 도착 Node | 방향 | 프로토콜 | 목적 | 비고 |
 |---|---|---|---|---|---|
 | User | Web Application Node | Outbound | HTTPS | 사용자 접근 | 브라우저 경유 |
+| Developer | IDE Plugin Node | Outbound | IDE UI | 로컬 IDE 진입 | public client |
+| IDE Plugin Node | Web Application Node | Outbound | Plugin API | 업로드 · 컨텍스트 조회 | public client → gateway |
 | Web Application Node | Interactive Assistant Node | Outbound | WebSocket | 대화 세션 | 실시간 |
 ```
 

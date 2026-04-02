@@ -17,7 +17,7 @@
 
 ### 이 산출물이 하는 일
 
-액터가 어떤 경로로 어떤 Node에 처음 진입하는지 정리한다.
+사람 액터가 어떤 경로로 어떤 Node에 처음 진입하는지 정리한다. AI Coding Agent 같은 비인간 소비자 채널은 외부 시스템 접속 지점에서 별도로 다룬다.
 
 ### 권장 흡수 항목
 
@@ -30,7 +30,7 @@
 | 액터 | 진입 채널 | 최초 진입 Node | 이후 연결 | 비고 |
 |---|---|---|---|---|
 | Developer | 웹 브라우저 | Web Application Node | Interactive Assistant | 기본 경로 |
-| 운영자 | 웹 브라우저 | Web Application Node | Operations Manager | 관리 기능 |
+| Developer | IDE Plugin | IDE Plugin Node | Web Application Node | public client 경유 |
 | 사용자의 업로드 | 업로드 UI | Web Application Node | Data Collection Node | ZIP / PDF |
 ```
 
@@ -64,9 +64,9 @@
 ```md
 | 외부 시스템 | 연결 주체 Node | 방향 | 프로토콜 | 비고 |
 |---|---|---|---|---|
-| Code Repository | Data Collection Node | Inbound / Outbound | Git, Webhook, REST | 수집과 write-back |
+| Code Repository | Data Collection Node | Outbound | Git Protocol | 코드 수집 |
 | Policy Engine | Workflow & Integration Node | Outbound | REST | 정책 검증 |
-| AI Coding Agent | Workflow & Integration Node | Outbound | MCP, REST | 컨텍스트 제공 |
+| AI Coding Agent | Workflow & Integration Node | Bidirectional | MCP / REST | 컨텍스트 제공과 요청 수신 |
 ```
 
 ## 4. 외부 채널 접점 표
@@ -80,7 +80,7 @@
 ```md
 | 외부 채널 | 연결 Node | 대표 예시 | 프로토콜 | 비고 |
 |---|---|---|---|---|
-| 코드 수집 채널 | Data Collection Node | Git, Webhook | Git, Webhook, REST | 입력 중심 |
+| 코드 수집 채널 | Data Collection Node | Code Repository | Git Protocol | 입력 중심 |
 | AI 소비 채널 | Workflow & Integration Node | AI Coding Agent | MCP, REST | 컨텍스트 전달 |
 ```
 

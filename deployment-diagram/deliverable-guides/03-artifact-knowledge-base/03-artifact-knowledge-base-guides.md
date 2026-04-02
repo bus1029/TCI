@@ -36,16 +36,18 @@ Knowledge Base 내부 논리 요소별 표현 방식을 확정한다.
 ```md
 ## 기본 원칙
 - 메인 그림에서는 Knowledge Base를 단일 Node로 유지
-- 내부에는 Graph, Vector, Object, Search Artifact를 구분
-- 저장 기술명은 메인 그림에서 생략
+- 필요 시 내부에는 Runtime Environment를 중첩하고 Graph, Vector, Object Artifact를 구분
+- Execution Environment는 top-level Node로 세지 않는다
 
-| 논리 요소 | 표현 방식 | 메인 그림 표시 | 이유 |
-|---|---|---|---|
-| Graph Store | 내부 Artifact | 예 | 핵심 지식 모델 |
-| Query Facade | 메모로만 설명 | 아니오 | Node 수준 아님 |
+| 논리 요소 | Runtime Environment | 표현 방식 | 메인 그림 표시 | 이유 |
+|---|---|---|---|---|
+| Graph Store | Graph DB Runtime | 내부 Artifact | 예 | 핵심 지식 모델 |
+| Vector Store | Vector DB Runtime | 내부 Artifact | 예 | 임베딩 및 유사도 검색 |
+| Object Store | Object Storage Runtime | 내부 Artifact | 예 | 원본 및 산출물 저장 |
+| Query Facade | - | 메모로만 설명 | 아니오 | Node 수준 아님 |
 ```
 
 ## 완료 기준
 
-- Artifact 이름과 Node 매핑, KB 표현 방식이 서로 충돌하지 않는다
+- Artifact 이름과 Node 매핑, Knowledge Base 표현 방식이 서로 충돌하지 않는다
 - Knowledge Base는 단일 Node + 내부 Artifact 원칙이 유지된다

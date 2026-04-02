@@ -1,0 +1,148 @@
+@startuml
+title TCI Deployment Diagram - KB Runtime Draft
+
+left to right direction
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam packageStyle rectangle
+
+actor "Developer" as developer
+actor "Reviewer" as reviewer
+actor "PM / PO" as pmpo
+
+frame "public" {
+  node "Web Application" as webapp {
+    node "Docker - Web App" as webapp_host {
+      node "Web Server Runtime" <<executionEnvironment>> as webapp_rt {
+        artifact "Web Application Web App Artifact" as webapp_art
+      }
+    }
+  }
+
+  node "IDE Plugin" as ide_plugin {
+    node "IDE Host Runtime" <<executionEnvironment>> as ide_rt
+  }
+}
+
+frame "private" {
+  node "Interactive Assistant" as assistant {
+    node "Docker - Interactive Assistant" as assistant_host {
+      node "Application Runtime" <<executionEnvironment>> as assistant_rt {
+        artifact "Interactive Assistant Web App Artifact" as assistant_art
+      }
+    }
+  }
+
+  node "Analysis Engine" as analysis {
+    node "Docker - Analysis Engine" as analysis_host {
+      node "Application Runtime" <<executionEnvironment>> as analysis_rt {
+        artifact "Analysis Engine Web App Artifact" as analysis_art
+      }
+    }
+  }
+
+  node "Workflow & Integration" as workflow {
+    node "Docker - Workflow & Integration" as workflow_host {
+      node "Application Runtime" <<executionEnvironment>> as workflow_rt {
+        artifact "Workflow & Integration Web App Artifact" as workflow_art
+      }
+    }
+  }
+
+  node "Data Processing" as processing {
+    node "Docker - Data Processing" as processing_host {
+      node "Application Runtime" <<executionEnvironment>> as processing_rt {
+        artifact "Data Processing Web App Artifact" as processing_art
+      }
+    }
+  }
+
+  node "Data Collection" as collection {
+    node "Docker - Data Collection" as collection_host {
+      node "Application Runtime" <<executionEnvironment>> as collection_rt {
+        artifact "Data Collection Web App Artifact" as collection_art
+      }
+    }
+  }
+}
+
+frame "data" {
+  node "Knowledge Base" as kb {
+    node "Docker - KB Graph DB" as kb_graph_host {
+      node "Graph DB Runtime Environment" <<executionEnvironment>> as kb_graph_rt {
+        artifact "Graph Artifact" as kb_graph_art
+      }
+    }
+
+    node "Docker - KB Vector DB" as kb_vector_host {
+      node "Vector DB Runtime Environment" <<executionEnvironment>> as kb_vector_rt {
+        artifact "Vector Artifact" as kb_vector_art
+      }
+    }
+
+    node "Docker - KB Object Storage" as kb_object_host {
+      node "Object Storage Runtime Environment" <<executionEnvironment>> as kb_object_rt {
+        artifact "Object Artifact" as kb_object_art
+      }
+    }
+  }
+}
+
+frame "external" {
+  node "Code Repository" as git
+  node "Issue Tracker + Docs/Wiki" as dev_context
+  node "CI/CD" as cicd
+  node "Collaboration Tools" as chatops
+  node "AI Coding Agent" as ai_agent
+  node "Policy Engine" as policy_engine
+
+  node "Public LLM Provider / Local LLM" as llm {
+    node "LLM Inference Runtime" <<conceptual external EE>> as llm_rt {
+      artifact "LLM Provider Artifact" as llm_art
+    }
+  }
+
+  node "Platform & Infra" as platform {
+    node "Platform Service Runtime" <<conceptual external EE>> as platform_rt {
+      artifact "Platform Service Artifact" as platform_art
+    }
+  }
+}
+
+developer --> webapp : HTTPS
+developer --> ide_plugin : IDE UI
+reviewer --> webapp : HTTPS
+pmpo --> webapp : HTTPS
+
+ide_plugin --> webapp : Plugin API
+
+webapp --> assistant : WebSocket
+webapp --> workflow : HTTPS
+webapp --> collection : HTTPS
+workflow --> webapp : SSE / WebSocket
+
+assistant --> analysis : gRPC (async)
+workflow --> analysis : Internal API
+collection --> processing : Internal
+
+assistant <--> kb : Graph R/W
+analysis <--> kb : Graph R/W
+workflow --> kb : Graph Read
+processing --> kb : Graph Write
+
+collection --> git : Git Protocol
+collection --> dev_context : REST / Upload
+
+workflow --> cicd : Webhook / REST
+workflow --> chatops : REST API / Bot API
+workflow <--> ai_agent : MCP / REST
+workflow <--> policy_engine : REST
+
+assistant --> llm : REST / HTTPS
+analysis --> llm : REST / HTTPS
+processing --> llm : REST / HTTPS
+
+webapp --> platform : REST / HTTPS
+workflow --> platform : REST / HTTPS
+
+@enduml
