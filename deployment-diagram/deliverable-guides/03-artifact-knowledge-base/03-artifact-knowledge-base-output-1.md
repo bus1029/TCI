@@ -14,8 +14,9 @@
 ## 1. Artifact 이름 및 Node 매핑표
 
 | Artifact 이름 | 담당 Node | 역할 | 표시 수준 | 비고 |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Web Application Web App Artifact | Web Application | 사용자 진입, 인증/인가, 세션 관리, API 라우팅 | 메인 그림 표시 | public |
+| IDE Plugin Artifact | IDE Plugin | 로컬 코드 변경 스냅샷 수집, 분석 컨텍스트 조회 | 메인 그림 표시 | public |
 | Interactive Assistant Web App Artifact | Interactive Assistant | 대화형 질의응답, 코드베이스 설명, 구조·규칙 설명 | 메인 그림 표시 | private |
 | Analysis Engine Web App Artifact | Analysis Engine | 구조 분석, 영향도 분석, 테스트 영향 분석, 규칙 추출 | 메인 그림 표시 | private |
 | Workflow & Integration Web App Artifact | Workflow & Integration | PR 자동화, 외부 연동, 리포트 생성, 워크플로우 실행 | 메인 그림 표시 | private |

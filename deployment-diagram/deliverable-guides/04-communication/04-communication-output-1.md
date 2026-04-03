@@ -41,7 +41,7 @@
 |---|---|---|---|---|---|
 | Interactive Assistant | Analysis Engine | → | gRPC (async) | 온디맨드 분석 요청 | 비동기 내부 고성능 통신 |
 | Workflow & Integration | Analysis Engine | → | Internal API | 분석 실행 트리거 | 내부 서비스 간 직접 호출 |
-| Data Collection | Data Processing | → | Internal | 수집 데이터 전달 | 내부 서비스 간 직접 호출 |
+| Data Collection | Data Processing | → | Internal API | 수집 데이터 전달 | 내부 서비스 간 직접 호출 |
 
 ### private ↔ data (4행)
 
@@ -49,7 +49,7 @@
 |---|---|---|---|---|---|
 | Interactive Assistant | Knowledge Base | ↔ | Graph R/W | 구조·규칙 검색 / 답변·이력 적재 | 그래프 DB 네이티브 프로토콜 |
 | Analysis Engine | Knowledge Base | ↔ | Graph R/W | 그래프 질의 · 분석 결과 적재 | 그래프 DB 네이티브 프로토콜 |
-| Workflow & Integration | Knowledge Base | → | Graph Read | 분석 산출물 조회 · 추적 메타 적재 | 읽기 전용 |
+| Workflow & Integration | Knowledge Base | <- | Graph Read | 분석 산출물 조회 · 추적 메타 적재 | 읽기 전용 |
 | Data Processing | Knowledge Base | → | Graph Write | CPG·임베딩 적재 | 쓰기 전용 |
 
 ### private → external — Data Sources (2행)
@@ -91,7 +91,7 @@
 | **SSE** | Workflow & Integration → Web Application | 서버→클라이언트 단방향 푸시 |
 | **gRPC (async)** | Interactive Assistant → Analysis Engine | 비동기 분석 요청, 내부 고성능 통신 |
 | **Internal API** | Workflow & Integration → Analysis Engine, Data Collection → Data Processing | 내부 서비스 간 직접 호출 |
-| **Graph R/W** | Interactive Assistant ↔ Knowledge Base, Analysis Engine ↔ Knowledge Base, Workflow & Integration → Knowledge Base (Read), Data Processing → Knowledge Base (Write) | 그래프 DB 네이티브 프로토콜 |
+| **Graph R/W** | Interactive Assistant ↔ Knowledge Base, Analysis Engine ↔ Knowledge Base, Workflow & Integration <- Knowledge Base (Read), Data Processing → Knowledge Base (Write) | 그래프 DB 네이티브 프로토콜 |
 | **Git Protocol** | Data Collection → Code Repository | 코드 저장소 수집 전용 |
 | **REST / Upload** | Data Collection → Issue Tracker + Docs/Wiki | 문서·티켓 수집 |
 | **Webhook / REST** | Workflow & Integration → CI/CD | 이벤트 기반 비동기 연동 |
