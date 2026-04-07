@@ -15,7 +15,7 @@
 ## 한눈에 보는 결론
 
 - 현재 `output-1.md` 4개는 Notion 기준에 맞춰 주요 충돌이 해소된 상태다.
-- 핵심 정렬 사항은 `IDE Plugin`의 public client 해석, `Web Application -> Data Collection` 업로드 경로, `Execution Environment`의 top-level Node 비카운트 원칙 반영이다.
+- 핵심 정렬 사항은 `IDE Plugin`의 public client 해석, `Web Application -> Data Collection` 업로드 경로, `Execution Environment`의 top-level Node 비카운트 원칙 반영, 외부 연동과 `Knowledge Base` 연결의 표기 원칙 분리다.
 - 남은 차이는 주로 가이드 문서의 예시가 추상적이라는 점이며, 실제 산출물 기준에는 직접적인 충돌을 만들지 않는다.
 
 ## 현재 기준으로 확인된 정렬 상태
@@ -54,29 +54,30 @@
 정리:
 - `EE를 뺀다`와 `EE를 일부만 드러낸다` 사이의 혼선이 줄었다.
 
-### 4. `Knowledge Base`는 단일 Node + 내부 3계층으로 정리됨
+### 4. `Knowledge Base`는 단일 Node + 내부 4계층으로 정리됨
 
 상태: 정렬됨
 
 설명:
 - [01-node-boundary-service-output-1.md](/Users/seokhyunbae_1/Desktop/기획_스프린트/TCI/deployment-diagram/deliverable-guides/01-node-boundary-service/01-node-boundary-service-output-1.md)는 메인 경계에서 `Knowledge Base`를 단일 Top-level Node로 둔다.
-- 같은 문서는 EE 상세에서 `Graph / Object / Vector` 3개 nested runtime을 둔다.
-- [03-artifact-knowledge-base-output-1.md](/Users/seokhyunbae_1/Desktop/기획_스프린트/TCI/deployment-diagram/deliverable-guides/03-artifact-knowledge-base/03-artifact-knowledge-base-output-1.md)도 `Graph / Vector / Object` 3개 runtime/artifact로 정리한다.
+- 현재 최종 다이어그램 설명 문서는 `Graph / Object / Vector / RDB` 4개 nested runtime을 기준으로 설명한다.
+- `RDB Runtime Environment`에는 `Metadata Artifact`를 배치해 정형 메타데이터 계층을 드러낸다.
 
 정리:
 - 메인 그림 기준은 `Knowledge Base 단일 Node`로 유지한다.
-- 내부 상세도 `Graph / Vector / Object` 3계층으로 고정됐다.
+- 내부 상세는 `Graph / Vector / Object / RDB` 4계층으로 본다.
 - 인덱싱 관련 환경/아티팩트는 별도 Runtime/Artifact로 승격하지 않는다.
 
-### 5. 통신선 이름과 프로토콜 표기는 현재 산출물끼리 일치함
+### 5. 통신선 이름은 대상별 표기 원칙으로 정리됨
 
 상태: 정렬됨
 
 설명:
-- [04-communication-output-1.md](/Users/seokhyunbae_1/Desktop/기획_스프린트/TCI/deployment-diagram/deliverable-guides/04-communication/04-communication-output-1.md)는 현재 사용 중인 표기(`HTTPS`, `WebSocket`, `Plugin API`, `Graph R/W`, `MCP / REST`)를 한 문서에 모아 관리한다.
+- [04-communication-output-1.md](/Users/seokhyunbae_1/Desktop/기획_스프린트/TCI/deployment-diagram/deliverable-guides/04-communication/04-communication-output-1.md)는 현재 사용 중인 표기(`HTTPS`, `WebSocket`, `Plugin API`, `Knowledge R/W`, `MCP / REST`)를 한 문서에 모아 관리한다.
 - [02-touchpoint-external-system-output-1.md](/Users/seokhyunbae_1/Desktop/기획_스프린트/TCI/deployment-diagram/deliverable-guides/02-touchpoint-external-system/02-touchpoint-external-system-output-1.md)의 접속 지점 표도 같은 이름을 사용한다.
 
 정리:
+- 외부 시스템 연결은 프로토콜 중심으로, `Knowledge Base` 연결은 접근 방식 중심으로 표기한다.
 - "같은 연결은 같은 이름으로 표기" 원칙은 현재 기준에서 지켜지고 있다.
 
 ## 남아 있는 오픈 포인트
@@ -104,4 +105,4 @@
 ## 메모
 
 - 현재 기준으로는 `output-1.md` 4개를 최종 다이어그램의 직접 입력 자료로 사용해도 된다.
-- Knowledge Base 내부 상세는 `Graph / Vector / Object` 3계층 기준으로 맞춰졌다.
+- Knowledge Base 내부 상세는 `Graph / Vector / Object / RDB` 4계층 기준으로 맞춰졌다.

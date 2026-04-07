@@ -31,7 +31,7 @@
 |---|---|---|---|---|
 | Developer | 웹 브라우저 | Web Application Node | Interactive Assistant | 기본 경로 |
 | Developer | IDE Plugin | IDE Plugin Node | Web Application Node | public client 경유 |
-| 사용자의 업로드 | 업로드 UI | Web Application Node | Data Collection Node | ZIP / PDF |
+| 사용자의 업로드 | 업로드 UI | Web Application Node | Data Collection & Processing Node | ZIP / PDF |
 ```
 
 ## 2. 외부 시스템 역할군 표
@@ -64,7 +64,7 @@
 ```md
 | 외부 시스템 | 연결 주체 Node | 방향 | 프로토콜 | 비고 |
 |---|---|---|---|---|
-| Code Repository | Data Collection Node | Outbound | Git Protocol | 코드 수집 |
+| Code Repository | Data Collection & Processing Node | Outbound | Git Protocol | 코드 수집 |
 | Policy Engine | Workflow & Integration Node | Outbound | REST | 정책 검증 |
 | AI Coding Agent | Workflow & Integration Node | Bidirectional | MCP / REST | 컨텍스트 제공과 요청 수신 |
 ```
@@ -80,7 +80,7 @@
 ```md
 | 외부 채널 | 연결 Node | 대표 예시 | 프로토콜 | 비고 |
 |---|---|---|---|---|
-| 코드 수집 채널 | Data Collection Node | Code Repository | Git Protocol | 입력 중심 |
+| 코드 수집 채널 | Data Collection & Processing Node | Code Repository | Git Protocol | 입력 중심 |
 | AI 소비 채널 | Workflow & Integration Node | AI Coding Agent | MCP, REST | 컨텍스트 전달 |
 ```
 

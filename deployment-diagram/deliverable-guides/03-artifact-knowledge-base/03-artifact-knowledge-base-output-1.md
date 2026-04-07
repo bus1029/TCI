@@ -23,8 +23,8 @@
 | Graph Artifact | Knowledge Base | 구조 지식, 의존성, 규칙, CPG 계열 데이터 저장 | 내부 Artifact | data. Graph DB Runtime Environment에 배포 |
 | Vector Artifact | Knowledge Base | 임베딩 및 유사도 검색 데이터 저장 | 내부 Artifact | data. Vector DB Runtime Environment에 배포 |
 | Object Artifact | Knowledge Base | 원본 문서, 스냅샷, 산출물 파일 저장 | 내부 Artifact | data. Object Storage Runtime Environment에 배포 |
-| Data Processing Web App Artifact | Data Processing | CPG 생성, 임베딩 생성, 규칙 패턴 식별, KB 적재 | 메인 그림 표시 | private |
-| Data Collection Web App Artifact | Data Collection | 개발 자산 수집, 증분 동기화, 업로드 처리 | 메인 그림 표시 | private |
+| Metadata Artifact | Knowledge Base | 정형 메타데이터, 운영성 정보 저장 | 내부 Artifact | data. RDB Runtime Environment에 배포 |
+| Data Collection & Processing Web App Artifact | Data Collection & Processing | 개발 자산 수집, 증분 동기화, 업로드 처리, CPG·임베딩 생성, KB 적재 | 메인 그림 표시 | private |
 | LLM Provider Artifact | Public LLM Provider / Local LLM | 대화 추론, 임베딩 API 제공 | 메인 그림 표시 | external. LLM Inference Runtime에 배포되는 외부 Foundation Artifact |
 | Platform Service Artifact | Platform & Infra | 인증/인가, 로그, 모니터링, 운영 공통 기능 제공 | 메인 그림 표시 | external. Platform Service Runtime에 배포되는 외부 Foundation Artifact |
 
@@ -32,8 +32,8 @@
 
 - 이 표는 `Node당 대표 Artifact 1개`라는 단순화 버전이다.
 - 다만 `Knowledge Base`는 예외적으로 `Node당 대표 Artifact 1개` 원칙을 따르지 않는다.
-- `Knowledge Base`는 저장 계층 성격이 강하므로 단일 웹 애플리케이션 Artifact로 두지 않고, `Graph Artifact`, `Vector Artifact`, `Object Artifact`로 분해한다.
-- 인덱싱 관련 저장 계층은 별도 Runtime/Artifact로 분리하지 않고, 이번 단계에서는 위 3개 계층 설명 안에 흡수한다.
+- `Knowledge Base`는 저장 계층 성격이 강하므로 단일 웹 애플리케이션 Artifact로 두지 않고, `Graph Artifact`, `Vector Artifact`, `Object Artifact`, `Metadata Artifact`로 분해한다.
+- 인덱싱 관련 저장 계층은 별도 Runtime/Artifact로 분리하지 않고, 이번 단계에서는 위 4개 계층 설명 안에 흡수한다.
 - `Web App Artifact`라는 이름은 현재 사용자의 가정을 반영한 임시 명칭이다. 최종본에서는 `Service Artifact` 또는 기술 실체에 더 가까운 이름으로 정리할 수 있다.
 - Foundation Services는 TCI 내부 배포 대상은 아니지만, 메인 Deployment Diagram에 실제로 표시되는 Artifact이므로 이 문서에서 함께 관리한다.
 
@@ -47,11 +47,12 @@
 | Conversational QA Artifact | Interactive Assistant Web App Artifact | Interactive Assistant 대표 Artifact |
 | Analysis Service Artifact | Analysis Engine Web App Artifact | Analysis Engine 대표 Artifact |
 | Automation & Integration Artifact | Workflow & Integration Web App Artifact | Workflow & Integration 대표 Artifact |
-| Collection Agent Artifact | Data Collection Web App Artifact | Data Collection 대표 Artifact |
-| Data Pipeline Artifact | Data Processing Web App Artifact | Data Processing 대표 Artifact |
+| Collection Agent Artifact | Data Collection & Processing Web App Artifact | 현재 통합 Node의 대표 Artifact로 흡수 |
+| Data Pipeline Artifact | Data Collection & Processing Web App Artifact | 현재 통합 Node의 대표 Artifact로 흡수 |
 | Graph DB | Graph Artifact | Knowledge Base 내부 Artifact |
 | Vector DB | Vector Artifact | Knowledge Base 내부 Artifact |
 | Object Storage | Object Artifact | Knowledge Base 내부 Artifact |
+| Metadata DB | Metadata Artifact | Knowledge Base 내부 Artifact |
 | LLM Provider Artifact | LLM Provider Artifact | Foundation Service Artifact. 명칭 유지 |
 | Platform Service Artifact | Platform Service Artifact | Foundation Service Artifact. 명칭 유지 |
 
@@ -62,7 +63,7 @@
 - 메인 그림에서는 `Knowledge Base`를 단일 상위 Node로 유지한다.
 - 다만 `Knowledge Base`는 일반 서비스 Node와 달리 단일 웹 애플리케이션 Artifact로 표현하지 않는다.
 - `Knowledge Base Node`는 물리 서버 1대를 뜻하는 것이 아니라, 데이터 계층의 논리적 상위 경계로 해석한다.
-- `Knowledge Base Node` 내부에는 3개의 별도 `Runtime Environment`가 존재한다고 가정한다.
+- `Knowledge Base Node` 내부에는 4개의 별도 `Runtime Environment`가 존재한다고 가정한다.
 - 각 `Runtime Environment`에는 1개의 전용 DB Artifact가 배포된다고 가정한다.
 - 따라서 Knowledge Base의 표현 수준은 `Knowledge Base Node -> Runtime Environment -> DB Artifact`로 잡는다.
 
@@ -73,6 +74,7 @@
 | Graph Store | Graph DB Runtime Environment | Graph Artifact | 예 | 구조 지식, 의존성, 규칙, CPG 계열 데이터를 담당하는 핵심 저장 계층이므로 독립 표현 가치가 높다 | 그래프 계열 DB 인스턴스 가정 |
 | Vector Store | Vector DB Runtime Environment | Vector Artifact | 예 | 임베딩 및 유사도 검색 계층은 Graph/Object와 성격과 접근 패턴이 다르므로 별도 Runtime으로 분리하는 편이 자연스럽다 | 벡터 DB 인스턴스 가정 |
 | Object Store | Object Storage Runtime Environment | Object Artifact | 예 | 원본 문서, 스냅샷, 산출물 파일 보관 계층은 DB형 저장소와 운영 특성이 달라 별도 Runtime으로 두는 편이 명확하다 | 오브젝트 스토리지 인스턴스 가정 |
+| Relational Store | RDB Runtime Environment | Metadata Artifact | 예 | 정형 메타데이터와 운영성 정보는 관계형 저장소로 두는 편이 자연스럽고, 다른 저장 계층과 접근 패턴이 다르다 | 관계형 DB 인스턴스 가정 |
 
 ### 추가 메모
 

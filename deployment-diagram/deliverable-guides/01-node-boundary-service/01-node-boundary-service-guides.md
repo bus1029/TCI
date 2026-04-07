@@ -65,7 +65,8 @@ C2 컨테이너를 Deployment Diagram Node로 매핑한다. 이 표 안에 Node 
 
 ```md
 ## 매핑 기준
-- C2 컨테이너 1개를 Deployment Node 1개로 본다
+- 기본값은 C2 컨테이너 기준으로 Node를 잡는다
+- 현재 배포 단위가 같으면 인접 책임을 하나의 Deployment Node로 합칠 수 있다
 - Execution Environment는 범위에 포함하되 top-level Node로 승격하지 않는다
 - 내부 컴포넌트는 Node로 승격하지 않는다
 
@@ -73,12 +74,12 @@ C2 컨테이너를 Deployment Diagram Node로 매핑한다. 이 표 안에 Node 
 |---|---|---|---|---|
 | Web Application | Web Application Node | public | 예 | 단일 진입점 |
 | IDE Plugin | IDE Plugin Node | public | 예 | public client node |
-| Data Collection | Data Collection Node | private | 아니오 | 내부 수집 계층 |
+| Data Collection + Data Processing | Data Collection & Processing Node | private | 아니오 | 현재 단계의 통합 배포 단위 |
 ```
 
 ### 완료 기준
 
-- 모든 C2 컨테이너가 빠짐없이 등장한다
+- 모든 핵심 C2 책임이 빠짐없이 반영된다
 
 ## 3. 서비스별 제공 위치 표
 
@@ -120,7 +121,7 @@ C2 컨테이너를 Deployment Diagram Node로 매핑한다. 이 표 안에 Node 
 - 포함 Node: Web Application, IDE Plugin
 
 ## private
-- 포함 Node: Data Collection, Data Processing, Analysis Engine, Interactive Assistant, Workflow & Integration
+- 포함 Node: Data Collection & Processing, Analysis Engine, Interactive Assistant, Workflow & Integration
 
 ## data
 - 포함 Node: Knowledge Base

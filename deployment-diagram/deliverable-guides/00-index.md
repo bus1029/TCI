@@ -57,5 +57,6 @@
 - Execution Environment는 범위에 포함하되 top-level Node 수에는 포함하지 않음
 - Knowledge Base는 단일 Node를 유지하고, 필요 시 내부 Runtime / Artifact를 중첩 표현
 - 상위 경계는 `public / private / external / data`
-- 통신 경로는 프로토콜 형태로 표기
+- 외부 연동 연결은 프로토콜 중심으로 표기
+- `Knowledge Base` 연결은 접근 방식 중심으로 표기
 - 산출물마다 추상화 수준을 섞지 않는다
