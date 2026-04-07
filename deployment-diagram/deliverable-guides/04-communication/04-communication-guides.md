@@ -31,7 +31,7 @@
 - Plugin API
 - WebSocket
 - REST
-- Webhook
+- WebHook / REST
 - Git Protocol
 - MCP
 - Knowledge Read

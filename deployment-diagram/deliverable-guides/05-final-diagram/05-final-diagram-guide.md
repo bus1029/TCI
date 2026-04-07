@@ -41,8 +41,7 @@ frame "public" {
   node "Web Application"
 }
 frame "private" {
-  node "Data Collection"
-  node "Data Processing"
+  node "Data Collection & Processing"
   node "Analysis Engine"
 }
 frame "data" {

@@ -33,7 +33,7 @@
 |---|---|---|---|---|
 | Data Sources | Code Repository | 단독 유지 | `Data Collection & Processing`이 수집하는 개발 자산 원천(소스 코드·커밋·브랜치) | Git Protocol이 고유하여 REST 기반 시스템과 묶으면 프로토콜 차이가 가려짐 |
 |  | Issue Tracker + Docs/Wiki | 단독 유지 | `Data Collection & Processing`이 수집하는 개발 자산 원천(문서·티켓·PR·Wiki) | 통합 명칭 자체를 최종 Node 이름으로 사용하므로 별도 축약명 없이 유지한다 |
-| Integration Channels | CI/CD | 단독 유지 | W&I를 통해 TCI와 이벤트·결과를 교환하는 외부 연동 채널 | Webhook 수신 + Gate 응답 오케스트레이션 패턴이 고유 |
+| Integration Channels | CI/CD | 단독 유지 | W&I를 통해 TCI와 이벤트·결과를 교환하는 외부 연동 채널 | WebHook 수신 + Gate 응답 오케스트레이션 패턴이 고유 |
 |  | Collaboration Tools | 단독 유지 | W&I를 통해 외부로 알림·코멘트를 전달하는 연동 채널 | Bot API 패턴이 고유하고 outbound 전용이라 다른 채널과 성격 상이 |
 |  | AI Coding Agent | 단독 유지 | W&I를 통해 개발자 Agent와 컨텍스트를 교환하는 연동 채널 | MCP 프로토콜 고유, 양방향 컨텍스트 교환 패턴이 다른 채널에 없음 |
 |  | Policy Engine | 단독 유지 | W&I를 통해 사내 정책 검증을 수행하는 연동 채널 | 검증 요청→결과 수신 전용 패턴이 고유 |
@@ -50,7 +50,7 @@
 |---|---|---|---|---|
 | Code Repository | Data Collection & Processing | Data Collection & Processing → Code Repository | Git Protocol | 현재 배포 구조에서는 수집과 처리를 하나의 Node로 통합해 본다. 코드 저장소 수집 경로는 이 Node에서 출발한다. |
 | Issue Tracker + Docs/Wiki | Data Collection & Processing | Data Collection & Processing → Issue Tracker + Docs/Wiki | REST / Upload | 문서·티켓·PR 수집 경로는 현재 기준에서 `Data Collection & Processing` Node에 수렴한다. |
-| CI/CD | Workflow & Integration | Workflow & Integration → CI/CD | Webhook / REST | PR 이벤트 연동과 Gate 결과 반영 관계를 담당하는 외부 CI/CD 채널이다. |
+| CI/CD | Workflow & Integration | Workflow & Integration → CI/CD | WebHook / REST | PR 이벤트 연동과 Gate 결과 반영 관계를 담당하는 외부 CI/CD 채널이다. |
 | Collaboration Tools | Workflow & Integration | Workflow & Integration → Collaboration Tools | REST API / Bot API | Rel(workflow, collab, ...) 기준. 알림·코멘트·문서 발행을 함께 묶은 채널이라 REST API / Bot API로 표기했다. |
 | AI Coding Agent | Workflow & Integration | Workflow & Integration → AI Coding Agent | MCP / REST | Rel(workflow, aiAgent, ...) 기준. W&I가 컨텍스트 패키지를 제공하는 outbound 관계다. |
 | AI Coding Agent | Workflow & Integration | AI Coding Agent → Workflow & Integration | MCP / REST | Rel(aiAgent, workflow, ...) 기준. Agent가 작업 변경 전달·영향 분석 요청을 보내는 inbound 관계다. |
@@ -74,7 +74,7 @@
 |---|---|---|---|---|
 | 코드 수집 채널 | Data Collection & Processing | Code Repository | Git Protocol | `Data Collection & Processing`이 코드 저장소에서 소스 코드·커밋을 수집하는 입력 채널이다. |
 | 개발 맥락 수집 채널 | Data Collection & Processing | Issue Tracker + Docs/Wiki | REST / Upload | 문서·티켓·PR을 같은 수집 경로로 받아들이는 입력 채널이다. |
-| 자동화 연동 채널 | Workflow & Integration | CI/CD | Webhook / REST | PR 이벤트 연동과 Gate 결과 반영을 Workflow & Integration이 담당한다. |
+| 자동화 연동 채널 | Workflow & Integration | CI/CD | WebHook / REST | PR 이벤트 연동과 Gate 결과 반영을 Workflow & Integration이 담당한다. |
 | 협업 전달 채널 | Workflow & Integration | Collaboration Tools | REST API / Bot API | 알림·코멘트·문서 발행을 외부 협업 도구로 전달하는 채널이다. |
 | AI 연동 채널 | Workflow & Integration | AI Coding Agent | MCP / REST | 컨텍스트 제공과 영향 분석 요청이 오가는 양방향 채널이다. |
 | 정책 검증 채널 | Workflow & Integration | Policy Engine | REST | 정책 검증 요청을 보내고 결과를 반환받는 검증 채널이다. |

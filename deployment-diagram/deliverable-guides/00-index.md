@@ -53,9 +53,9 @@
 
 - 대표 환경은 1개만 다룸
 - C1 외부 시스템은 전체 포함
-- C2 컨테이너는 모두 Node로 매핑
+- 기본값은 C2 컨테이너 기준으로 Node를 잡되, 최신 drawio처럼 현재 대표 배포 단위가 같으면 하나의 Deployment Node로 통합할 수 있다
 - Execution Environment는 범위에 포함하되 top-level Node 수에는 포함하지 않음
-- Knowledge Base는 단일 Node를 유지하고, 필요 시 내부 Runtime / Artifact를 중첩 표현
+- Knowledge Base는 단일 Node를 유지하고, 필요 시 내부 Runtime / Artifact를 중첩 표현한다
 - 상위 경계는 `public / private / external / data`
 - 외부 연동 연결은 프로토콜 중심으로 표기
 - `Knowledge Base` 연결은 접근 방식 중심으로 표기
