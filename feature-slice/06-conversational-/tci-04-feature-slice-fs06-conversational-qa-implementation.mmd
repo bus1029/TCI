@@ -1,0 +1,92 @@
+---
+title: FS-06 구현 컴포넌트 뷰 — 대화형 질의 응답
+---
+%%{init: {"flowchart": {"nodeSpacing": 24, "rankSpacing": 34, "curve": "basis"}, "themeVariables": {"fontSize": "13px"}}}%%
+flowchart TB
+  classDef actor fill:#08427B,stroke:#08427B,color:#ffffff,rx:16
+  classDef component fill:#438DD5,stroke:#438DD5,color:#ffffff
+  classDef wi fill:#85BBF0,stroke:#5599CC,color:#ffffff
+  classDef external fill:#6B4C9A,stroke:#6B4C9A,color:#ffffff
+  classDef db fill:#7A9EC8,stroke:#7A9EC8,color:#ffffff
+
+  subgraph entry_lane["Entry & Web Application"]
+    direction LR
+    user["박피엠 (PM/PO)<br/>자연어 질의·후속 질문<br/>답변 평가·큐레이션"]
+    subgraph client["Web Application"]
+      direction TB
+      conv["Conversation Gateway<br/>대화 UI 진입점<br/>세션 메시지 중계"]
+      auth["Auth Gateway<br/>권한 확인<br/>접근 제어"]
+      feedback["Feedback Gateway<br/>답변 평가·자산화 요청 중계"]
+    end
+  end
+
+  subgraph interactive_assistant["Interactive Assistant"]
+    direction TB
+    subgraph assistant_top[" "]
+      direction LR
+      session["Session Manager<br/>세션·대화 이력 유지<br/>후속 질문 컨텍스트 관리"]
+      router["Query Router<br/>질의 의도 분류·핸들러 라우팅<br/>컨텍스트 범위 적용"]
+      qa["QA Handler<br/>근거 포함 답변 생성<br/>LLM 호출·근거 정합성 검증"]
+    end
+    subgraph assistant_bottom[" "]
+      direction LR
+      context["Context Assembler<br/>하이브리드 컨텍스트 조립<br/>근거 후보 수집"]
+      renderer["Response Renderer<br/>응답 포맷 변환·근거 링크 부착<br/>평가 수집·자산 적재"]
+    end
+  end
+
+  subgraph service_lane["Knowledge & External"]
+    direction LR
+    subgraph knowledge_base["Knowledge Base"]
+      direction TB
+      kbq["Knowledge Query Facade<br/>하이브리드 질의 단일 진입점<br/>캐싱·권한 필터"]
+      subgraph stores[" "]
+        direction LR
+        kg[("구조 지식 그래프<br/>코드 구조·의존·흐름")]
+        catalog[("비즈니스 규칙 카탈로그<br/>규칙·규칙-코드 링크")]
+        answers[("답변 지식 베이스<br/>근거 포함 답변 자산·평가")]
+      end
+    end
+    subgraph external_lane["External"]
+      direction TB
+      llm["LLM<br/>외부 시스템<br/>자연어 답변 합성"]
+    end
+  end
+
+  user -->|"자연어 질의 + 컨텍스트 범위"| conv
+  conv <-->|"권한 확인 / 결과"| auth
+  conv -->|"세션 메시지 전달"| session
+  session -->|"의도 분류·라우팅 요청"| router
+  router -->|"Q&A 의도 라우팅"| qa
+  qa -->|"근거 컨텍스트 조립 요청"| context
+  context -->|"하이브리드 질의<br/>(벡터·검색·카탈로그)"| kbq
+  kbq -->|"구조·의존 조회"| kg
+  kbq -->|"규칙·링크 조회"| catalog
+  kbq -->|"기존 답변 자산 조회"| answers
+  kbq -->|"결합 결과 반환"| context
+  context -->|"근거 후보 + 컨텍스트 패키지 반환"| qa
+  qa -->|"프롬프트 + 근거 링크 + 컨텍스트"| llm
+  llm -->|"자연어 답변"| qa
+  qa -->|"근거 포함 답변 전달"| renderer
+  renderer -->|"이력 저장 + 응답 회신"| session
+  session -->|"응답 전달"| conv
+  conv -->|"응답 렌더링"| user
+
+  user -->|"답변 평가·큐레이션 요청"| feedback
+  feedback -->|"평가·자산화 요청"| renderer
+  renderer -->|"답변 자산 적재 + 평가 저장"| answers
+
+  class user actor
+  class conv,auth,feedback,session,router,context,qa,renderer,kbq component
+  class llm external
+  class kg,catalog,answers db
+
+  style entry_lane fill:#ffffff,stroke:#438DD5
+  style client fill:#e8f4fd,stroke:#438DD5
+  style interactive_assistant fill:#ffffff,stroke:#438DD5
+  style assistant_top fill:#ffffff,stroke:#ffffff
+  style assistant_bottom fill:#ffffff,stroke:#ffffff
+  style service_lane fill:#ffffff,stroke:#ffffff
+  style external_lane fill:#ffffff,stroke:#6B4C9A
+  style knowledge_base fill:#ffffff,stroke:#7A9EC8
+  style stores fill:#ffffff,stroke:#ffffff

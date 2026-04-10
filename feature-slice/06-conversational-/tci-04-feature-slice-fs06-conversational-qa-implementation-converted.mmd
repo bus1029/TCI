@@ -1,0 +1,92 @@
+---
+title: FS-06 구현 컴포넌트 뷰 — 대화형 질의 응답
+---
+%%{init: {"flowchart": {"nodeSpacing": 28, "rankSpacing": 42}, "themeVariables": {"fontSize": "13px"}}}%%
+flowchart LR
+  classDef actor fill:#08427B,stroke:#08427B,color:#ffffff,rx:16
+  classDef component fill:#438DD5,stroke:#438DD5,color:#ffffff
+  classDef external fill:#6B4C9A,stroke:#6B4C9A,color:#ffffff
+  classDef db fill:#7A9EC8,stroke:#7A9EC8,color:#ffffff
+
+  subgraph entry_lane["Entry"]
+    direction TB
+    user["박피엠 (PM/PO)<br/>질의·후속 질문<br/>평가·큐레이션"]
+    subgraph client["Web Application"]
+      direction TB
+      conv["Conversation Gateway<br/>대화 UI<br/>세션 중계"]
+      auth["Auth Gateway<br/>권한 확인"]
+      feedback["Feedback Gateway<br/>평가·자산화"]
+    end
+  end
+
+  subgraph interactive_assistant["Interactive Assistant"]
+    direction TB
+    subgraph top_row[" "]
+      direction LR
+      session["Session Manager<br/>대화 이력<br/>후속 컨텍스트"]
+      router["Query Router<br/>의도 분류<br/>핸들러 라우팅"]
+      qa["QA Handler<br/>근거 기반 답변<br/>LLM 정합성 검증"]
+    end
+    subgraph bottom_row[" "]
+      direction LR
+      context["Context Assembler<br/>근거 후보 수집<br/>컨텍스트 조립"]
+      renderer["Response Renderer<br/>응답 포맷<br/>근거 링크·평가"]
+    end
+  end
+
+  subgraph service_lane["Knowledge & External"]
+    direction TB
+    subgraph external_lane["External"]
+      direction TB
+      llm["LLM<br/>자연어 답변 합성"]
+    end
+
+    subgraph knowledge_base["Knowledge Base"]
+      direction TB
+      kbq["Knowledge Query Facade<br/>하이브리드 질의<br/>캐싱·권한 필터"]
+      subgraph stores[" "]
+        direction LR
+        kg[("구조 지식 그래프<br/>구조·의존·흐름")]
+        catalog[("규칙 카탈로그<br/>규칙-코드 링크")]
+        answers[("답변 지식 베이스<br/>답변 자산·평가")]
+      end
+    end
+  end
+
+  user -->|"질의 + 범위"| conv
+  conv <-->|"권한"| auth
+  conv -->|"세션"| session
+  session -->|"의도 분류"| router
+  router -->|"Q&A"| qa
+  qa -->|"근거 요청"| context
+  context -->|"하이브리드 질의"| kbq
+  kbq -->|"구조"| kg
+  kbq -->|"규칙"| catalog
+  kbq -->|"자산"| answers
+  kbq -->|"결과"| context
+  context -->|"근거 패키지"| qa
+  qa -->|"프롬프트+근거"| llm
+  llm -->|"답변"| qa
+  qa -->|"근거 포함 답변"| renderer
+  renderer -->|"이력+응답"| session
+  session -->|"응답"| conv
+  conv -->|"렌더링"| user
+
+  user -->|"평가"| feedback
+  feedback -->|"자산화"| renderer
+  renderer -->|"저장"| answers
+
+  class user actor
+  class conv,auth,feedback,session,router,context,qa,renderer,kbq component
+  class llm external
+  class kg,catalog,answers db
+
+  style entry_lane fill:#ffffff,stroke:#438DD5
+  style client fill:#e8f4fd,stroke:#438DD5
+  style interactive_assistant fill:#ffffff,stroke:#438DD5
+  style top_row fill:#ffffff,stroke:#ffffff
+  style bottom_row fill:#ffffff,stroke:#ffffff
+  style service_lane fill:#ffffff,stroke:#ffffff
+  style external_lane fill:#ffffff,stroke:#6B4C9A
+  style knowledge_base fill:#ffffff,stroke:#7A9EC8
+  style stores fill:#ffffff,stroke:#ffffff

@@ -1,0 +1,82 @@
+---
+title: FS-05 구현 컴포넌트 뷰 — 영향·리스크 분석
+---
+%%{init: {"flowchart": {"nodeSpacing": 20, "rankSpacing": 40, "curve": "basis"}, "themeVariables": {"fontSize": "13px"}}}%%
+flowchart LR
+  classDef actor fill:#08427B,stroke:#08427B,color:#ffffff
+  classDef component fill:#438DD5,stroke:#438DD5,color:#ffffff
+  classDef external fill:#6B4C9A,stroke:#6B4C9A,color:#ffffff
+  classDef db fill:#7A9EC8,stroke:#7A9EC8,color:#ffffff
+
+  subgraph entry_lane["Entry & Web Application"]
+    direction TB
+    user["Dev / Reviewer<br/>변경 영향 분석 요청"]
+    subgraph client["Web Application"]
+      direction TB
+      wa["Interaction Gateway<br/>사용자 UI 진입점 · 결과 렌더링"]
+    end
+    ip["Local Change Collector<br/>IDE 로컬 변경 수집·전달"]
+  end
+
+  subgraph analysis["Analysis Engine"]
+    direction TB
+    selector["Analysis Coordinator<br/>Diff·객체 두 진입 경로 통합<br/>분석 범위 확정·오케스트레이션"]
+    subgraph analysis_row[" "]
+      direction TB
+      impact["Dependency Impact Analyzer<br/>의존 그래프 탐색<br/>직접·간접 영향 경로 도출"]
+      rule["Rule Impact Analyzer<br/>비즈니스 규칙 영향 탐지<br/>트랜잭션 의미 변화 분석"]
+      test["Boundary & Test Impact Analyzer<br/>시스템 경계 전파 영향<br/>영향 테스트·우선순위"]
+      scorer["Risk Scorer<br/>리스크 점수·등급<br/>핫스팟·우선 점검 추천"]
+    end
+    insight["Insight Generator<br/>LLM 호출·응답 정합성 검증<br/>리스크 서사·비즈니스 번역"]
+    composer["Report Assembler<br/>시각화 레이아웃<br/>리포트 원본 조립"]
+  end
+
+  subgraph service_lane["Knowledge & External"]
+    direction TB
+    subgraph kb["Knowledge Base"]
+      direction TB
+      kg[("Structure Knowledge Graph<br/>기존 구조·의존성·흐름")]
+      catalog[("Business Logic Catalog<br/>비즈니스 규칙·규칙-코드 링크")]
+    end
+    subgraph external_lane["External"]
+      direction TB
+      llm["LLM<br/>외부 시스템<br/>자연어 합성 응답"]
+    end
+  end
+
+  user --> wa
+  wa -->|"분석 요청 전달"| selector
+  ip -->|"로컬 변경 내역 전달"| selector
+
+  selector <-->|"영향 경로 탐색 / 결과"| impact
+  selector <-->|"규칙 영향 분석 / 결과"| rule
+  selector <-->|"경계·테스트 영향 / 결과"| test
+  selector <-->|"리스크 계산 요청 / 결과"| scorer
+  selector -->|"분석 결과 + 카탈로그 컨텍스트<br/>인사이트 합성 요청"| insight
+
+  impact -->|"의존 그래프 조회"| kg
+  rule -->|"규칙·코드 매핑 조회"| catalog
+  rule -->|"데이터 흐름 조회"| kg
+  test -->|"경계·테스트-코드 매핑 조회"| kg
+
+  insight -->|"자연어 합성 요청"| llm
+  llm -->|"인사이트 응답"| insight
+  insight -->|"카탈로그 컨텍스트 조회"| catalog
+  insight -->|"분석·서사 결합 결과 전달"| composer
+
+  composer -->|"완성된 영향·리스크 패키지 반환"| selector
+  selector -->|"영향·리스크 패키지 반환"| wa
+
+  class user,ip actor
+  class wa,selector,impact,rule,test,scorer,insight,composer component
+  class llm external
+  class kg,catalog db
+
+  style entry_lane fill:#ffffff,stroke:#438DD5
+  style client fill:#e8f4fd,stroke:#438DD5
+  style analysis fill:#ffffff,stroke:#438DD5
+  style analysis_row fill:#ffffff,stroke:#ffffff
+  style service_lane fill:#ffffff,stroke:#ffffff
+  style external_lane fill:#ffffff,stroke:#6B4C9A
+  style kb fill:#ffffff,stroke:#7A9EC8

@@ -1,0 +1,103 @@
+@startuml tci-04-feature-slice-fs05-impact-risk-analysis-implementation-sequence
+
+skinparam defaultFontName "Apple SD Gothic Neo"
+skinparam dpi 180
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 120
+skinparam ParticipantPadding 18
+skinparam BoxPadding 10
+
+title FS-05 영향·리스크 분석 — 구현 시퀀스
+
+actor "Dev / Reviewer" as user
+participant "Local Change Collector" as ip
+participant "Interaction Gateway" as gw
+participant "Analysis Coordinator" as sel
+participant "Dependency Impact Analyzer" as impact
+participant "Rule Impact Analyzer" as rule
+participant "Boundary & Test\nImpact Analyzer" as bdry
+participant "Risk Scorer" as risk
+participant "Insight Generator" as insight
+participant "Report Assembler" as summary
+participant "LLM (외부)" as llm
+database "Structure Knowledge Graph" as kg
+database "Business Logic Catalog" as catalog
+
+== Phase 1: Diff 기반 영향 분석 ==
+
+== 1단계. 분석 대상 선택 및 입력 준비 ==
+
+user -> gw: PR/브랜치/커밋/로컬 변경 선택 + 분석 요청
+
+opt 로컬 변경 경로 한정
+  ip -> sel: 로컬 변경 내역 전달
+end
+
+gw -> sel: 분석 요청 전달 (Diff 기반)
+sel -> sel: 변경 범위 확정
+
+== 2단계. 병렬 영향 분석 실행 ==
+
+par Dependency Impact Analyzer 경로
+  sel -> impact: 영향 경로 탐색 실행
+  impact -> kg: 변경 범위 기준 의존 그래프 조회
+  kg --> impact: 의존 경로 데이터 반환
+  impact -> impact: 직접/간접 영향 대상 도출
+else Rule Impact Analyzer 경로
+  sel -> rule: 규칙 영향 분석 실행
+  rule -> catalog: 변경 범위 관련 비즈니스 규칙 조회
+  catalog --> rule: 관련 규칙 반환
+  rule -> kg: 데이터 흐름 경로 조회
+  kg --> rule: 데이터 흐름 데이터 반환
+  rule -> rule: 영향 규칙 + 트랜잭션 의미 변화 도출
+else Boundary & Test Impact Analyzer 경로
+  sel -> bdry: 경계·테스트 영향 분석 실행
+  bdry -> kg: 외부 API 호출 경로·서비스 경계 조회
+  kg --> bdry: 경계 경로 데이터 반환
+  bdry -> bdry: 외부 시스템 전파 + 영향 테스트 케이스 도출
+end
+
+== 3단계. 리스크 스코어링 ==
+
+impact --> sel: 영향 경로·범위 결과 반환
+rule --> sel: 규칙 영향 결과 반환
+bdry --> sel: 경계·테스트 영향 결과 반환
+sel -> risk: 통합 분석 결과 전달 + 리스크 계산 요청
+risk -> risk: 리스크 점수·등급·핫스팟\n우선 점검 대상 산출
+risk --> sel: 리스크 패키지 반환
+
+== 4단계. 인사이트 합성 ==
+
+sel -> insight: 리스크 점수 + 세 분석 결과 +\n카탈로그 컨텍스트 전달\n인사이트 합성 요청
+insight -> llm: 자연어 합성 요청\n(정량 컨텍스트 + 코드 위치 링크 + 프롬프트)
+llm --> insight: 인사이트 응답\n(리스크 자연어 서사 + 비즈니스 임팩트 번역)
+insight -> insight: 응답 정합성 검증
+insight -> summary: 분석·서사 결합 결과 전달
+
+== 5단계. 결과 조합 및 반환 ==
+
+summary -> summary: 영향 그래프·A/B 비교 뷰·\n리포트 원본 시각화 레이아웃 조립
+summary --> sel: 완성된 영향·리스크 패키지 반환
+sel --> gw: 패키지 반환
+gw --> user: 영향 범위·리스크 대시보드 렌더링
+
+== Phase 2: 객체 기준 영향 분석 ==
+
+== 1단계. 분석 대상 선택 및 입력 준비 ==
+
+user -> gw: 분석 대상 객체 선택\n(서비스/모듈/API/DB 테이블) + 영향 분석 요청
+gw -> sel: 분석 요청 전달 (객체 기준)
+sel -> sel: 선택 객체를 분석 입력으로 확정
+
+== 2단계. 공통 분석·리스크·합성·결과 조합 파이프라인 ==
+
+note over sel, catalog
+  Phase 1의 2단계~5단계 흐름을 그대로 실행
+  (병렬 영향 분석 → 리스크 스코어링 →
+  인사이트 합성 → 결과 조합 및 반환)
+  Dependency Impact Analyzer는
+  역방향·순방향 추적을 모두 수행
+end note
+
+@enduml
