@@ -1,0 +1,83 @@
+---
+title: FS-09a 구현 컴포넌트 뷰 — 문서-코드 갭 분석
+---
+%%{init: {"flowchart": {"nodeSpacing": 24, "rankSpacing": 42, "curve": "basis"}, "themeVariables": {"fontSize": "13px"}}}%%
+flowchart LR
+  classDef actor fill:#08427B,stroke:#08427B,color:#ffffff,rx:16
+  classDef component fill:#438DD5,stroke:#438DD5,color:#ffffff
+  classDef wi fill:#85BBF0,stroke:#5599CC,color:#ffffff
+  classDef external fill:#6B4C9A,stroke:#6B4C9A,color:#ffffff
+  classDef db fill:#7A9EC8,stroke:#7A9EC8,color:#ffffff
+
+  subgraph entry_lane["Entry & Web Application"]
+    direction TB
+    pmpo["박피엠 (PM/PO)<br/>갭 분석 요청<br/>결과 요약 확인"]
+    subgraph web_application["Web Application"]
+      direction LR
+      webconsole["Web Console<br/>갭 분석 요청 입력<br/>결과 요약 표시"]
+      requestgateway["Request Gateway<br/>사용자 요청 수신<br/>Gap Analyzer로 전달"]
+    end
+  end
+
+  subgraph processing_lane["Analysis & Workflow"]
+    direction TB
+    subgraph analysis_engine["Analysis Engine"]
+      direction TB
+      gapanalyzer["Gap Analyzer<br/>스펙-코드 불일치 탐지<br/>갭 유형 분류 (구현 누락/의도 불일치/부분 구현)"]
+    end
+
+    subgraph workflow_integration["Workflow & Integration (S)"]
+      direction TB
+      reportformatter["Report Formatter<br/>갭 유형별 포맷팅<br/>코드 위치 링크 구성"]
+    end
+  end
+
+  subgraph knowledge_base["Knowledge Base"]
+    direction TB
+    kbquery["Knowledge Query Facade<br/>추적 그래프·비즈니스 규칙 카탈로그 조회<br/>갭 분석 결과 적재 통합 진입점"]
+    subgraph stores[" "]
+      direction TB
+      tracegraph[("구조/추적 지식 그래프<br/>문서-코드 추적 관계<br/>갭 분석 결과 적재 대상")]
+      rulecatalog[("비즈니스 규칙 카탈로그<br/>비즈니스 규칙·규칙-코드 링크")]
+    end
+  end
+
+  %% 트리거 체인: 박피엠 → Web Console → Request Gateway → Gap Analyzer
+  pmpo -->|"갭 분석 요청"| webconsole
+  webconsole -->|"갭 분석 실행 요청 전달"| requestgateway
+  requestgateway -->|"갭 분석 실행 요청"| gapanalyzer
+
+  %% Gap Analyzer → KB 병렬 조회
+  gapanalyzer -->|"추적 그래프 조회"| kbquery
+  gapanalyzer -->|"비즈니스 규칙 카탈로그 조회"| kbquery
+  kbquery -->|"추적 그래프 읽기"| tracegraph
+  kbquery -->|"규칙 카탈로그 읽기"| rulecatalog
+  kbquery -->|"조회 결과 반환"| gapanalyzer
+
+  %% 불일치 탐지 → Report Formatter (support)
+  gapanalyzer -->|"갭 분류 결과·리포트 구성 요청"| reportformatter
+  reportformatter -->|"갭 리포트 초안 반환"| gapanalyzer
+
+  %% 갭 결과 KB 적재
+  gapanalyzer -->|"갭 분석 결과 적재"| kbquery
+  kbquery -->|"갭 결과 저장"| tracegraph
+
+  %% 결과 반환: Gap Analyzer → Request Gateway → Web Console → 박피엠
+  gapanalyzer -->|"갭 분석 결과 요약 반환"| requestgateway
+  requestgateway -->|"갭 유형별 결과 요약"| webconsole
+  webconsole -->|"갭 유형별 결과 요약 표시"| pmpo
+
+  class pmpo actor
+  class requestgateway,kbquery component
+  class webconsole component
+  class gapanalyzer component
+  class reportformatter wi
+  class tracegraph,rulecatalog db
+
+  style entry_lane fill:#ffffff,stroke:#438DD5
+  style web_application fill:#ffffff,stroke:#438DD5
+  style processing_lane fill:#ffffff,stroke:#ffffff
+  style analysis_engine fill:#e8f4fd,stroke:#438DD5
+  style workflow_integration fill:#e8f4fd,stroke:#5599CC
+  style knowledge_base fill:#ffffff,stroke:#7A9EC8
+  style stores fill:#ffffff,stroke:#ffffff
