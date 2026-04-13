@@ -1,0 +1,114 @@
+---
+title: FS-09b 구현 컴포넌트 뷰 — 문서·리포트 생성
+---
+%%{init: {"flowchart": {"nodeSpacing": 26, "rankSpacing": 28, "curve": "basis"}, "themeVariables": {"fontSize": "13px"}}}%%
+flowchart LR
+  classDef actor fill:#08427B,stroke:#08427B,color:#ffffff,rx:16
+  classDef component fill:#438DD5,stroke:#438DD5,color:#ffffff
+  classDef wi fill:#85BBF0,stroke:#5599CC,color:#ffffff
+  classDef external fill:#6B4C9A,stroke:#6B4C9A,color:#ffffff
+  classDef db fill:#7A9EC8,stroke:#7A9EC8,color:#ffffff
+
+  subgraph left_lane["Entry & Web Application"]
+    direction LR
+    pmpo["박피엠 (PM/PO)<br/>문서/리포트 생성 요청<br/>슬라이스 트리거"]
+    subgraph web_application["Web Application"]
+      direction TB
+      webconsole["Web Console<br/>사용자 요청 수신·전달"]
+    end
+  end
+
+  subgraph workflow_integration["Workflow & Integration"]
+    direction LR
+    docsstudio["Docs Studio Engine<br/>AI 문서 초안 생성·템플릿 적용<br/>승인·버전 관리·발행 제어<br/>(슬라이스 오케스트레이터)"]
+    subgraph intelligence_assistant["Intelligence & Analysis"]
+      direction TB
+      translator["Business Translator<br/>기술→비즈니스 언어 변환<br/>(LLM 기반)"]
+      reportfmt["Report Formatter<br/>비즈니스 리포트<br/>포맷팅·커스터마이징"]
+    end
+    subgraph publish_ops["Publishing & Notify"]
+      direction TB
+      collab["Collaboration Connector<br/>외부 협업 도구 문서 발행"]
+      chatops["ChatOps Connector<br/>채팅 채널 알림 발송"]
+      notify["Notification Dispatcher<br/>대상·채널 결정·알림 발송"]
+    end
+  end
+
+  subgraph service_lane["Knowledge & External"]
+    direction LR
+    subgraph knowledge_base["Knowledge Base"]
+      direction LR
+      kbq["Knowledge Query Facade<br/>구조·규칙·영향·갭·리뷰·문서 자산<br/>통합 읽기·적재 진입점"]
+      subgraph kb_assets[" "]
+        direction TB
+        subgraph kb_assets_top[" "]
+          direction LR
+          kg[("구조/추적 지식 그래프<br/>코드 구조·의존·호출 경로")]
+          catalog[("비즈니스 규칙 카탈로그<br/>규칙·규칙-코드 링크")]
+        end
+        subgraph kb_assets_bottom[" "]
+          direction LR
+          gapdb[("갭/영향/리뷰 자산<br/>FS-09a 갭·FS-05 영향<br/>FS-08 리뷰 결과")]
+          docsdb[("문서/리포트 자산<br/>문서 초안·승인 문서<br/>비즈니스 리포트")]
+        end
+      end
+    end
+
+    subgraph external_lane["External"]
+      direction TB
+      collabtools["Collaboration Tools<br/>Slack·Confluence·Email<br/>(문서 발행·알림 채널)"]
+    end
+  end
+
+  %% 트리거: PM/PO → Web Console → Docs Studio Engine
+  pmpo -->|"문서/리포트 생성 요청"| webconsole
+  webconsole -->|"생성 요청 전달"| docsstudio
+
+  %% 1단계: KB 자산 소비
+  docsstudio -->|"구조·규칙·영향·갭·리뷰 자산 조회"| kbq
+  kbq -->|"구조·의존·호출 경로 조회"| kg
+  kbq -->|"규칙·규칙-코드 링크 조회"| catalog
+  kbq -->|"영향·갭·리뷰 결과 조회"| gapdb
+  kbq -->|"결합 자산 반환"| docsstudio
+
+  %% 2단계: 비즈니스 번역 + 리포트 포맷팅
+  docsstudio -->|"기술→비즈니스 언어 변환 요청"| translator
+  translator -->|"업무 언어 번역 결과"| docsstudio
+  docsstudio -->|"리포트 포맷팅·커스터마이징 요청"| reportfmt
+  reportfmt -->|"포맷팅된 비즈니스 리포트"| docsstudio
+
+  %% 4단계: 발행 — KB 적재
+  docsstudio -->|"문서/리포트 패키지 적재 요청"| kbq
+  kbq -->|"문서/리포트 영구 저장"| docsdb
+
+  %% 4단계: 발행 — 외부 채널
+  docsstudio -->|"문서/리포트 발행 요청"| collab
+  collab -.->|"문서/리포트 발행"| collabtools
+  docsstudio -->|"채팅 알림 요청"| chatops
+  chatops -.->|"채널 알림 발송"| collabtools
+  docsstudio -->|"알림 발송 요청"| notify
+  notify -.->|"발행 완료 알림"| pmpo
+
+  webconsole ~~~ docsstudio
+  reportfmt ~~~ kbq
+  collab ~~~ collabtools
+
+  class pmpo actor
+  class collabtools external
+  class webconsole component
+  class docsstudio,reportfmt,collab,chatops,notify wi
+  class translator component
+  class kbq component
+  class kg,catalog,gapdb,docsdb db
+
+  style left_lane fill:#ffffff,stroke:#438DD5
+  style web_application fill:#ffffff,stroke:#438DD5
+  style workflow_integration fill:#e8f4fd,stroke:#438DD5
+  style intelligence_assistant fill:#ffffff,stroke:#438DD5
+  style publish_ops fill:#ffffff,stroke:#438DD5
+  style service_lane fill:#ffffff,stroke:#ffffff
+  style knowledge_base fill:#ffffff,stroke:#7A9EC8
+  style kb_assets fill:#ffffff,stroke:#ffffff
+  style kb_assets_top fill:#ffffff,stroke:#ffffff
+  style kb_assets_bottom fill:#ffffff,stroke:#ffffff
+  style external_lane fill:#ffffff,stroke:#6B4C9A
