@@ -33,7 +33,7 @@
 
 ## 결정 3: 연결 메타데이터와 비밀정보는 분리 저장하고, 시크릿 회전은 revision 모델로 관리한다
 
-**Decision**: `RepositoryConnection`에는 비밀값 자체를 두지 않고, 읽기 전용 저장소 자격 증명과 webhook secret은 각각 revision 레코드로 분리 저장한다. webhook secret 회전 시 현재 revision과 직전 revision을 24시간 grace window 동안만 허용한다.
+**Decision**: `RepositoryConnection`에는 비밀값 자체를 두지 않고, 읽기 전용 저장소 자격 증명과 webhook secret은 각각 revision 레코드로 분리 저장한다. webhook secret 회전 시 현재 revision과 직전 revision을 24시간 grace window 동안만 허용하고, 어떤 revision이 검증에 사용됐는지는 이벤트 기록과 운영 상태 조회에 남긴다.
 
 **Rationale**:
 - `FR-001b`, `FR-016`, `FR-017`은 연결 단위 비밀정보 저장과 secret 상태 추적을 요구한다.
@@ -152,6 +152,19 @@
 **Alternatives considered**:
 - 모든 실패를 generic error로 통합: 구현은 쉽지만 운영자가 재설정 절차를 알기 어렵다.
 - UI에서만 메시지 변환: API와 worker 감사 추적이 불일치할 수 있다.
+
+## 결정 11: FR-014는 문서 링크가 아니라 런타임 조회 가능한 traceability chain으로 닫는다
+
+**Decision**: planning input은 별도 reference 레코드로 보관하고, `RepositoryConnection`은 해당 planning input reference를 가리킨다. `CollectionScopeRuleVersion`, `RepositorySyncRun`, `RepositoryEvent`, `CodeSnapshot`은 이미 가진 FK와 version 필드를 통해 "어떤 계획 입력에서 나온 연결 설정이 어떤 이벤트와 어떤 스냅샷으로 이어졌는지"를 API 응답에서 역추적 가능하게 노출한다.
+
+**Rationale**:
+- `FR-014`는 계획 입력, 저장소 연결 설정, 이벤트 기록, 코드 스냅샷 사이의 추적 관계를 유지해야 한다고 요구한다.
+- delivery evidence 문서만으로는 운영 중 발생한 snapshot이 어떤 planning input과 설정 버전을 기준으로 생성됐는지 즉시 확인하기 어렵다.
+- 별도 traceability entity를 추가하면 connection detail, event list, snapshot detail에서 같은 provenance vocabulary를 재사용할 수 있다.
+
+**Alternatives considered**:
+- delivery evidence 문서만으로 추적: 구현은 단순하지만 런타임 역추적이 안 된다.
+- 모든 엔티티에 문서 링크 문자열을 중복 저장: 조회는 쉬우나 정합성과 수정 비용이 나빠진다.
 
 ## Clarification Closure
 

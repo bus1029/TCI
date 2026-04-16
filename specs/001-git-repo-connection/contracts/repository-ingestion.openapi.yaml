@@ -365,6 +365,8 @@ components:
               type: string
               format: date-time
               nullable: true
+            traceability:
+              $ref: '#/components/schemas/ConnectionTraceability'
     ScopeRuleResponse:
       type: object
       properties:
@@ -406,6 +408,51 @@ components:
           type: string
           format: date-time
           nullable: true
+        rotationState:
+          type: string
+          enum: [not_rotating, grace_active, grace_expired]
+        graceUntil:
+          type: string
+          format: date-time
+          nullable: true
+        previousSecretDeliveriesDuringGrace:
+          type: integer
+          minimum: 0
+        lastPreviousSecretAcceptedAt:
+          type: string
+          format: date-time
+          nullable: true
+    PlanningInputReferenceSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sourceType:
+          type: string
+        sourceReference:
+          type: string
+        approvedSpecPath:
+          type: string
+        approvedPlanPath:
+          type: string
+    ConnectionTraceability:
+      type: object
+      properties:
+        planningInputReference:
+          $ref: '#/components/schemas/PlanningInputReferenceSummary'
+        activeScopeRuleVersionId:
+          type: string
+          format: uuid
+          nullable: true
+        latestEventId:
+          type: string
+          format: uuid
+          nullable: true
+        latestSnapshotId:
+          type: string
+          format: uuid
+          nullable: true
     VerificationAcceptedResponse:
       type: object
       properties:
@@ -445,6 +492,10 @@ components:
         signatureStatus:
           type: string
           enum: [verified, secret_missing, secret_mismatch, signature_invalid]
+        verifiedSecretRevisionStatus:
+          type: string
+          enum: [active, previous_grace]
+          nullable: true
         rejectionReason:
           type: string
           enum: [secret_missing, secret_mismatch, signature_invalid]
@@ -458,10 +509,17 @@ components:
           type: string
           format: uuid
           nullable: true
+        syncRunId:
+          type: string
+          format: uuid
+          nullable: true
     CodeSnapshotResponse:
       type: object
       properties:
         id:
+          type: string
+          format: uuid
+        connectionId:
           type: string
           format: uuid
         requestedRefType:
@@ -479,6 +537,28 @@ components:
         scopeRuleVersionId:
           type: string
           format: uuid
+        syncRunId:
+          type: string
+          format: uuid
+        triggerEventId:
+          type: string
+          format: uuid
+          nullable: true
+        traceability:
+          type: object
+          properties:
+            planningInputReference:
+              $ref: '#/components/schemas/PlanningInputReferenceSummary'
+            scopeRuleVersionId:
+              type: string
+              format: uuid
+            syncRunId:
+              type: string
+              format: uuid
+            triggerEventId:
+              type: string
+              format: uuid
+              nullable: true
     WebhookAcceptedResponse:
       type: object
       properties:
