@@ -34,3 +34,4 @@
 - Validation completed in one pass.
 - No open clarification markers remain; spec is ready for `/speckit.plan`.
 - Revalidated on 2026-04-16 after FR supplements for default ref change, single-ref guidance, and webhook rejection reason separation.
+- Revalidated on 2026-04-16 after adding webhook secret rotation grace-period scope, visibility requirements, and continuity success criterion.

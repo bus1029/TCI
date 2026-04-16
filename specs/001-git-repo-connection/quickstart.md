@@ -33,6 +33,7 @@
 2. `RepositorySyncRun`이 `pending -> running -> succeeded`로 전이되는지 확인한다.
 3. 생성된 `CodeSnapshot`에 `resolved_commit_sha`, `scope_rule_version_id`, `file_count`, `archive_path`가 기록되는지 확인한다.
 4. `.runtime/code-snapshots/{snapshotId}`에 manifest와 실제 파일이 저장되는지 확인한다.
+5. `GET /api/repository-connections/{id}/snapshots/{snapshotId}` 응답에서 `planningInputReference`, `connectionId`, `syncRunId`, `triggerEventId`, `scopeRuleVersionId`를 통해 추적 체인이 보이는지 확인한다.
 
 ### 4. Push 이벤트 처리
 
@@ -60,7 +61,9 @@
 
 1. 기본 ref를 삭제하거나 이름을 바꾼 뒤 재검증을 실행한다.
 2. 연결 상태가 `ref_missing`으로 전환되고 새 ref를 선택하기 전까지 신규 sync run이 차단되는지 확인한다.
-3. webhook secret을 회전한 뒤 grace window 동안 이전 secret delivery는 허용되고, grace 종료 후에는 `secret_mismatch`로 거부되는지 확인한다.
+3. webhook secret을 회전한 뒤 connection detail에서 `webhookSecretRotationState`, `graceUntil`, `previousSecretDeliveriesDuringGrace`가 보이는지 확인한다.
+4. grace window 동안 이전 secret delivery는 허용되고 해당 이벤트에 `verifiedSecretRevisionStatus = previous_grace`가 남는지 확인한다.
+5. grace 종료 후에는 같은 이전 secret delivery가 `secret_mismatch`로 거부되는지 확인한다.
 
 ## 필요한 테스트 세트
 
@@ -78,11 +81,12 @@
   - OpenAPI 요청/응답 스키마 검증
   - GitHub webhook header/body 계약 검증
 - End-to-End
-  - 연결 생성 -> 규칙 저장 -> 초기 스냅샷 -> Push -> PR synchronize 전체 흐름
+  - 연결 생성 -> 규칙 저장 -> 초기 스냅샷 -> Push -> PR synchronize -> secret rotation grace -> traceability 조회 전체 흐름
 
 ## 완료 기준
 
 - 사용자는 10분 이내에 저장소 연결부터 첫 스냅샷 생성 완료까지 확인할 수 있다.
 - 유효한 Push/PR 이벤트의 95% 이상이 1분 이내 상태 조회에 반영된다.
 - 어떤 snapshot도 연결, ref, 적용 규칙, 트리거 이벤트를 역추적할 수 있다.
+- 운영자는 어떤 계획 입력에서 어떤 연결/설정/이벤트/스냅샷이 나왔는지 API 조회만으로 재구성할 수 있다.
 - 규칙과 실제 포함 파일 목록의 일치율이 100%다.

@@ -6,6 +6,27 @@
 
 ## Core Entities
 
+### 0. PlanningInputReference
+
+**Purpose**: 저장소 연결 기능이 어떤 계획 입력과 승인된 spec/plan에서 출발했는지 런타임에서 식별한다.
+
+**Fields**:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | UUID | PK |
+| `workspace_id` | UUID | 워크스페이스 범위 |
+| `source_type` | enum | `user_request`, `planning_brief`, `imported_note` |
+| `source_title` | string | 운영자용 계획 입력 제목 |
+| `source_reference` | string | 문서 경로, ticket, URL, 또는 식별자 |
+| `approved_spec_path` | string | `spec.md` 경로 |
+| `approved_plan_path` | string | `plan.md` 경로 |
+| `created_at` | timestamptz | 생성 시각 |
+
+**Validation Rules**:
+- `approved_spec_path`와 `approved_plan_path`는 같은 feature 디렉터리를 가리켜야 한다.
+- 런타임 traceability가 필요한 연결은 반드시 planning input reference를 가져야 한다.
+
 ### 1. RepositoryConnection
 
 **Purpose**: 분석 대상으로 등록된 GitHub Cloud 저장소 연결의 기준 메타데이터와 운영 상태를 보관한다.
@@ -16,6 +37,7 @@
 |-------|------|-------|
 | `id` | UUID | PK |
 | `workspace_id` | UUID | 워크스페이스 범위 |
+| `planning_input_reference_id` | UUID | FK -> PlanningInputReference |
 | `provider` | enum | `github_cloud` 고정 |
 | `remote_url` | string | SSH 또는 HTTPS URL |
 | `transport` | enum | `ssh`, `https` |
@@ -39,6 +61,7 @@
 | `updated_at` | timestamptz | 수정 시각 |
 
 **Validation Rules**:
+- `planning_input_reference_id`는 null일 수 없다.
 - `provider`는 v1에서 `github_cloud`만 허용
 - `remote_url`은 GitHub Cloud SSH/HTTPS 패턴만 허용
 - `default_ref_type`은 `branch` 또는 `tag`만 허용
@@ -111,6 +134,7 @@ disabled -> pending_verification
 |-------|------|-------|
 | `id` | UUID | PK |
 | `connection_id` | UUID | FK -> RepositoryConnection |
+| `planning_input_reference_id` | UUID | FK -> PlanningInputReference |
 | `include_paths` | jsonb | glob 배열 |
 | `exclude_paths` | jsonb | glob 배열 |
 | `allowed_file_types` | jsonb | 확장자/언어 식별자 배열 |
@@ -122,6 +146,7 @@ disabled -> pending_verification
 | `created_by` | UUID | 사용자 ID 또는 시스템 |
 
 **Validation Rules**:
+- `planning_input_reference_id`는 connection의 planning input reference와 일치해야 한다.
 - glob 구문은 저장 시 검증
 - include/exclude 충돌 시 warning 계산
 - 결과 0건 예상이면 `empty_result_risk`
@@ -147,6 +172,7 @@ disabled -> pending_verification
 | `occurred_at` | timestamptz | payload 기준 시각 |
 | `received_at` | timestamptz | 수신 시각 |
 | `signature_status` | enum | `verified`, `secret_missing`, `secret_mismatch`, `signature_invalid` |
+| `verified_secret_revision_status` | enum nullable | `active`, `previous_grace` |
 | `rejection_reason` | enum nullable | `secret_missing`, `secret_mismatch`, `signature_invalid` |
 | `processing_decision` | enum | `record_only`, `queued`, `duplicate_delivery`, `duplicate_head`, `stale_head`, `rejected` |
 | `processing_status` | enum | `received`, `validated`, `queued`, `completed`, `failed`, `rejected` |
@@ -157,6 +183,7 @@ disabled -> pending_verification
 **Validation Rules**:
 - `provider_delivery_id` unique
 - `target_head_sha`는 queued/completed 상태에서 필수
+- `signature_status = verified`이고 grace 대상 secret이 사용된 경우 `verified_secret_revision_status`는 필수
 - `signature_status != verified`이면 `processing_status = rejected`
 - `processing_status = rejected`이면 `rejection_reason` 필수
 
@@ -259,6 +286,8 @@ blocked -> pending
 ## Relationships
 
 ```text
+PlanningInputReference 1 --- n RepositoryConnection
+PlanningInputReference 1 --- n CollectionScopeRuleVersion
 RepositoryConnection 1 --- n RepositoryCredentialRevision
 RepositoryConnection 1 --- n WebhookSecretRevision
 RepositoryConnection 1 --- n CollectionScopeRuleVersion
@@ -285,6 +314,9 @@ CollectionScopeRuleVersion 1 --- n CodeSnapshot
 - `current_status`
 - `webhook_health_state`
 - `last_webhook_rejection_reason`
+- `webhook_secret_rotation_state`
+- `webhook_secret_grace_until`
+- `previous_secret_deliveries_during_grace`
 - `active_scope_rule_warning_state`
 - `latest_event_decision`
 
@@ -293,7 +325,8 @@ CollectionScopeRuleVersion 1 --- n CodeSnapshot
 `FR-014` 충족을 위해 다음 연결 경로를 유지한다.
 
 ```text
-planning input -> repository connection settings -> scope rule version
+planning input reference -> repository connection -> scope rule version
+repository connection + trigger event -> sync run
 scope rule version + sync run + trigger event -> code snapshot
 code snapshot -> snapshot manifest (CodeSnapshotFile)
 ```
