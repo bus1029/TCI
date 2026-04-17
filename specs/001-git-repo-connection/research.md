@@ -144,9 +144,11 @@
 - webhook secret 불일치: 연결 상태는 `active`를 유지하되 `webhookHealth.status = secret_mismatch_detected`로 노출하고 delivery는 `secret_mismatch` 거부 사유로 기록한다.
 - 기타 서명 검증 실패: delivery는 `signature_invalid` 거부 사유로 기록하고 `webhookHealth.status = signature_invalid_recently`를 갱신한다.
 - 범위 규칙 결과가 0개 파일: 저장 시 경고, 실행 시 `NO_INCLUDED_FILES` 실패로 종료한다.
+- `FR-012` 운영 요약은 connection detail에 `lastSuccessfulSnapshotAt`, `lastFailedSyncAt`, `lastProcessedEvent`를 제공하고, 상세 이력은 event timeline 조회로 분리한다.
 
 **Rationale**:
 - User Story 2, `FR-012`, `FR-013`, `FR-017`, Edge Cases가 모두 운영자 가시성을 요구한다.
+- connection detail에 요약과 상세 이력을 함께 넣기보다, 요약은 즉시 판단용으로 두고 상세는 timeline으로 분리해야 응답 크기와 운영자 인지 부하를 함께 줄일 수 있다.
 - 상태 코드를 문서에서 먼저 고정해야 UI/백엔드/운영 로그가 같은 언어를 쓴다.
 
 **Alternatives considered**:
@@ -178,6 +180,7 @@
 | secret mismatch 상태 표현 | 연결은 `active` 유지, `webhookHealth.status = secret_mismatch_detected`, event rejection reason은 `secret_mismatch` |
 | 빈 수집 결과 | 저장 시 warning, 실행 시 hard fail(`NO_INCLUDED_FILES`) |
 | 바이너리/대용량 예외 | v1에서는 사용자 예외 규칙이 있어도 수집 불가, 후속 범위로 남김 |
+| FR-012 요약 책임 | connection detail은 최근 성공/실패 시각과 마지막 처리 이벤트 요약 제공, 상세 이력은 event timeline 조회가 담당 |
 | PR force push | 같은 PR 번호 cursor의 최신 `headSha`만 반영, 이전 SHA job은 stale 처리 |
 | Commit 이벤트 의미 | GitHub 개별 webhook 타입이 아니라 Push/PR payload에서 분리 기록되는 도메인 이벤트로 정의 |
 

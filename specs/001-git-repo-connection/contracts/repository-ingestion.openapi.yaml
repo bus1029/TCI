@@ -365,6 +365,8 @@ components:
               type: string
               format: date-time
               nullable: true
+            lastProcessedEvent:
+              $ref: '#/components/schemas/LastProcessedEventSummary'
             traceability:
               $ref: '#/components/schemas/ConnectionTraceability'
     ScopeRuleResponse:
@@ -462,6 +464,25 @@ components:
         connectionId:
           type: string
           format: uuid
+    LastProcessedEventSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        providerEventType:
+          type: string
+        providerAction:
+          type: string
+          nullable: true
+        targetKey:
+          type: string
+        processingDecision:
+          type: string
+          enum: [record_only, queued, duplicate_delivery, duplicate_head, stale_head, rejected]
+        processedAt:
+          type: string
+          format: date-time
     SyncRunAcceptedResponse:
       type: object
       properties:

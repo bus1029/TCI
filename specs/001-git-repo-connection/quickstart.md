@@ -20,6 +20,7 @@
 2. 응답이 `pending_verification` 또는 즉시 `active`인지 확인한다.
 3. `POST /api/repository-connections/{id}/verify`를 호출해 `git ls-remote` 기반 연결 검증이 수행되는지 확인한다.
 4. 잘못된 credential로 같은 요청을 보냈을 때 `reauth_required`와 오류 코드가 반환되는지 확인한다.
+5. `GET /api/repository-connections/{id}` 응답에서 `lastSuccessfulSnapshotAt`, `lastFailedSyncAt`, `lastProcessedEvent` 요약 필드가 노출되는지 확인한다.
 
 ### 2. 범위 규칙 저장 및 경고 확인
 
@@ -64,6 +65,7 @@
 3. webhook secret을 회전한 뒤 connection detail에서 `webhookSecretRotationState`, `graceUntil`, `previousSecretDeliveriesDuringGrace`가 보이는지 확인한다.
 4. grace window 동안 이전 secret delivery는 허용되고 해당 이벤트에 `verifiedSecretRevisionStatus = previous_grace`가 남는지 확인한다.
 5. grace 종료 후에는 같은 이전 secret delivery가 `secret_mismatch`로 거부되는지 확인한다.
+6. event timeline 조회에서 connection detail의 `lastProcessedEvent`와 동일한 마지막 처리 이벤트를 상세 필드로 역추적할 수 있는지 확인한다.
 
 ## 필요한 테스트 세트
 

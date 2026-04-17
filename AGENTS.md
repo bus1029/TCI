@@ -1,6 +1,6 @@
 # TCI Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-16
+Auto-generated from all feature plans. Last updated: 2026-04-17
 
 ## Active Technologies
 - TypeScript 5.6 on Node.js 22 LTS + Fastify 5, Zod 3.24, Prisma 6, BullMQ 5, ioredis, pino, React 19, Next.js 15 App Router (004-git-repo-connection)
@@ -8,6 +8,7 @@ Auto-generated from all feature plans. Last updated: 2026-04-16
 - PostgreSQL 16 for workspace-scoped connection metadata, encrypted OAuth grant material, sync runs, ticket snapshots, and comment snapshots; Redis 7 for scheduled batch jobs, retry backoff, and sync coordination (005-ticket-system-integration)
 - PostgreSQL 16 for connection metadata, scope settings, sync runs, and ticket snapshots; Redis 7 for sync job orchestration (001-ticket-system-integration)
 - PostgreSQL 16 for connection/event/snapshot metadata, Redis 7 for webhook and snapshot jobs, local disk mirror cache under `.runtime/git-mirrors`, local snapshot archive under `.runtime/code-snapshots` (006-git-repo-connection)
+- PostgreSQL 16 for connection/event/snapshot metadata and trace references, Redis 7 for webhook and snapshot jobs, local disk mirror cache under `.runtime/git-mirrors`, local snapshot archive under `.runtime/code-snapshots` (001-git-repo-connection)
 
 - Markdown, Spec Kit 0.5.1, repository shell workflow + Spec Kit templates, Git branch workflow, GitHub repository/webhook contract artifacts (001-repo-source-traceability)
 
@@ -28,8 +29,8 @@ Markdown, Spec Kit 0.5.1, repository shell workflow: Follow standard conventions
 
 ## Recent Changes
 - 001-git-repo-connection: Added TypeScript 5.6 on Node.js 22 LTS + Fastify 5, Zod 3.24, Prisma 6, BullMQ 5, ioredis, pino, React 19, Next.js 15 App Router
-- 006-git-repo-connection: Added TypeScript 5.6 on Node.js 22 LTS + Fastify 5, Zod 3.24, Prisma 6, BullMQ 5, ioredis, pino, React 19, Next.js 15 App Router
-- 001-ticket-system-integration: Added TypeScript 5.6 on Node.js 22 LTS + Fastify 5, Zod 3.24, Prisma 6, BullMQ 5, ioredis, pino
+- 001-git-repo-connection: Added TypeScript 5.6 on Node.js 22 LTS + Fastify 5, Zod 3.24, Prisma 6, BullMQ 5, ioredis, pino, React 19, Next.js 15 App Router
+- 001-git-repo-connection: Added TypeScript 5.6 on Node.js 22 LTS + Fastify 5, Zod 3.24, Prisma 6, BullMQ 5, ioredis, pino, React 19, Next.js 15 App Router
 
 
 <!-- MANUAL ADDITIONS START -->
