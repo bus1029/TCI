@@ -20,8 +20,10 @@
 - 바이너리와 5 MiB 초과 파일은 기본 제외하며 v1에서는 사용자 예외 규칙으로도 포함하지 않는다.
 - 저장소 자격 증명이 만료되거나 취소되면 연결 상태를 `reauth_required`로 전환하고, 재인증 전까지 신규 검증과 수집을 차단한다.
 - 저장된 기본 분석 대상 ref가 더 이상 유효하지 않으면 연결 상태를 `ref_missing`으로 전환하고, 새 기본 ref 선택 전까지 신규 수집을 차단한다.
-- `FR-012`를 위해 connection detail은 최신 성공/실패 시각과 마지막 처리 이벤트 요약을 제공하고, 상세 이력은 event timeline 조회로 분리한다.
+- `FR-012`를 위해 connection detail은 첫 릴리스 계약부터 최신 성공/실패 시각과 nullable `lastProcessedEvent` 요약을 제공하고, 상세 이력은 event timeline 조회로 분리한다.
 - webhook secret은 revision 모델로 관리하고, 회전 시 24시간 grace window 동안 current와 previous secret을 모두 허용한다.
+- Pull Request 스냅샷 최신화는 `opened`, `reopened`, `synchronize`, `ready_for_review` action에서만 시작하고, 그 외 action은 이력 기록만 수행한다.
+- 외부 계약의 canonical connection 상태는 `active`, `reauth_required`, `ref_missing`만 사용하고, webhook 미구성/불일치/서명 실패는 별도 health 또는 rejection projection으로 노출한다.
 - `FR-014`를 위해 planning input reference -> repository connection -> scope rule version -> event/sync run -> code snapshot의 추적 체인을 런타임 데이터와 조회 계약으로 노출한다.
 
 ## Technical Context
@@ -56,15 +58,15 @@
 | credential 만료/취소 | 연결 상태를 `reauth_required`로 바꾸고, 운영자가 자격 증명을 다시 등록하기 전까지 신규 검증과 수집을 차단한다. |
 | 기본 ref 삭제/이름 변경 | 다음 검증 또는 수집 시 연결 상태를 `ref_missing`으로 바꾸고, 운영자가 새 기본 ref를 고르기 전까지 신규 sync run을 차단한다. |
 | 추가 브랜치/태그 상시 분석 | 현재 연결이 기본 ref 1개만 지원함을 UI/API에서 명시하고, `새 연결 생성` 또는 `기본 ref 교체` 중 하나를 선택하게 한다. |
-| secret 누락 | 연결 상태를 `webhook_unconfigured`로 두고, delivery는 `secret_missing` 거부 사유로 기록한다. |
-| secret 불일치 | 연결은 `active`를 유지하되 `webhookHealth.status = secret_mismatch_detected`로 노출하고, 운영자에게 저장된 secret과 GitHub 설정을 함께 재설정하라고 안내한다. |
+| secret 누락 | 연결의 canonical 상태는 유지하고, delivery는 `secret_missing` 거부 사유로 기록하며 `webhookHealth.status = missing_secret`로 노출한다. |
+| secret 불일치 | 연결의 canonical 상태는 `active`를 유지하되 `webhookHealth.status = secret_mismatch_detected`로 노출하고, 운영자에게 저장된 secret과 GitHub 설정을 함께 재설정하라고 안내한다. |
 | 기타 서명 실패 | delivery는 `signature_invalid`로 기록하고 최근 실패 상태를 `webhookHealth.status = signature_invalid_recently`로 노출한다. |
 | webhook secret 회전 | 새 secret을 활성화할 때 직전 secret은 `previous_grace` 상태로 24시간 유지한다. grace 기간에는 current/previous 둘 다 서명 검증에 사용할 수 있으며, 어떤 secret이 검증에 쓰였는지 이벤트에 남긴다. grace 종료 후 previous secret은 자동 거부 대상으로 전환한다. |
 | Commit 이벤트 의미 | GitHub의 별도 commit webhook을 전제하지 않고 Push/PR payload 안의 commit 메타데이터를 `commit_recorded` 도메인 이벤트로 분리 저장한다. |
 | 빈 수집 결과 | 규칙 저장 시 `empty_result_risk` 경고를 반환하고, 실제 스냅샷 실행에서는 `NO_INCLUDED_FILES`로 실패 처리한다. |
 | 바이너리/대용량 예외 포함 | 사용자 예외 규칙이 있어도 v1에서는 수집하지 않는다. 후속 범위로 남긴다. |
 | PR force push / out-of-order event | PR 번호 또는 기본 ref 기준 cursor를 유지하고 최신 accepted HEAD SHA보다 오래된 이벤트는 `stale_head`로 종료한다. |
-| FR-012 operator summary | connection detail은 US1 시점에 최근 성공/실패 수집 요약과 최신 snapshot 정보를 제공하고, webhook/event 저장소가 추가되는 US3 이후 `lastProcessedEvent` 요약과 event timeline 상세를 함께 제공한다. |
+| FR-012 operator summary | connection detail은 첫 릴리스 계약부터 `lastProcessedEvent` 필드를 포함하고 이벤트가 없으면 `null`을 반환한다. US1에서는 최근 성공/실패 수집 요약과 최신 snapshot 정보를 우선 제공하고, US3에서 동일 응답 모델에 실제 event summary와 event timeline 상세를 채운다. |
 | FR-014 traceability | planning input reference를 연결에 귀속시키고, 활성 scope rule version, trigger event, sync run, snapshot manifest까지 역추적 가능한 조회 계약을 제공한다. |
 
 ## Project Structure
@@ -150,10 +152,10 @@ tests/
 ### Slice 1. Connection Lifecycle and Provenance Baseline
 
 - 저장소 연결 생성, read-only credential 검증, 기본 ref 검증, 연결 상태 전이를 먼저 고정한다.
-- 연결 상태 전이는 `pending_verification`, `active`, `reauth_required`, `ref_missing`, `webhook_unconfigured`, `disabled` 집합으로 고정하고, 자격 증명 만료/취소 및 기본 ref 소실 시 차단 규칙을 함께 설계한다.
+- 외부 계약의 canonical connection 상태는 `active`, `reauth_required`, `ref_missing`으로 고정하고, webhook 관련 운영 이상은 `webhookHealth` 및 rejection projection으로 분리한다. 자격 증명 만료/취소와 기본 ref 소실은 각각 canonical 상태 전이와 차단 규칙으로 표현한다.
 - `PlanningInputReference`를 연결과 scope rule version에 연결해, 어떤 계획 입력에서 어떤 연결 설정이 생성됐는지 조회 가능하게 만든다.
 - 첫 수동 스냅샷이 설계 전체의 기준선이므로 US1은 traceability projection과 최신 성공/실패 수집 요약을 포함한 독립 검증 가능 상태로 만든다.
-- 이벤트 저장소가 아직 없는 US1 단계에서는 `lastProcessedEvent` 요약을 강제하지 않고, 해당 필드는 Slice 3 이후 authoritative source가 생긴 뒤 connection detail에 확장한다.
+- 이벤트 저장소가 아직 없는 US1 단계에서는 `lastProcessedEvent` 필드를 응답에 포함하되 값은 `null`로 유지한다. Slice 3 이후 authoritative source가 생기면 같은 필드에 실제 summary를 채운다.
 
 ### Slice 2. Scope-Controlled Snapshot Pipeline
 
@@ -167,10 +169,12 @@ tests/
 - Push는 기본 ref와 일치할 때만, PR은 `opened`, `reopened`, `synchronize`, `ready_for_review`에서만 스냅샷 최신화 후보가 된다.
 - secret rotation은 active revision과 previous grace revision을 함께 검증하고, grace 종료 시점과 previous-secret acceptance를 operator UI/API에서 보여준다.
 - dedupe는 `X-GitHub-Delivery` unique 처리와 `targetKey + headSha` cursor 처리의 2단으로 설계한다.
+- 수동 스냅샷과 webhook sync 모두 저장소 접근 불가 시 `AUTH_FAILED` 또는 `MIRROR_SYNC_FAILED` 실패 상태와 수정 가능한 운영 안내를 남긴다.
 
 ### Slice 4. Operator Observability and Traceability
 
 - connection detail은 최근 성공/실패 수집 시각, 마지막 처리 이벤트 요약, webhook health, secret rotation grace 상태, 마지막 거부 사유를 함께 노출한다.
+- connection detail read-model은 US3에서 schema, query service, API route, operator detail template까지 함께 갱신해 `lastProcessedEvent`, webhook health, grace 상태, 최근 거부 사유를 일관되게 보여준다.
 - 마지막 처리 이벤트의 상세 이력과 상태 전이 맥락은 event timeline 조회가 담당한다.
 - snapshot detail은 `planningInputReference`, `connectionId`, `scopeRuleVersionId`, `syncRunId`, `triggerEventId`를 포함한 traceability block을 제공한다.
 - `planning input -> spec -> plan -> connection settings -> event/sync -> snapshot -> delivery evidence` 경로를 문서와 런타임 응답 둘 다에서 재구성 가능하게 한다.
@@ -179,10 +183,10 @@ tests/
 
 - Unit: scope precedence, binary/size guard, stale SHA detection, secret rejection reason mapping, previous-grace secret acceptance 분기
 - Contract: repository connection, scope rules, snapshot trigger, webhook intake, connection detail summary, event/status 조회, traceability block, rotation health projection OpenAPI 준수
-- Integration: Git mirror fetch, snapshot archive generation, connection provenance persistence, `reauth_required`/`ref_missing` 상태 전이, FastAPI raw-body signature verification, delivery dedupe, stale event skip, grace-period secret rollover
+- Integration: Git mirror fetch, snapshot archive generation, connection provenance persistence, `reauth_required`/`ref_missing` 상태 전이, FastAPI raw-body signature verification, delivery dedupe, stale event skip, grace-period secret rollover, 저장소 접근 불가 실패 처리와 connection detail read-model refresh
 - Quickstart regression: MVP review 전에 연결 생성 -> 초기 스냅샷 완료까지의 소요 시간을 측정해 `SC-001` 근거를 남기고, 전체 릴리스 회귀에서는 연결 생성 -> 규칙 저장 -> 초기 스냅샷 -> Push 최신화 -> PR source snapshot -> connection detail summary 확인 -> secret rotation grace -> traceability 조회를 반복 검증한다.
 - Delivery evidence: 구현 이후 `/specs/001-git-repo-connection/delivery-evidence.md`에서 story별 검증 근거와 FR/SC trace coverage를 링크한다.
 
 ## Complexity Tracking
 
-현재 헌법 위반은 없다. scope 확장은 모두 승인된 spec(`FR-002a`, `FR-003b`, `FR-012a`, `FR-016a`, `FR-017a`, `SC-005`) 또는 기존 요구(`FR-014`)를 구체화한 수준에 머문다.
+현재 헌법 위반은 없다. scope 확장은 모두 승인된 spec(`FR-002a`, `FR-003b`, `FR-010a`, `FR-012a`, `FR-016a`, `FR-017a`, `FR-017b`, `SC-005`) 또는 기존 요구(`FR-014`)를 구체화한 수준에 머문다.

@@ -20,7 +20,7 @@
 **Purpose**: Python 애플리케이션 골격과 공통 검증 산출물을 만든다.
 
 - [ ] T001 Create Python package and template skeleton for FR-014 traceability and FR-012a event timeline surfaces in `src/tci/__init__.py`, `src/tci/api/__init__.py`, `src/tci/web/__init__.py`, and `src/tci/web/templates/connections/.gitkeep`
-- [ ] T002 Create repository ingestion test scaffolding for contract, integration, and unit suites in `tests/contract/repository_ingestion/.gitkeep`, `tests/integration/repository_connections/.gitkeep`, and `tests/unit/repository_connections/.gitkeep`
+- [ ] T002 Create repository ingestion test scaffolding for FR-014 traceability and US1-US3 validation suites in `tests/contract/repository_ingestion/.gitkeep`, `tests/integration/repository_connections/.gitkeep`, and `tests/unit/repository_connections/.gitkeep`
 - [ ] T003 [P] Configure Python project settings, dependencies, and runtime paths for FR-005a and FR-014 in `pyproject.toml`, `.env.example`, and `src/tci/settings.py`
 - [ ] T004 [P] Create feature verification evidence scaffold for FR-014 and SC-001 through SC-005 in `specs/001-git-repo-connection/delivery-evidence.md`
 
@@ -55,7 +55,7 @@
 
 ### Tests for User Story 1
 
-- [ ] T015 [P] [US1] Add contract tests for repository connection create/get/patch/verify endpoints, unsupported-provider rejection for FR-001a, connection detail latest success/failure summary fields, traceability blocks, and additional-ref guidance responses in `tests/contract/repository_ingestion/test_repository_connection_contract.py`
+- [ ] T015 [P] [US1] Add contract tests for repository connection create/get/patch/verify endpoints, unsupported-provider rejection for FR-001a, nullable `lastProcessedEvent` placeholder in connection detail, traceability blocks, and additional-ref guidance responses in `tests/contract/repository_ingestion/test_repository_connection_contract.py`
 - [ ] T016 [P] [US1] Add integration tests for GitHub Cloud-only validation, read-only credential validation, `reauth_required` and `ref_missing` recovery, default ref change preservation, latest success/failure summary projection, additional-ref guidance, and initial snapshot traceability in `tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
 
 ### Implementation for User Story 1
@@ -64,16 +64,16 @@
 - [ ] T018 [P] [US1] Implement credential revision persistence adapter in `src/tci/infrastructure/persistence/credential_revision_repository.py`
 - [ ] T019 [P] [US1] Implement sync run persistence adapter in `src/tci/infrastructure/persistence/repository_sync_run_repository.py`
 - [ ] T020 [P] [US1] Implement code snapshot persistence adapter in `src/tci/infrastructure/persistence/code_snapshot_repository.py`
-- [ ] T021 [P] [US1] Implement repository connection request and response schemas with GitHub Cloud-only validation errors, latest success/failure summary, traceability, and additional-ref guidance fields in `src/tci/api/schemas/repository_connection.py`
+- [ ] T021 [P] [US1] Implement repository connection request and response schemas with GitHub Cloud-only validation errors, latest success/failure summary, nullable `lastProcessedEvent`, traceability, and additional-ref guidance fields in `src/tci/api/schemas/repository_connection.py`
 - [ ] T022 [US1] Implement connection creation and verification services with GitHub Cloud-only validation, planning input reference binding, and `reauth_required` transition handling in `src/tci/domain/services/create_repository_connection.py` and `src/tci/domain/services/verify_repository_connection.py`
 - [ ] T023 [US1] Implement default ref update and additional-ref guidance service that preserves prior snapshots and events and supports `ref_missing` recovery in `src/tci/domain/services/update_default_ref.py`
-- [ ] T024 [US1] Implement manual snapshot trigger service in `src/tci/domain/services/create_initial_snapshot.py`
+- [ ] T024 [US1] Implement manual snapshot trigger service with `AUTH_FAILED` and `MIRROR_SYNC_FAILED` failure handling for FR-013 in `src/tci/domain/services/create_initial_snapshot.py`
 - [ ] T025 [US1] Implement default-ref snapshot builder that stamps sync and provenance references in `src/tci/domain/services/build_code_snapshot.py`
 - [ ] T026 [US1] Implement repository connection API routes in `src/tci/api/routes/repository_connections.py`
 - [ ] T027 [US1] Implement repository snapshot detail query service and API routes with traceability block in `src/tci/domain/services/get_code_snapshot_detail.py` and `src/tci/api/routes/repository_snapshots.py`
-- [ ] T028 [US1] Implement repository connection detail query service with MVP summary projections (`lastSuccessfulSnapshotAt`, `lastFailedSyncAt`, `latestSnapshot`), planning-input, and additional-ref guidance projections in `src/tci/domain/services/get_repository_connection_detail.py`
+- [ ] T028 [US1] Implement repository connection detail query service with MVP summary projections (`lastSuccessfulSnapshotAt`, `lastFailedSyncAt`, nullable `lastProcessedEvent`, `latestSnapshot`), planning-input, and additional-ref guidance projections in `src/tci/domain/services/get_repository_connection_detail.py`
 - [ ] T029 [P] [US1] Implement operator connection list/create route and template in `src/tci/web/routes/repository_connections.py` and `src/tci/web/templates/connections/index.html`
-- [ ] T030 [US1] Implement operator connection detail route and template with latest success/failure summary cards, additional-ref guidance, and traceability panel in `src/tci/web/routes/repository_connection_detail.py` and `src/tci/web/templates/connections/detail.html`
+- [ ] T030 [US1] Implement operator connection detail route and template with latest success/failure summary cards, nullable `lastProcessedEvent` placeholder, additional-ref guidance, and traceability panel in `src/tci/web/routes/repository_connection_detail.py` and `src/tci/web/templates/connections/detail.html`
 - [ ] T031 [US1] Capture User Story 1 verification evidence, including `SC-001` timed first-snapshot validation, unsupported-provider rejection proof, and trace links in `specs/001-git-repo-connection/delivery-evidence.md`
 
 **Checkpoint**: User Story 1은 단독으로 구현 및 검증 가능해야 하며 MVP 후보가 된다.
@@ -115,9 +115,9 @@
 
 ### Tests for User Story 3
 
-- [ ] T043 [P] [US3] Add contract tests for GitHub webhook intake, FR-012a event timeline responses, connection detail summary refresh, webhook health, rotation grace projection, and event traceability responses in `tests/contract/repository_ingestion/test_github_webhook_contract.py`
+- [ ] T043 [P] [US3] Add contract tests for GitHub webhook intake, PR action gating for FR-010a, FR-012a event timeline responses, connection detail summary refresh, webhook health, rotation grace projection, and event traceability responses in `tests/contract/repository_ingestion/test_github_webhook_contract.py`
 - [ ] T044 [P] [US3] Add unit tests for webhook rejection classification, previous-grace secret acceptance, and stale-head decisions in `tests/unit/repository_connections/test_process_github_event.py`
-- [ ] T045 [P] [US3] Add integration tests for `secret_missing`, `secret_mismatch`, `signature_invalid`, secret grace rotation, delivery dedupe, stale head skip, and PR source snapshots in `tests/integration/repository_connections/test_github_webhook_refresh.py`
+- [ ] T045 [P] [US3] Add integration tests for `secret_missing`, `secret_mismatch`, `signature_invalid`, secret grace rotation, delivery dedupe, stale head skip, ignored PR actions, and PR source snapshots in `tests/integration/repository_connections/test_github_webhook_refresh.py`
 
 ### Implementation for User Story 3
 
@@ -127,13 +127,13 @@
 - [ ] T049 [P] [US3] Implement repository event and cursor persistence adapters in `src/tci/infrastructure/persistence/repository_event_repository.py` and `src/tci/infrastructure/persistence/repository_event_cursor_repository.py`
 - [ ] T050 [P] [US3] Implement GitHub signature verification with active and previous-grace secret support in `src/tci/infrastructure/webhooks/github_signature.py`
 - [ ] T051 [P] [US3] Implement GitHub event payload parser in `src/tci/infrastructure/webhooks/github_event_parser.py`
-- [ ] T052 [US3] Implement webhook secret rotation service and request schema updates in `src/tci/domain/services/rotate_webhook_secret.py` and `src/tci/api/schemas/repository_connection.py`
+- [ ] T052 [US3] Implement webhook secret rotation service and repository connection schema updates for FR-016a, FR-017a, and FR-017b in `src/tci/domain/services/rotate_webhook_secret.py` and `src/tci/api/schemas/repository_connection.py`
 - [ ] T053 [US3] Implement webhook intake API route with raw-body validation and rejection logging in `src/tci/api/routes/github_webhooks.py`
-- [ ] T054 [US3] Implement event processing service for commit recording, target selection, dedupe, stale-head handling, FR-012 summary refresh, verified secret revision status, and webhook health updates in `src/tci/domain/services/process_github_event.py`
+- [ ] T054 [US3] Implement event processing service for commit recording, target selection, PR action gating, dedupe, stale-head handling, FR-012 summary refresh, verified secret revision status, and webhook health updates in `src/tci/domain/services/process_github_event.py`
 - [ ] T055 [US3] Implement webhook enqueue Celery task in `src/tci/workers/tasks/enqueue_webhook_sync.py`
-- [ ] T056 [US3] Implement webhook sync Celery task for default ref and PR source snapshots in `src/tci/workers/tasks/run_webhook_sync.py`
-- [ ] T057 [US3] Implement repository event query service and API route for FR-012a event timeline with traceability fields in `src/tci/domain/services/list_repository_events.py` and `src/tci/api/routes/repository_events.py`
-- [ ] T058 [US3] Implement operator event timeline route and template for FR-012a detail drill-down with grace rotation status in `src/tci/web/routes/repository_events.py` and `src/tci/web/templates/connections/events.html`
+- [ ] T056 [US3] Implement webhook sync Celery task for default ref and PR source snapshots with `AUTH_FAILED` and `MIRROR_SYNC_FAILED` operator remediation for FR-013 in `src/tci/workers/tasks/run_webhook_sync.py`
+- [ ] T057 [US3] Implement repository event query service and repository connection detail refresh paths for FR-012, FR-012a, FR-016a, FR-017a, and FR-017b in `src/tci/domain/services/list_repository_events.py`, `src/tci/domain/services/get_repository_connection_detail.py`, `src/tci/api/routes/repository_events.py`, and `src/tci/api/routes/repository_connections.py`
+- [ ] T058 [US3] Implement operator event timeline route plus connection detail UI refresh for FR-012a, FR-016a, FR-017a, and FR-017b in `src/tci/web/routes/repository_events.py`, `src/tci/web/templates/connections/events.html`, `src/tci/web/routes/repository_connection_detail.py`, and `src/tci/web/templates/connections/detail.html`
 - [ ] T059 [US3] Capture User Story 3 verification evidence and trace links in `specs/001-git-repo-connection/delivery-evidence.md`
 
 **Checkpoint**: All user stories should now be independently functional and together satisfy the approved spec.
@@ -145,9 +145,9 @@
 **Purpose**: 다중 스토리에 걸친 운영 안정성, SLA 검증, 회귀 검증, 추적 문서를 마무리한다.
 
 - [ ] T060 [P] Add regression tests for FR-002a `reauth_required`, FR-003b `ref_missing`, FR-015a additional-ref guidance fallback, and FR-016a/SC-005 webhook secret grace rotation in `tests/integration/repository_connections/test_edge_state_regression.py`
-- [ ] T061 [P] Add webhook processing status latency validation for `SC-002` in `tests/integration/repository_connections/test_webhook_status_latency.py`
-- [ ] T062 [P] Add full quickstart validation harness that repeats `SC-001` first-snapshot-under-10-min validation alongside release-scope flow coverage in `tests/integration/repository_connections/test_quickstart_validation.py`
-- [ ] T063 Refresh FR-001 through FR-017a and SC-001 through SC-005 trace coverage and story completion evidence in `specs/001-git-repo-connection/delivery-evidence.md`
+- [ ] T061 [P] Add webhook processing status latency validation for FR-008, FR-012, and `SC-002` in `tests/integration/repository_connections/test_webhook_status_latency.py`
+- [ ] T062 [P] Add full quickstart validation harness for FR-001 through FR-017b that repeats `SC-001` first-snapshot-under-10-min validation alongside release-scope flow coverage in `tests/integration/repository_connections/test_quickstart_validation.py`
+- [ ] T063 Refresh FR-001 through FR-017b and SC-001 through SC-005 trace coverage and story completion evidence in `specs/001-git-repo-connection/delivery-evidence.md`
 
 ---
 
@@ -242,5 +242,5 @@ Task: "T051 [US3] event payload parser in src/tci/infrastructure/webhooks/github
 - 공통 기반 작업이 최우선으로 먼저 오도록 정렬했다
 - 모든 사용자 스토리에 테스트 작업과 verification evidence 작업을 포함했다
 - `SC-001`은 T031의 MVP 검증 증거로 먼저 확인하고 T062의 전체 quickstart 회귀로 반복 검증한다
-- `FR-002a`, `FR-003b`, `FR-006`, `FR-012`, `FR-012a`, `FR-014`, `FR-015a`, `FR-016a`, `FR-017a`, `SC-002`, `SC-005`, `ref_missing`, `reauth_required`, webhook grace rotation이 각각 작업 단위로 직접 추적 가능하도록 보강했다
+- `FR-002a`, `FR-003b`, `FR-006`, `FR-010a`, `FR-012`, `FR-012a`, `FR-013`, `FR-014`, `FR-015a`, `FR-016a`, `FR-017a`, `FR-017b`, `SC-002`, `SC-005`, `ref_missing`, `reauth_required`, webhook grace rotation이 각각 작업 단위로 직접 추적 가능하도록 보강했다
 - Completing all tasks in this file is intended to satisfy the full approved scope in `spec.md`
