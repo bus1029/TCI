@@ -41,6 +41,9 @@
 - Q: webhook secret 회전의 grace window는 얼마인가? → A: webhook secret 회전 시 grace window는 `24시간`으로 고정한다.
 - Q: GitHub Cloud에서 Commit 기록은 어떤 입력 모델로 처리할 것인가? → A: 별도 GitHub commit webhook을 전제하지 않고 Push 또는 Pull Request payload에서 추출한 commit 메타데이터를 기록 전용 commit 이벤트로 저장한다.
 - Q: 빈 수집 결과는 어떤 사용자 경험으로 처리할 것인가? → A: 범위 규칙 저장 시에는 `empty_result_risk` 경고를 보여주고, 실제 스냅샷 실행 시 수집 대상 파일이 없으면 `NO_INCLUDED_FILES` 실패로 처리한다.
+- Q: `lastProcessedEvent` 요약 필드는 언제부터 connection detail에 포함되어야 하는가? → A: connection detail은 첫 릴리스 계약부터 `lastProcessedEvent` 필드를 포함하고, 아직 처리된 이벤트가 없으면 `null`을 반환한다.
+- Q: Pull Request 이벤트 중 어떤 action만 스냅샷 최신화 대상으로 인정할 것인가? → A: Pull Request 스냅샷 최신화 대상 action은 `opened`, `reopened`, `synchronize`, `ready_for_review`만 허용한다.
+- Q: 외부 계약에 노출할 저장소 연결 상태 집합은 무엇인가? → A: 외부 계약의 canonical connection 상태는 `active`, `reauth_required`, `ref_missing`만 사용하고, 그 밖의 운영 상태나 webhook 이상 징후는 별도 health/rejection projection으로 노출한다.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -90,8 +93,9 @@
 1. **Given** 웹훅이 연결된 활성 저장소에 Push 또는 Pull Request payload가 commit 메타데이터를 포함한 상태로 수신되면, **When** 시스템이 이를 기록 전용 commit 이벤트로 저장하면, **Then** 해당 commit 기록만을 이유로 별도의 스냅샷 최신화 작업을 추가로 시작하지 않아야 한다.
 2. **Given** 웹훅이 연결된 활성 저장소가 있을 때, **When** Push 이벤트가 수신되면, **Then** 시스템은 이벤트를 기록하고 해당 ref 기준의 최신화 작업을 시작한다.
 3. **Given** Pull Request 이벤트가 수신된 상태에서, **When** 시스템이 관련 스냅샷 최신화를 시작하면, **Then** 시스템은 PR의 source branch 최신 HEAD를 기준으로 스냅샷을 생성해야 한다.
-4. **Given** 웹훅 요청의 서명 검증에 실패한 상태에서, **When** 시스템이 이벤트를 수신하면, **Then** 시스템은 해당 이벤트를 처리 대상으로 인정하지 않고 거부 상태를 기록해야 한다.
-5. **Given** 웹훅 요청에 서명 헤더는 존재하지만 등록된 secret과 일치하지 않는 상태에서, **When** 시스템이 이벤트를 수신하면, **Then** 시스템은 이를 일반 서명 검증 실패나 secret 누락과 다른 별도의 거부 사유로 기록하고 운영자가 재설정 필요 상태를 확인할 수 있게 해야 한다.
+4. **Given** Pull Request 이벤트가 `opened`, `reopened`, `synchronize`, `ready_for_review` 이외의 action으로 수신된 상태에서, **When** 시스템이 이벤트를 기록하면, **Then** 시스템은 이력만 남기고 별도의 스냅샷 최신화 작업을 시작하지 않아야 한다.
+5. **Given** 웹훅 요청의 서명 검증에 실패한 상태에서, **When** 시스템이 이벤트를 수신하면, **Then** 시스템은 해당 이벤트를 처리 대상으로 인정하지 않고 거부 상태를 기록해야 한다.
+6. **Given** 웹훅 요청에 서명 헤더는 존재하지만 등록된 secret과 일치하지 않는 상태에서, **When** 시스템이 이벤트를 수신하면, **Then** 시스템은 이를 일반 서명 검증 실패나 secret 누락과 다른 별도의 거부 사유로 기록하고 운영자가 재설정 필요 상태를 확인할 수 있게 해야 한다.
 
 ---
 
@@ -104,6 +108,7 @@
 - 동일한 Commit, Push, PR 이벤트가 중복 수신되거나 순서가 바뀌어 들어오면 어떤 기준으로 최신 상태를 판단하는가?
 - GitHub Cloud에서 Push/PR payload로부터 commit 기록만 분리 저장할 때, 같은 변경이 여러 이벤트로 중복 전달되면 어떤 우선순위와 dedupe 규칙으로 합쳐 처리할 것인가?
 - PR의 source branch가 force push 되거나 target branch가 변경될 때 기존 PR 기반 스냅샷을 어떻게 갱신하거나 대체할 것인가?
+- Pull Request 스냅샷 최신화는 `opened`, `reopened`, `synchronize`, `ready_for_review` action에만 반응해야 하며, 그 외 action은 이벤트 이력만 남기고 스냅샷 갱신을 시작하지 않아야 한다.
 - 포함 규칙과 제외 규칙이 충돌하거나 결과적으로 분석 가능한 파일이 하나도 남지 않으면, 규칙 저장 시 `empty_result_risk` 경고를 보여주고 실행 시 `NO_INCLUDED_FILES` 실패로 차단해야 한다.
 - 바이너리, 생성 산출물, `5 MiB` 초과 대용량 파일은 v1에서 사용자 예외 포함 규칙이 있더라도 수집하지 않으며, 시스템은 해당 제한을 명시적으로 안내해야 한다.
 - webhook secret이 누락되었거나 회전된 경우 어떤 연결 상태와 재설정 절차를 보여줄 것인가?
@@ -131,10 +136,11 @@
 - **FR-008**: 시스템은 Push 및 Pull Request 이벤트가 수신되면 해당 이벤트와 연결되는 코드 스냅샷 최신화 흐름을 시작해야 한다.
 - **FR-009**: 시스템은 GitHub Cloud에서 Push 또는 Pull Request payload로부터 추출한 commit 메타데이터를 변경 이력 추적용 commit 이벤트로 기록하되, 해당 commit 기록만으로는 별도의 코드 스냅샷 최신화 흐름을 시작하지 않아야 한다.
 - **FR-010**: 시스템은 Pull Request 이벤트로 생성되는 코드 스냅샷을 해당 Pull Request의 source branch 최신 HEAD 기준으로 생성해야 한다.
+- **FR-010a**: 시스템은 Pull Request 이벤트 중 `opened`, `reopened`, `synchronize`, `ready_for_review` action에 대해서만 스냅샷 최신화 후보를 생성해야 하며, 그 외 action은 이력 기록만 수행해야 한다.
 - **FR-011**: 시스템은 동일한 변경 상태를 반복 반영하여 중복 스냅샷을 대량 생성하지 않도록 이벤트 처리 결과를 구분할 수 있어야 한다.
 - **FR-011a**: 시스템은 webhook delivery ID를 기준으로 중복 수신 이벤트를 식별하고 재처리를 방지해야 한다.
 - **FR-011b**: 시스템은 ref 및 PR source branch별로 가장 최신 HEAD SHA만 스냅샷 반영 대상으로 인정하고, 더 오래된 SHA를 가리키는 지연 도착 이벤트는 이력만 남기고 스냅샷 갱신 대상에서 제외해야 한다.
-- **FR-012**: 시스템은 사용자가 connection detail에서 최신 성공 수집 시각, 마지막 실패 시각, 마지막 처리 이벤트를 요약 필드로 확인할 수 있게 해야 한다.
+- **FR-012**: 시스템은 사용자가 connection detail에서 최신 성공 수집 시각, 마지막 실패 시각, 그리고 마지막 처리 이벤트를 나타내는 `lastProcessedEvent` 요약 필드를 확인할 수 있게 해야 하며, 아직 처리된 이벤트가 없으면 이 필드는 `null`을 반환해야 한다.
 - **FR-012a**: 시스템은 마지막 처리 이벤트를 포함한 상세 이벤트 이력을 별도 event timeline 조회에서 제공해야 한다.
 - **FR-013**: 시스템은 범위 규칙 저장 시 수집 대상 파일이 남지 않을 위험이 있으면 `empty_result_risk` 경고를 제공해야 하며, 실제 스냅샷 실행 시 수집 대상 파일이 없거나 저장소 접근이 불가능한 경우에는 스냅샷 생성을 완료 처리하지 않고 수정 가능한 안내와 실패 상태를 제공해야 한다.
 - **FR-014**: 시스템은 계획 입력, 저장소 연결 설정, 이벤트 기록, 코드 스냅샷 사이의 추적 관계를 유지해 변경 이력을 재구성할 수 있게 해야 한다.
@@ -144,10 +150,12 @@
 - **FR-016a**: 시스템은 운영자가 webhook secret을 교체할 때, `24시간`의 유예 기간 동안 직전 secret과 새 secret 중 어느 것으로 서명된 요청인지 구분하면서 둘 다 유효한 secret으로 인정할 수 있어야 한다.
 - **FR-017**: 시스템은 secret 누락, secret 불일치, 기타 서명 검증 실패를 서로 다른 거부 사유로 구분해 기록하고 사용자가 각각의 재설정 필요 상태를 확인할 수 있게 해야 한다.
 - **FR-017a**: 시스템은 webhook secret 회전이 진행 중인 연결에 대해 유예 기간 종료 시각, 현재 회전 상태, 그리고 유예 기간 동안 직전 secret으로 수신된 이벤트 여부를 사용자가 확인할 수 있게 해야 한다.
+- **FR-017b**: 시스템은 webhook secret 미설정, secret 불일치, 기타 최근 서명 실패와 같은 webhook 운영 이상 징후를 canonical connection 상태와 분리된 health 또는 rejection projection으로 제공해야 한다.
 
 ### Key Entities *(include if feature involves data)*
 
-- **Repository Connection**: 분석 대상으로 등록된 GitHub Cloud 저장소 연결 정보. 저장소 주소, 연결 방식, `active`/`reauth_required`/`ref_missing`를 포함한 연결 상태, 기본 분석 대상 ref 1개, 저장소 연결 단위의 공유 자격 증명, webhook secret 상태를 포함한다.
+- **Repository Connection**: 분석 대상으로 등록된 GitHub Cloud 저장소 연결 정보. 저장소 주소, 연결 방식, 외부 계약의 canonical connection 상태인 `active`/`reauth_required`/`ref_missing`, 기본 분석 대상 ref 1개, 저장소 연결 단위의 공유 자격 증명, webhook secret 상태를 포함한다.
+- **Webhook Health Projection**: webhook secret 미설정, secret 불일치, 최근 서명 실패, secret 회전 grace 상태처럼 연결 운영 이상 징후를 canonical connection 상태와 분리해 보여주는 요약 projection. 최근 거부 사유, 유예 종료 시각, 직전 secret 수신 여부를 포함한다.
 - **Collection Scope Rule**: 저장소에서 어떤 파일을 수집할지 결정하는 범위 규칙. 포함 경로, 제외 경로, 파일 타입 조건을 포함한다.
 - **Code Snapshot**: 특정 시점의 분석 가능한 코드 수집 결과. 저장소, 기준 ref, 수집 시각, 적용된 범위 규칙, 포함된 전체 파일 집합을 갖는 완전한 스냅샷으로 저장된다.
 - **Repository Event**: Commit, Push, Pull Request 등 저장소에서 발생한 변경 이벤트 기록. 이벤트 유형, webhook delivery ID, 관련 ref, PR의 경우 source/target ref와 HEAD SHA, 스냅샷 갱신 여부, 처리 상태, 연결된 최신화 결과를 포함한다.
@@ -169,6 +177,7 @@
 - 분석 가능한 코드 스냅샷은 사람이 읽고 후속 분석에 활용할 수 있는 텍스트 기반 파일을 우선 대상으로 하며, 바이너리나 생성 산출물, `5 MiB`를 초과하는 대용량 파일은 기본 제외 대상이다.
 - 저장소 연결에 사용하는 SSH 키와 HTTPS 토큰/자격 증명은 읽기 전용 권한만 가진다고 가정한다.
 - TCI는 이 기능에서 저장소 데이터를 읽고 수집하지만, 원격 저장소의 코드를 수정하거나 배포를 수행하지 않는다.
+- 외부 계약에서 저장소 연결 상태는 `active`, `reauth_required`, `ref_missing`만 사용하고, webhook 관련 운영 이상은 별도 health/rejection projection으로 노출한다고 가정한다.
 
 ## Approval Gate
 

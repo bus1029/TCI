@@ -45,7 +45,7 @@
 | `repository_name` | string | URL 파싱 결과 |
 | `default_ref_type` | enum | `branch`, `tag` |
 | `default_ref_name` | string | 기본 분석 ref 이름 |
-| `status` | enum | `pending_verification`, `active`, `reauth_required`, `ref_missing`, `webhook_unconfigured`, `disabled` |
+| `status` | enum | external canonical state: `active`, `reauth_required`, `ref_missing` |
 | `mirror_path` | string | `.runtime/git-mirrors/{connectionId}.git` |
 | `active_scope_rule_version_id` | UUID | 현재 적용 규칙 |
 | `active_credential_revision_id` | UUID | 현재 연결 credential |
@@ -57,7 +57,7 @@
 | `last_successful_snapshot_at` | timestamptz | 최근 성공 스냅샷 시각 |
 | `last_failed_sync_at` | timestamptz | 최근 실패 시각 |
 | `last_processed_event_id` | UUID nullable | FK -> RepositoryEvent, connection detail 요약용 마지막 처리 이벤트 |
-| `last_processed_event_at` | timestamptz | 최근 이벤트 반영 시각 |
+| `last_processed_event_at` | timestamptz nullable | 최근 이벤트 반영 시각 |
 | `created_at` | timestamptz | 생성 시각 |
 | `updated_at` | timestamptz | 수정 시각 |
 
@@ -68,21 +68,15 @@
 - `default_ref_type`은 `branch` 또는 `tag`만 허용
 - 읽기 전용 credential 검증 통과 전 `active` 전환 금지
 - `last_processed_event_id`가 존재하면 같은 `RepositoryConnection`에 속한 `RepositoryEvent`를 가리켜야 한다.
-- `webhook_unconfigured`는 secret 누락 상태에만 사용하고, secret mismatch는 `status = active` + `webhook_health_state = secret_mismatch_detected`로 표현
+- webhook secret 누락, secret mismatch, 최근 서명 실패는 `status`가 아니라 `webhook_health_state`와 `last_webhook_rejection_reason`으로 표현한다.
 
 **State Transitions**:
 
 ```text
-pending_verification -> active
-pending_verification -> reauth_required
 active -> reauth_required
 active -> ref_missing
-active -> webhook_unconfigured
 reauth_required -> active
 ref_missing -> active
-webhook_unconfigured -> active
-active -> disabled
-disabled -> pending_verification
 ```
 
 ### 2. RepositoryCredentialRevision
@@ -359,4 +353,4 @@ code snapshot -> snapshot manifest (CodeSnapshotFile)
 - 멀티 ref 영속 설정은 이번 범위에 포함하지 않는다.
 - PR source branch snapshot은 `requested_ref_type = pull_request_branch`로만 나타내고, 연결의 기본 ref 설정은 바꾸지 않는다.
 - v1에서는 snapshot retention 정책보다 완전 보존과 추적성을 우선한다.
-- secret mismatch는 연결 전체를 `webhook_unconfigured`로 바꾸지 않고, 운영자가 secret 재설정을 판단할 수 있는 degraded health 신호로만 노출한다.
+- webhook secret 누락, secret mismatch, 최근 서명 실패는 canonical connection 상태를 바꾸지 않고, 운영자가 재설정을 판단할 수 있는 degraded health 신호로만 노출한다.

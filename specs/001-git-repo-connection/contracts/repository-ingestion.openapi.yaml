@@ -339,7 +339,7 @@ components:
           type: string
         status:
           type: string
-          enum: [pending_verification, active, reauth_required, ref_missing, webhook_unconfigured, disabled]
+          enum: [active, reauth_required, ref_missing]
         lastVerifiedAt:
           type: string
           format: date-time
@@ -367,6 +367,7 @@ components:
               nullable: true
             lastProcessedEvent:
               $ref: '#/components/schemas/LastProcessedEventSummary'
+              nullable: true
             traceability:
               $ref: '#/components/schemas/ConnectionTraceability'
     ScopeRuleResponse:
