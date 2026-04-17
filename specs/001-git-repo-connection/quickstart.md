@@ -2,15 +2,16 @@
 
 ## 목적
 
-이 문서는 구현 이후 무엇을 검증해야 설계가 맞게 구현되었는지 빠르게 확인하는 실행 순서를 정의한다. 데모, QA, 작업 분해의 공통 기준으로 사용한다.
+이 문서는 구현 이후 무엇을 검증해야 설계가 맞게 구현되었는지 빠르게 확인하는 실행 순서를 정의한다. 데모, QA, 작업 분해의 공통 기준으로 사용한다. 검증 기준은 Python 기반 FastAPI API, Celery worker, Jinja2/HTMX 운영 UI 조합을 전제로 한다.
 
 ## 사전 조건
 
 1. GitHub Cloud 테스트 저장소 1개 준비
 2. 읽기 전용 HTTPS PAT 또는 읽기 전용 SSH 키 준비
 3. GitHub webhook 설정 권한과 테스트용 secret 준비
-4. API 서버, worker, PostgreSQL 16, Redis 7 실행
+4. FastAPI application, Celery worker, PostgreSQL 16, Redis 7 실행
 5. 런타임 디렉터리 `.runtime/git-mirrors`, `.runtime/code-snapshots` 생성
+6. 운영자 HTML 화면과 JSON API가 같은 환경 변수 세트를 사용하도록 `src/tci/settings.py` 구성이 끝나 있어야 한다.
 
 ## 검증 시나리오
 
@@ -21,12 +22,14 @@
 3. `POST /api/repository-connections/{id}/verify`를 호출해 `git ls-remote` 기반 연결 검증이 수행되는지 확인한다.
 4. 잘못된 credential로 같은 요청을 보냈을 때 `reauth_required`와 오류 코드가 반환되는지 확인한다.
 5. `GET /api/repository-connections/{id}` 응답에서 `lastSuccessfulSnapshotAt`, `lastFailedSyncAt`, `lastProcessedEvent` 요약 필드가 노출되는지 확인한다.
+6. `/connections/{id}` 운영자 화면에서 같은 요약 정보와 traceability 패널이 일관되게 노출되는지 확인한다.
 
 ### 2. 범위 규칙 저장 및 경고 확인
 
 1. `POST /api/repository-connections/{id}/scope-rules`에 include/exclude/file type 규칙을 저장한다.
 2. 기본 하드 제외 경로와 사용자 규칙이 함께 계산되는지 확인한다.
 3. 결과가 0개 파일이 되도록 규칙을 저장했을 때 `empty_result_risk` 경고가 반환되는지 확인한다.
+4. `/connections/{id}/scope` 운영자 화면에서 같은 경고 상태와 현재 활성 규칙 버전이 보이는지 확인한다.
 
 ### 3. 초기 스냅샷 생성
 
@@ -42,6 +45,7 @@
 2. webhook 엔드포인트가 `202 Accepted`를 즉시 반환하는지 확인한다.
 3. 같은 delivery를 재전송했을 때 `duplicate_delivery`로 기록되고 추가 스냅샷이 생성되지 않는지 확인한다.
 4. 더 오래된 SHA를 가리키는 이벤트를 재전송했을 때 `stale_head`로 종료되는지 확인한다.
+5. Celery task 상태와 event timeline 조회 결과가 같은 처리 결론을 보여주는지 확인한다.
 
 ### 5. Pull Request 이벤트 처리
 
@@ -49,6 +53,7 @@
 2. `opened` 이벤트로 PR source branch 기준 snapshot job이 enqueue되는지 확인한다.
 3. source branch에 force push 후 `synchronize` 이벤트를 보냈을 때 최신 `headSha`만 반영되는지 확인한다.
 4. `closed` 이벤트는 기록되지만 새 snapshot은 생성되지 않는지 확인한다.
+5. `/connections/{id}/events` 운영자 화면에서 PR source branch와 기본 ref 이벤트가 구분되어 보이는지 확인한다.
 
 ### 6. webhook 보안 실패
 
@@ -84,6 +89,7 @@
   - GitHub webhook header/body 계약 검증
 - End-to-End
   - 연결 생성 -> 규칙 저장 -> 초기 스냅샷 -> Push -> PR synchronize -> secret rotation grace -> traceability 조회 전체 흐름
+  - 운영자 HTML 화면에서 connection detail, scope warning, event timeline, snapshot detail이 API 응답과 일치하는지 확인
 
 ## 완료 기준
 
