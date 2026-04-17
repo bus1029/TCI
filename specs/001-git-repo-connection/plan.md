@@ -5,7 +5,7 @@
 
 ## Summary
 
-이 계획은 TCI 데이터 수집 영역에 GitHub Cloud 기반 Git 저장소 연결 기능을 추가해 읽기 전용 SSH/HTTPS 연결, 기본 분석 ref 1개(branch/tag), 경로 및 파일 타입 기반 수집 범위 제어, Push/PR 이벤트 기반 최신화, webhook secret grace rotation, 그리고 계획 입력에서 코드 스냅샷까지 이어지는 추적 관계를 설계한다. 구현 속도보다 설계 입력 문서의 품질을 우선하며, `research.md`, `data-model.md`, `contracts/`, `quickstart.md`에 운영 규칙과 검증 기준을 먼저 고정한 뒤에만 후속 task 분해로 이어진다.
+이 계획은 TCI 데이터 수집 영역에 GitHub Cloud 기반 Git 저장소 연결 기능을 Python 중심으로 추가한다. 읽기 전용 SSH/HTTPS 연결, 기본 분석 ref 1개(branch/tag), 경로 및 파일 타입 기반 수집 범위 제어, Push/PR 이벤트 기반 최신화, webhook secret grace rotation, 그리고 계획 입력에서 코드 스냅샷까지 이어지는 추적 관계를 FastAPI API, Celery worker, SQLAlchemy/Alembic persistence, Jinja2/HTMX 운영 UI 조합으로 설계한다. 구현 속도보다 설계 입력 문서의 품질을 우선하며, `research.md`, `data-model.md`, `contracts/`, `quickstart.md`에 운영 규칙과 검증 기준을 먼저 고정한 뒤에만 후속 task 분해로 이어진다.
 
 ## Change Traceability
 
@@ -26,12 +26,12 @@
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.6 on Node.js 22 LTS  
-**Primary Dependencies**: Fastify 5, Zod 3.24, Prisma 6, BullMQ 5, ioredis, pino, React 19, Next.js 15 App Router  
+**Language/Version**: Python 3.12  
+**Primary Dependencies**: FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, Celery 5.x, redis-py, structlog, Jinja2, HTMX  
 **Storage**: PostgreSQL 16 for connection/event/snapshot metadata and trace references, Redis 7 for webhook and snapshot jobs, local disk mirror cache under `.runtime/git-mirrors`, local snapshot archive under `.runtime/code-snapshots`  
-**Testing**: contract, integration, unit, and quickstart-regression suites aligned to the generated OpenAPI contract and operator validation flows  
-**Target Platform**: Linux-based API/worker runtime with Git CLI available; operator UI served as a web application  
-**Project Type**: web application with API, async worker, and operator-facing UI  
+**Testing**: `pytest`, `pytest-asyncio`, `httpx`, `schemathesis`, Playwright for operator flow regression  
+**Target Platform**: Linux-based API/worker runtime with Git CLI available; operator UI served from the Python application as server-rendered HTML  
+**Project Type**: Python web application with JSON API, async worker, and operator-facing server-rendered UI  
 **Performance Goals**: valid webhook deliveries acknowledged quickly and reflected in processing status within 1 minute for at least 95% of Push/PR events; repository connection to first successful snapshot remains achievable within 10 minutes; planned webhook secret rotation must not interrupt valid event processing during the grace window  
 **Constraints**: design-input quality takes precedence over implementation speed; pilot forbids auto-implement; GitHub Cloud only in v1; default ref 1개 정책; read-only credential only; raw-body HMAC verification required; binary and large files remain hard-excluded in v1; `reauth_required`/`ref_missing` 상태는 신규 검증 또는 수집 차단을 동반해야 한다; traceability must be queryable without external log correlation  
 **Scale/Scope**: pilot release for internal operators managing low hundreds of repository connections, single default ref per connection, bursty webhook deliveries, revision-based secret rotation, and full snapshot retention for auditability
@@ -86,50 +86,51 @@ specs/001-git-repo-connection/
 
 ```text
 src/
-├── server/
-│   ├── lib/
-│   │   ├── config/
-│   │   └── http/
-│   └── modules/
-│       ├── repository-connections/
-│       │   ├── api/
-│       │   ├── infrastructure/
-│       │   │   ├── git/
-│       │   │   ├── persistence/
-│       │   │   └── snapshots/
-│       │   ├── services/
-│       │   └── workers/
-│       └── webhooks/
-│           └── github/
-├── shared/
-│   └── contracts/
-└── web/
-    └── app/
-        └── connections/
+└── tci/
+    ├── api/
+    │   ├── dependencies/
+    │   ├── routes/
+    │   └── schemas/
+    ├── domain/
+    │   ├── models/
+    │   └── services/
+    ├── infrastructure/
+    │   ├── git/
+    │   ├── persistence/
+    │   ├── queue/
+    │   └── snapshots/
+    ├── web/
+    │   ├── routes/
+    │   ├── templates/
+    │   │   └── connections/
+    │   └── static/
+    ├── workers/
+    ├── settings.py
+    └── app.py
 
-prisma/
-└── migrations/
+alembic/
+└── versions/
 
 tests/
 ├── contract/
-│   └── repository-ingestion/
+│   └── repository_ingestion/
 ├── integration/
-│   └── repository-connections/
+│   └── repository_connections/
 └── unit/
-    └── repository-connections/
+    └── repository_connections/
 
 .runtime/
 ├── git-mirrors/
 └── code-snapshots/
 ```
 
-**Structure Decision**: API, worker, operator UI를 하나의 TypeScript codebase에서 분리된 모듈 경계로 관리한다. 저장소 연결/스냅샷/웹훅은 `src/server/modules` 아래 도메인 모듈로, 운영자 화면은 `src/web/app/connections` 아래로, 계약과 테스트는 각각 `src/shared/contracts`와 `tests/`로 고정한다. traceability projection은 connection detail, event list, snapshot detail 조회에 공통으로 노출한다.
+**Structure Decision**: API, worker, operator UI를 하나의 Python codebase에서 분리된 모듈 경계로 관리한다. 저장소 연결/스냅샷/웹훅은 `src/tci/domain`과 `src/tci/infrastructure` 아래 도메인 모듈로, JSON API는 `src/tci/api/routes`, 운영자 화면은 `src/tci/web/routes`와 `src/tci/web/templates/connections` 아래로 고정한다. 데이터베이스 스키마 이력은 `alembic/versions`, 계약 검증은 `tests/contract`, traceability projection은 connection detail, event list, snapshot detail 조회에 공통으로 노출한다.
 
 ## Design Artifacts
 
 ### Research Status
 
-- `research.md`는 provider 범위, mirror 전략, snapshot 보존, 필터 우선순위, webhook HMAC 검증, dedupe 규칙, 상태 코드, revision/grace 모델을 고정한다.
+- `research.md`는 provider 범위, mirror 전략, snapshot 보존, 필터 우선순위, FastAPI raw-body HMAC 검증, Celery 비동기 처리, dedupe 규칙, 상태 코드, revision/grace 모델을 고정한다.
 - 이번 보강으로 `reauth_required`, `ref_missing`, connection detail 요약 vs event timeline 상세 역할이 승인된 spec 기준으로 고정되었다.
 - 이번 보강으로 `webhook secret grace rotation`은 설계 범위에 포함되며, current/previous secret 동시 허용 기간과 가시성 요구가 승인된 상태다.
 
@@ -162,7 +163,7 @@ tests/
 
 ### Slice 3. Webhook Intake, Rotation Grace, and Event Freshness
 
-- Fastify webhook route는 raw body 검증 후 이벤트 영속화와 enqueue까지만 수행하고, 실질 sync는 BullMQ worker가 담당한다.
+- FastAPI webhook route는 raw body 검증 후 이벤트 영속화와 Celery enqueue까지만 수행하고, 실질 sync는 worker가 담당한다.
 - Push는 기본 ref와 일치할 때만, PR은 `opened`, `reopened`, `synchronize`, `ready_for_review`에서만 스냅샷 최신화 후보가 된다.
 - secret rotation은 active revision과 previous grace revision을 함께 검증하고, grace 종료 시점과 previous-secret acceptance를 operator UI/API에서 보여준다.
 - dedupe는 `X-GitHub-Delivery` unique 처리와 `targetKey + headSha` cursor 처리의 2단으로 설계한다.
@@ -178,7 +179,7 @@ tests/
 
 - Unit: scope precedence, binary/size guard, stale SHA detection, secret rejection reason mapping, previous-grace secret acceptance 분기
 - Contract: repository connection, scope rules, snapshot trigger, webhook intake, connection detail summary, event/status 조회, traceability block, rotation health projection OpenAPI 준수
-- Integration: Git mirror fetch, snapshot archive generation, connection provenance persistence, `reauth_required`/`ref_missing` 상태 전이, webhook raw-body signature verification, delivery dedupe, stale event skip, grace-period secret rollover
+- Integration: Git mirror fetch, snapshot archive generation, connection provenance persistence, `reauth_required`/`ref_missing` 상태 전이, FastAPI raw-body signature verification, delivery dedupe, stale event skip, grace-period secret rollover
 - Quickstart regression: MVP review 전에 연결 생성 -> 초기 스냅샷 완료까지의 소요 시간을 측정해 `SC-001` 근거를 남기고, 전체 릴리스 회귀에서는 연결 생성 -> 규칙 저장 -> 초기 스냅샷 -> Push 최신화 -> PR source snapshot -> connection detail summary 확인 -> secret rotation grace -> traceability 조회를 반복 검증한다.
 - Delivery evidence: 구현 이후 `/specs/001-git-repo-connection/delivery-evidence.md`에서 story별 검증 근거와 FR/SC trace coverage를 링크한다.
 

@@ -2,20 +2,22 @@
 
 ## Research Focus
 
-이번 문서는 구현 가이드보다 설계 입력 문서 품질을 높이는 데 초점을 둔다. `spec.md`의 Clarifications와 Edge Cases를 그대로 남겨두지 않고, plan 단계에서 필요한 운영 규칙과 경계 조건을 명시적 결정으로 고정한다.
+이번 문서는 구현 가이드보다 설계 입력 문서 품질을 높이는 데 초점을 둔다. `spec.md`의 Clarifications와 Edge Cases를 그대로 남겨두지 않고, plan 단계에서 필요한 운영 규칙과 경계 조건을 명시적 결정으로 고정한다. 구현 기준은 단일 Python codebase를 전제로 한 FastAPI API, Celery worker, SQLAlchemy/Alembic persistence, Jinja2/HTMX 운영 UI 조합이다.
 
 ## 결정 1: GitHub Cloud만 공식 지원하되, 저장소 본문 수집은 Git transport 중심으로 처리한다
 
-**Decision**: v1은 GitHub Cloud 저장소만 공식 지원한다. 연결 검증과 스냅샷 수집은 `git ls-remote`, `git fetch`, `git archive` 또는 동등한 Git transport 흐름으로 처리하고, 실시간 이벤트는 GitHub webhook 계약을 따른다.
+**Decision**: v1은 GitHub Cloud 저장소만 공식 지원한다. 연결 검증과 스냅샷 수집은 Python 서비스가 `git ls-remote`, `git fetch`, `git archive` 또는 동등한 Git transport 흐름을 subprocess로 호출해 처리하고, 실시간 이벤트는 GitHub webhook 계약을 따른다.
 
 **Rationale**:
 - `FR-001a`가 GitHub Cloud만 공식 지원 대상으로 제한한다.
 - SSH/HTTPS 읽기 전용 연결과 branch/tag 선택은 Git transport가 가장 직접적이다.
 - GitHub webhook은 `X-GitHub-Delivery`, `X-GitHub-Event`, `X-Hub-Signature-256` 헤더를 제공하므로 이벤트 무결성과 dedupe 기준을 명확히 둘 수 있다.
 - 저장소 내용 수집은 provider API보다 Git transport가 snapshot 재현성에 유리하다.
+- GitPython 같은 라이브러리 추상화보다 Git CLI subprocess 호출이 mirror 관리와 `git archive` 사용 범위를 명확히 통제하기 쉽다.
 
 **Alternatives considered**:
 - GitHub REST/GraphQL API 우선 수집: PR 메타데이터는 편하지만 Git tree 전체 스냅샷과 SSH 연결 요구를 자연스럽게 만족하지 못한다.
+- GitPython 중심 구현: 일부 작업은 단순하지만 mirror/fetch/archive 전체 흐름을 CLI만큼 예측 가능하게 다루기 어렵다.
 - 다중 provider 동시 지원: 장기적으로 타당하지만 현재 spec 범위를 넘어간다.
 
 ## 결정 2: 저장소 연결 1건은 기본 ref 1개만 가진다
@@ -39,6 +41,7 @@
 - `FR-001b`, `FR-016`, `FR-017`은 연결 단위 비밀정보 저장과 secret 상태 추적을 요구한다.
 - 회전 직후 GitHub webhook 설정 반영 지연이 있을 수 있으므로 짧은 중첩 허용 구간이 운영상 안전하다.
 - revision 분리는 누가 언제 무엇을 바꿨는지 감사 추적을 남기기 쉽다.
+- Python 애플리케이션 계층에서 credential과 webhook secret을 같은 암호화 추상화로 다뤄도 수명 주기와 UI 상태는 분리해야 한다.
 
 **Alternatives considered**:
 - 연결 레코드에 단일 비밀값만 저장: 단순하지만 회전 이력과 grace handling이 불가능하다.
@@ -52,6 +55,7 @@
 - AGENTS의 활성 기술 스택에 `.runtime/git-mirrors`가 이미 기준 저장소로 정의되어 있다.
 - branch/tag 이동, 재검증, 이벤트성 PR source ref 추적을 재클론 없이 수행할 수 있다.
 - webhook burst 상황에서 네트워크 비용과 지연 시간을 줄인다.
+- Celery worker가 stateless하게 재기동되더라도 로컬 bare mirror를 재사용해 작업 시간을 일정하게 유지할 수 있다.
 
 **Alternatives considered**:
 - 스냅샷마다 fresh clone: 초기 구현은 쉽지만 비용이 크고 이벤트 폭주에 약하다.
@@ -65,6 +69,7 @@
 - `FR-005a`는 필터 적용 후 전체 파일 집합을 완전한 스냅샷으로 보존하라고 요구한다.
 - 파일 본문을 DB에 직접 저장하면 대형 저장소에서 테이블 팽창과 백업 부담이 과도해진다.
 - 메타데이터와 파일 본문을 분리하면 manifest 비교, 감사 추적, 재분석 입력 고정이 쉬워진다.
+- Python 애플리케이션에서 archive 생성과 manifest 기록을 분리하면 실패 지점을 `SNAPSHOT_WRITE_FAILED`와 메타데이터 롤백으로 명확히 나눌 수 있다.
 
 **Alternatives considered**:
 - commit SHA와 path만 저장: 재현성은 있으나 원격 저장소 상태 변화나 credential 만료 시 재분석 보장이 깨진다.
@@ -83,23 +88,26 @@
 - `FR-006`, `FR-007`, `FR-013`과 User Story 2의 기대치를 충족하려면 우선순위가 문서로 고정되어야 한다.
 - 생성 산출물과 대용량 파일은 분석 가치보다 비용이 크다.
 - 사용자가 include를 주더라도 바이너리/초대형 파일을 허용하면 파일럿 운영 안정성이 낮아진다.
+- Python 필터 엔진은 glob/extension/text sniffing을 분리 구현할 수 있으므로, 평가 순서를 문서로 먼저 고정하는 편이 유지보수에 유리하다.
 
 **Alternatives considered**:
 - 사용자 규칙만 전적으로 신뢰: 유연하지만 운영 비용과 실패 가능성이 높다.
 - MIME 기반 정밀 판별만 사용: 정확도는 높지만 v1에 과한 구현 복잡도를 만든다.
 
-## 결정 7: 웹훅은 raw body HMAC 검증 후 비동기 처리한다
+## 결정 7: 웹훅은 FastAPI raw body HMAC 검증 후 비동기 처리한다
 
-**Decision**: GitHub webhook 엔드포인트는 Fastify에서 raw request body를 확보한 뒤 `X-Hub-Signature-256` HMAC SHA-256 검증을 수행한다. 검증 성공 시 이벤트 레코드를 영속화하고 queue에 enqueue한 뒤 `202 Accepted`를 반환한다.
+**Decision**: GitHub webhook 엔드포인트는 FastAPI에서 raw request body를 확보한 뒤 `X-Hub-Signature-256` HMAC SHA-256 검증을 수행한다. 검증 성공 시 이벤트 레코드를 영속화하고 Celery queue에 enqueue한 뒤 `202 Accepted`를 반환한다.
 
 **Rationale**:
 - GitHub 공식 문서는 webhook delivery 검증에 `X-Hub-Signature-256` 사용을 권장한다.
 - GitHub 공식 문서는 webhook 소비자가 빠르게 응답하고 비동기 후처리를 하도록 권장한다.
-- Fastify 공식 가이드는 signature 계산을 위해 raw body 접근 패턴을 제공한다.
+- FastAPI/Starlette는 request body를 직접 읽는 패턴을 제공하므로, 서명 계산을 원문 기준으로 일관되게 수행할 수 있다.
+- Celery는 Redis 기반 비동기 작업과 재시도 정책을 분리해 API 응답 경로를 짧게 유지하기 쉽다.
 
 **Alternatives considered**:
 - 파싱된 JSON body 기준 서명 검증: 직렬화 차이로 검증 실패 가능성이 있다.
 - 동기식 전체 처리 후 응답: 재시도와 타임아웃 위험이 커진다.
+- RQ/Dramatiq 채택: 단순성은 장점이지만 현재 요구된 재시도/상태 분리 모델에서는 Celery의 운영 패턴이 더 익숙하다.
 
 ## 결정 8: 이벤트 기록과 스냅샷 트리거 규칙을 분리한다
 
@@ -130,12 +138,27 @@
 - `FR-011a`, `FR-011b`가 요구하는 중복 제거와 최신 SHA 우선 처리를 만족한다.
 - GitHub는 redelivery를 지원하므로 delivery ID dedupe가 필요하다.
 - 동일 SHA에 대한 중복 Push/PR 재전송까지 막으려면 target SHA 단위 dedupe가 추가로 필요하다.
+- Celery job id만으로는 DB 상태와 독립적으로 정확한 dedupe 감사 추적을 남기기 어렵다.
 
 **Alternatives considered**:
 - delivery ID만 dedupe: 같은 SHA를 다른 delivery가 가리키면 중복 스냅샷이 생긴다.
 - SHA만 dedupe: redelivery 감사 추적과 재시도 관찰성이 약해진다.
 
-## 결정 10: Edge Case는 운영 상태 코드와 거부 사유로 분리 노출한다
+## 결정 10: 운영자 UI는 Jinja2 + HTMX 기반 서버 렌더링으로 단일 Python 서비스 안에 둔다
+
+**Decision**: 운영자 화면은 별도 프런트엔드 런타임을 추가하지 않고 FastAPI 애플리케이션 내부의 Jinja2 템플릿과 HTMX 상호작용으로 구현한다. JSON API와 HTML route는 같은 도메인 서비스 계층을 공유한다.
+
+**Rationale**:
+- 사용자는 내부 운영자이며, UI 요구가 대규모 소비자용 인터랙션보다 상태 가시성과 운영 정확도에 가깝다.
+- Python 기반 개발로 전환한다는 목표에 맞춰 백엔드와 UI를 단일 기술 스택으로 유지할 수 있다.
+- HTML route와 JSON API가 같은 traceability projection을 재사용하면 뷰 모델 정합성이 좋아진다.
+- 별도 Node/React 런타임을 유지하지 않아도 spec이 요구하는 connection detail, scope warnings, event timeline UI를 충분히 제공할 수 있다.
+
+**Alternatives considered**:
+- React/Next.js 프런트엔드 유지: 구현 선택지는 넓지만 Python-only 설계 목표와 어긋난다.
+- 순수 JSON API만 제공: 운영자 경험 요구를 충족하기 어렵고 quickstart 검증 흐름도 약해진다.
+
+## 결정 11: Edge Case는 운영 상태 코드와 거부 사유로 분리 노출한다
 
 **Decision**:
 - credential 만료/취소: 연결 상태를 `reauth_required`로 전환하고 이후 자동 수집을 중단한다.
@@ -149,13 +172,13 @@
 **Rationale**:
 - User Story 2, `FR-012`, `FR-013`, `FR-017`, Edge Cases가 모두 운영자 가시성을 요구한다.
 - connection detail에 요약과 상세 이력을 함께 넣기보다, 요약은 즉시 판단용으로 두고 상세는 timeline으로 분리해야 응답 크기와 운영자 인지 부하를 함께 줄일 수 있다.
-- 상태 코드를 문서에서 먼저 고정해야 UI/백엔드/운영 로그가 같은 언어를 쓴다.
+- 상태 코드를 문서에서 먼저 고정해야 UI/백엔드/worker 로그가 같은 언어를 쓴다.
 
 **Alternatives considered**:
 - 모든 실패를 generic error로 통합: 구현은 쉽지만 운영자가 재설정 절차를 알기 어렵다.
 - UI에서만 메시지 변환: API와 worker 감사 추적이 불일치할 수 있다.
 
-## 결정 11: FR-014는 문서 링크가 아니라 런타임 조회 가능한 traceability chain으로 닫는다
+## 결정 12: FR-014는 문서 링크가 아니라 런타임 조회 가능한 traceability chain으로 닫는다
 
 **Decision**: planning input은 별도 reference 레코드로 보관하고, `RepositoryConnection`은 해당 planning input reference를 가리킨다. `CollectionScopeRuleVersion`, `RepositorySyncRun`, `RepositoryEvent`, `CodeSnapshot`은 이미 가진 FK와 version 필드를 통해 "어떤 계획 입력에서 나온 연결 설정이 어떤 이벤트와 어떤 스냅샷으로 이어졌는지"를 API 응답에서 역추적 가능하게 노출한다.
 
@@ -188,5 +211,6 @@
 
 - GitHub Docs, Validating webhook deliveries: https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
 - GitHub Docs, Best practices for using webhooks: https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks
-- BullMQ Docs, Job Ids and deduplication patterns: https://docs.bullmq.io/guide/jobs/job-ids
-- Local design references under `openspec/changes/add-git-repo-target-filtering/` and `architecture/`
+- FastAPI Docs, Using the Request Directly: https://fastapi.tiangolo.com/advanced/using-request-directly/
+- Celery Docs, Retrying Tasks: https://docs.celeryq.dev/en/stable/userguide/tasks.html#retrying
+- Alembic Docs, Tutorial: https://alembic.sqlalchemy.org/en/latest/tutorial.html
