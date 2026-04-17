@@ -3,7 +3,7 @@
 **Input**: Design documents from `/specs/001-git-repo-connection/`  
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/repository-ingestion.openapi.yaml, quickstart.md
 
-**Tests**: 이 기능은 spec의 `User Scenarios & Testing`과 사용자 요청을 반영해 모든 사용자 스토리에 대해 contract/integration/unit 테스트 작업을 포함한다. 추가로 `SC-002`와 `SC-005`를 위해 상태 반영 지연과 secret rotation grace continuity를 검증하는 회귀 작업을 포함한다.
+**Tests**: 이 기능은 spec의 `User Scenarios & Testing`과 사용자 요청을 반영해 모든 사용자 스토리에 대해 contract/integration/unit 테스트 작업을 포함한다. `SC-001`은 MVP인 US1 검증 시점에서 수동/통합 검증 근거를 먼저 남기고, 이후 전체 회귀로 반복 확인한다. 추가로 `SC-002`와 `SC-005`를 위해 상태 반영 지연과 secret rotation grace continuity를 검증하는 회귀 작업을 포함한다.
 
 **Organization**: 작업은 `공통 기반 작업`과 `사용자 가치 기준 작업`으로 구분한다. 공통 기반 작업은 모든 후속 작업의 선행 조건이며, 사용자 가치 작업은 US1~US3 단위로 독립 구현과 독립 검증이 가능하도록 정리한다.
 
@@ -51,12 +51,12 @@
 
 **Goal**: 수집 담당자가 GitHub Cloud 저장소를 읽기 전용으로 연결하고, 기본 ref를 검증한 뒤 첫 완전 스냅샷을 생성하고 상태와 추적 정보를 확인할 수 있게 한다.
 
-**Independent Test**: 유효한 GitHub Cloud 저장소 URL과 읽기 전용 credential을 등록하고 기본 ref를 선택한 뒤, 초기 스냅샷 생성 완료와 파일 목록/상태/traceability block이 조회되며 connection detail에서 최신 성공/실패 시각과 마지막 처리 이벤트 요약이 보이고 추가 브랜치 상시 분석 시 `새 연결 생성` 또는 `기본 ref 교체` 선택지가 명확히 보이면 된다.
+**Independent Test**: 유효한 GitHub Cloud 저장소 URL과 읽기 전용 credential을 등록하고 기본 ref를 선택한 뒤, 초기 스냅샷 생성 완료와 파일 목록/상태/traceability block이 조회되며 connection detail에서 최신 성공/실패 시각과 최신 snapshot 정보가 보이고, 추가 브랜치 상시 분석 시 `새 연결 생성` 또는 `기본 ref 교체` 선택지가 명확히 보이며, 비지원 provider 입력은 v1 지원 범위 안내와 함께 거부되면 된다.
 
 ### Tests for User Story 1
 
-- [ ] T015 [P] [US1] Add contract tests for repository connection create/get/patch/verify endpoints, FR-012 connection detail summary fields, traceability blocks, and additional-ref guidance responses in `tests/contract/repository-ingestion/repository-connection.contract.test.ts`
-- [ ] T016 [P] [US1] Add integration tests for read-only credential validation, `reauth_required` and `ref_missing` recovery, default ref change preservation, FR-012 summary projection, additional-ref guidance, and initial snapshot traceability in `tests/integration/repository-connections/connection-and-initial-snapshot.integration.test.ts`
+- [ ] T015 [P] [US1] Add contract tests for repository connection create/get/patch/verify endpoints, unsupported-provider rejection for FR-001a, connection detail latest success/failure summary fields, traceability blocks, and additional-ref guidance responses in `tests/contract/repository-ingestion/repository-connection.contract.test.ts`
+- [ ] T016 [P] [US1] Add integration tests for GitHub Cloud-only validation, read-only credential validation, `reauth_required` and `ref_missing` recovery, default ref change preservation, latest success/failure summary projection, additional-ref guidance, and initial snapshot traceability in `tests/integration/repository-connections/connection-and-initial-snapshot.integration.test.ts`
 
 ### Implementation for User Story 1
 
@@ -64,17 +64,17 @@
 - [ ] T018 [P] [US1] Implement credential revision persistence adapter in `src/server/modules/repository-connections/infrastructure/persistence/credential-revision-repository.ts`
 - [ ] T019 [P] [US1] Implement sync run persistence adapter in `src/server/modules/repository-connections/infrastructure/persistence/repository-sync-run-repository.ts`
 - [ ] T020 [P] [US1] Implement code snapshot persistence adapter in `src/server/modules/repository-connections/infrastructure/persistence/code-snapshot-repository.ts`
-- [ ] T021 [P] [US1] Implement repository connection request and response schemas with FR-012 summary, traceability, and additional-ref guidance fields in `src/server/modules/repository-connections/api/repository-connection.schemas.ts`
-- [ ] T022 [US1] Implement connection creation and verification services with planning input reference binding and `reauth_required` transition handling in `src/server/modules/repository-connections/services/create-repository-connection.ts` and `src/server/modules/repository-connections/services/verify-repository-connection.ts`
+- [ ] T021 [P] [US1] Implement repository connection request and response schemas with GitHub Cloud-only validation errors, latest success/failure summary, traceability, and additional-ref guidance fields in `src/server/modules/repository-connections/api/repository-connection.schemas.ts`
+- [ ] T022 [US1] Implement connection creation and verification services with GitHub Cloud-only validation, planning input reference binding, and `reauth_required` transition handling in `src/server/modules/repository-connections/services/create-repository-connection.ts` and `src/server/modules/repository-connections/services/verify-repository-connection.ts`
 - [ ] T023 [US1] Implement default ref update and additional-ref guidance service that preserves prior snapshots and events and supports `ref_missing` recovery in `src/server/modules/repository-connections/services/update-default-ref.ts`
 - [ ] T024 [US1] Implement manual snapshot trigger service in `src/server/modules/repository-connections/services/create-initial-snapshot.ts`
 - [ ] T025 [US1] Implement default-ref snapshot builder that stamps sync and provenance references in `src/server/modules/repository-connections/services/build-code-snapshot.ts`
 - [ ] T026 [US1] Implement repository connection routes in `src/server/modules/repository-connections/api/repository-connection.routes.ts`
 - [ ] T027 [US1] Implement repository snapshot detail query service and routes with traceability block in `src/server/modules/repository-connections/services/get-code-snapshot-detail.ts` and `src/server/modules/repository-connections/api/repository-snapshot.routes.ts`
-- [ ] T028 [US1] Implement repository connection detail query service with FR-012 summary projections (`lastSuccessfulSnapshotAt`, `lastFailedSyncAt`, `lastProcessedEvent`), planning-input, and latest-snapshot projections in `src/server/modules/repository-connections/services/get-repository-connection-detail.ts`
+- [ ] T028 [US1] Implement repository connection detail query service with MVP summary projections (`lastSuccessfulSnapshotAt`, `lastFailedSyncAt`, `latestSnapshot`), planning-input, and additional-ref guidance projections in `src/server/modules/repository-connections/services/get-repository-connection-detail.ts`
 - [ ] T029 [P] [US1] Implement operator connection create/list page in `src/web/app/connections/page.tsx`
-- [ ] T030 [US1] Implement operator connection detail page with FR-012 summary cards, additional-ref guidance, and traceability panel in `src/web/app/connections/[connectionId]/page.tsx`
-- [ ] T031 [US1] Capture User Story 1 verification evidence and trace links in `specs/001-git-repo-connection/delivery-evidence.md`
+- [ ] T030 [US1] Implement operator connection detail page with latest success/failure summary cards, additional-ref guidance, and traceability panel in `src/web/app/connections/[connectionId]/page.tsx`
+- [ ] T031 [US1] Capture User Story 1 verification evidence, including `SC-001` timed first-snapshot validation, unsupported-provider rejection proof, and trace links in `specs/001-git-repo-connection/delivery-evidence.md`
 
 **Checkpoint**: User Story 1은 단독으로 구현 및 검증 가능해야 하며 MVP 후보가 된다.
 
@@ -146,7 +146,7 @@
 
 - [ ] T060 [P] Add regression tests for FR-002a `reauth_required`, FR-003b `ref_missing`, FR-015a additional-ref guidance fallback, and FR-016a/SC-005 webhook secret grace rotation in `tests/integration/repository-connections/edge-state-regression.integration.test.ts`
 - [ ] T061 [P] Add webhook processing status latency validation for `SC-002` in `tests/integration/repository-connections/webhook-status-latency.integration.test.ts`
-- [ ] T062 [P] Add quickstart end-to-end regression harness with SC-001 first-snapshot-under-10-min validation in `tests/integration/repository-connections/quickstart-validation.integration.test.ts`
+- [ ] T062 [P] Add full quickstart end-to-end regression harness that repeats `SC-001` first-snapshot-under-10-min validation alongside release-scope flow coverage in `tests/integration/repository-connections/quickstart-validation.integration.test.ts`
 - [ ] T063 Refresh FR-001 through FR-017a and SC-001 through SC-005 trace coverage and story completion evidence in `specs/001-git-repo-connection/delivery-evidence.md`
 
 ---
@@ -241,6 +241,6 @@ Task: "T051 [US3] event payload parser in src/server/modules/webhooks/github/git
 - All tasks follow the required checklist format: checkbox, Task ID, optional `[P]`, optional `[US#]`, exact file path
 - 공통 기반 작업이 최우선으로 먼저 오도록 정렬했다
 - 모든 사용자 스토리에 테스트 작업과 verification evidence 작업을 포함했다
-- `SC-001`은 T062의 quickstart 소요 시간 검증으로 확인한다
+- `SC-001`은 T031의 MVP 검증 증거로 먼저 확인하고 T062의 전체 quickstart 회귀로 반복 검증한다
 - `FR-002a`, `FR-003b`, `FR-006`, `FR-012`, `FR-012a`, `FR-014`, `FR-015a`, `FR-016a`, `FR-017a`, `SC-002`, `SC-005`, `ref_missing`, `reauth_required`, webhook grace rotation이 각각 작업 단위로 직접 추적 가능하도록 보강했다
 - Completing all tasks in this file is intended to satisfy the full approved scope in `spec.md`

@@ -15,7 +15,7 @@
 
 - v1 공식 지원 범위는 GitHub Cloud만이며 저장소 접근은 읽기 전용 SSH/HTTPS credential만 허용한다.
 - 저장소 연결 1건은 기본 분석 ref 1개만 유지하고, PR source branch는 이벤트성 예외 타깃으로만 처리한다.
-- Commit은 기록 전용 도메인 이벤트이며 Push/PR만 스냅샷 갱신 트리거가 된다.
+- GitHub Cloud에서는 Push/PR payload에서 추출한 commit 메타데이터를 기록 전용 도메인 이벤트로 저장하며, Push/PR만 스냅샷 갱신 트리거가 된다.
 - 각 수집 성공 시점은 필터가 적용된 전체 파일 집합을 완전 스냅샷으로 고정 저장한다.
 - 바이너리와 5 MiB 초과 파일은 기본 제외하며 v1에서는 사용자 예외 규칙으로도 포함하지 않는다.
 - 저장소 자격 증명이 만료되거나 취소되면 연결 상태를 `reauth_required`로 전환하고, 재인증 전까지 신규 검증과 수집을 차단한다.
@@ -64,7 +64,7 @@
 | 빈 수집 결과 | 규칙 저장 시 `empty_result_risk` 경고를 반환하고, 실제 스냅샷 실행에서는 `NO_INCLUDED_FILES`로 실패 처리한다. |
 | 바이너리/대용량 예외 포함 | 사용자 예외 규칙이 있어도 v1에서는 수집하지 않는다. 후속 범위로 남긴다. |
 | PR force push / out-of-order event | PR 번호 또는 기본 ref 기준 cursor를 유지하고 최신 accepted HEAD SHA보다 오래된 이벤트는 `stale_head`로 종료한다. |
-| FR-012 operator summary | connection detail은 최근 성공/실패 시각과 마지막 처리 이벤트 요약을 제공하고, 상세 이벤트 이력은 별도 event timeline 조회에서 제공한다. |
+| FR-012 operator summary | connection detail은 US1 시점에 최근 성공/실패 수집 요약과 최신 snapshot 정보를 제공하고, webhook/event 저장소가 추가되는 US3 이후 `lastProcessedEvent` 요약과 event timeline 상세를 함께 제공한다. |
 | FR-014 traceability | planning input reference를 연결에 귀속시키고, 활성 scope rule version, trigger event, sync run, snapshot manifest까지 역추적 가능한 조회 계약을 제공한다. |
 
 ## Project Structure
@@ -151,7 +151,8 @@ tests/
 - 저장소 연결 생성, read-only credential 검증, 기본 ref 검증, 연결 상태 전이를 먼저 고정한다.
 - 연결 상태 전이는 `pending_verification`, `active`, `reauth_required`, `ref_missing`, `webhook_unconfigured`, `disabled` 집합으로 고정하고, 자격 증명 만료/취소 및 기본 ref 소실 시 차단 규칙을 함께 설계한다.
 - `PlanningInputReference`를 연결과 scope rule version에 연결해, 어떤 계획 입력에서 어떤 연결 설정이 생성됐는지 조회 가능하게 만든다.
-- 첫 수동 스냅샷이 설계 전체의 기준선이므로 US1은 traceability projection을 포함한 독립 검증 가능 상태로 만든다.
+- 첫 수동 스냅샷이 설계 전체의 기준선이므로 US1은 traceability projection과 최신 성공/실패 수집 요약을 포함한 독립 검증 가능 상태로 만든다.
+- 이벤트 저장소가 아직 없는 US1 단계에서는 `lastProcessedEvent` 요약을 강제하지 않고, 해당 필드는 Slice 3 이후 authoritative source가 생긴 뒤 connection detail에 확장한다.
 
 ### Slice 2. Scope-Controlled Snapshot Pipeline
 
@@ -178,7 +179,7 @@ tests/
 - Unit: scope precedence, binary/size guard, stale SHA detection, secret rejection reason mapping, previous-grace secret acceptance 분기
 - Contract: repository connection, scope rules, snapshot trigger, webhook intake, connection detail summary, event/status 조회, traceability block, rotation health projection OpenAPI 준수
 - Integration: Git mirror fetch, snapshot archive generation, connection provenance persistence, `reauth_required`/`ref_missing` 상태 전이, webhook raw-body signature verification, delivery dedupe, stale event skip, grace-period secret rollover
-- Quickstart regression: 연결 생성 -> 규칙 저장 -> 초기 스냅샷 -> Push 최신화 -> PR source snapshot -> connection detail summary 확인 -> secret rotation grace -> traceability 조회
+- Quickstart regression: MVP review 전에 연결 생성 -> 초기 스냅샷 완료까지의 소요 시간을 측정해 `SC-001` 근거를 남기고, 전체 릴리스 회귀에서는 연결 생성 -> 규칙 저장 -> 초기 스냅샷 -> Push 최신화 -> PR source snapshot -> connection detail summary 확인 -> secret rotation grace -> traceability 조회를 반복 검증한다.
 - Delivery evidence: 구현 이후 `/specs/001-git-repo-connection/delivery-evidence.md`에서 story별 검증 근거와 FR/SC trace coverage를 링크한다.
 
 ## Complexity Tracking
