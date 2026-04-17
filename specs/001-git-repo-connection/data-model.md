@@ -56,6 +56,7 @@
 | `last_verified_at` | timestamptz | 최근 연결 검증 시각 |
 | `last_successful_snapshot_at` | timestamptz | 최근 성공 스냅샷 시각 |
 | `last_failed_sync_at` | timestamptz | 최근 실패 시각 |
+| `last_processed_event_id` | UUID nullable | FK -> RepositoryEvent, connection detail 요약용 마지막 처리 이벤트 |
 | `last_processed_event_at` | timestamptz | 최근 이벤트 반영 시각 |
 | `created_at` | timestamptz | 생성 시각 |
 | `updated_at` | timestamptz | 수정 시각 |
@@ -66,6 +67,7 @@
 - `remote_url`은 GitHub Cloud SSH/HTTPS 패턴만 허용
 - `default_ref_type`은 `branch` 또는 `tag`만 허용
 - 읽기 전용 credential 검증 통과 전 `active` 전환 금지
+- `last_processed_event_id`가 존재하면 같은 `RepositoryConnection`에 속한 `RepositoryEvent`를 가리켜야 한다.
 - `webhook_unconfigured`는 secret 누락 상태에만 사용하고, secret mismatch는 `status = active` + `webhook_health_state = secret_mismatch_detected`로 표현
 
 **State Transitions**:
@@ -310,7 +312,9 @@ CollectionScopeRuleVersion 1 --- n CodeSnapshot
 
 - `last_successful_snapshot_at`
 - `last_failed_sync_at`
+- `last_processed_event_id`
 - `last_processed_event_at`
+- `last_processed_event_summary` (`id`, `provider_event_type`, `provider_action`, `target_key`, `processing_decision`, `processed_at`)
 - `current_status`
 - `webhook_health_state`
 - `last_webhook_rejection_reason`
@@ -319,6 +323,25 @@ CollectionScopeRuleVersion 1 --- n CodeSnapshot
 - `previous_secret_deliveries_during_grace`
 - `active_scope_rule_warning_state`
 - `latest_event_decision`
+
+### Event Timeline View
+
+상세 이벤트 이력 조회는 아래 필드를 중심으로 제공한다.
+
+- `RepositoryEvent.id`
+- `provider_event_type`
+- `provider_action`
+- `target_key`
+- `target_head_sha`
+- `signature_status`
+- `verified_secret_revision_status`
+- `rejection_reason`
+- `processing_decision`
+- `processing_status`
+- `sync_run_id`
+- `snapshot_id`
+- `received_at`
+- `processed_at`
 
 ### Traceability View
 
