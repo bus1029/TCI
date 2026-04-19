@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tci"
+version = "0.1.0"
+description = "TCI repository ingestion service"
+readme = "specs/001-git-repo-connection/implementation-reference-guide.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi",
+  "pydantic",
+  "sqlalchemy",
+  "alembic",
+  "celery",
+  "redis",
+  "structlog",
+  "jinja2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-asyncio",
+  "httpx",
+  "schemathesis",
+  "playwright",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tci"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.basedpyright]
+include = ["src", "tests"]
+executionEnvironments = [{ root = ".", extraPaths = ["src"] }]

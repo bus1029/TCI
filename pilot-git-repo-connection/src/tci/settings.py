@@ -1,0 +1,102 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from functools import lru_cache
+import os
+from pathlib import Path
+
+
+DEFAULT_RUNTIME_DIRNAME = ".runtime"
+DEFAULT_TEMPLATE_SUBPATH = Path("src") / "tci" / "web" / "templates"
+
+
+def _resolve_path(raw_value: str | None, *, default: Path, base_dir: Path) -> Path:
+    if not raw_value:
+        return default
+
+    candidate = Path(raw_value).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+
+    return (base_dir / candidate).resolve()
+
+
+def _detect_project_root() -> Path:
+    explicit_root = os.getenv("TCI_PROJECT_ROOT")
+    if explicit_root:
+        resolved_root = Path(explicit_root).expanduser().resolve()
+        if not resolved_root.is_dir():
+            raise RuntimeError(
+                "TCI_PROJECT_ROOT는 존재하는 디렉터리를 가리켜야 합니다."
+            )
+        return resolved_root
+
+    module_dir = Path(__file__).resolve().parent
+    for candidate in (module_dir, *module_dir.parents):
+        if (candidate / "pyproject.toml").exists():
+            return candidate
+
+    current_dir = Path.cwd().resolve()
+    for candidate in (current_dir, *current_dir.parents):
+        if (candidate / "pyproject.toml").exists():
+            return candidate
+
+    raise RuntimeError(
+        "프로젝트 루트를 자동으로 찾을 수 없습니다. TCI_PROJECT_ROOT를 설정하세요."
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Settings:
+    project_root: Path
+    environment: str
+    runtime_root: Path
+    git_mirror_root: Path
+    code_snapshot_root: Path
+    template_root: Path
+    database_url: str | None
+    redis_url: str | None
+
+    def runtime_directories(self) -> tuple[Path, Path, Path]:
+        return (
+            self.runtime_root,
+            self.git_mirror_root,
+            self.code_snapshot_root,
+        )
+
+
+def load_settings() -> Settings:
+    project_root = _detect_project_root()
+    runtime_root = _resolve_path(
+        os.getenv("TCI_RUNTIME_ROOT"),
+        default=project_root / DEFAULT_RUNTIME_DIRNAME,
+        base_dir=project_root,
+    )
+
+    return Settings(
+        project_root=project_root,
+        environment=os.getenv("TCI_ENV", "development"),
+        runtime_root=runtime_root,
+        git_mirror_root=_resolve_path(
+            os.getenv("TCI_GIT_MIRROR_ROOT"),
+            default=runtime_root / "git-mirrors",
+            base_dir=project_root,
+        ),
+        code_snapshot_root=_resolve_path(
+            os.getenv("TCI_CODE_SNAPSHOT_ROOT"),
+            default=runtime_root / "code-snapshots",
+            base_dir=project_root,
+        ),
+        template_root=_resolve_path(
+            os.getenv("TCI_TEMPLATE_ROOT"),
+            default=project_root / DEFAULT_TEMPLATE_SUBPATH,
+            base_dir=project_root,
+        ),
+        database_url=os.getenv("TCI_DATABASE_URL"),
+        redis_url=os.getenv("TCI_REDIS_URL"),
+    )
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return load_settings()
