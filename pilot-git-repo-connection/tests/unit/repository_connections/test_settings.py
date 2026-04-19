@@ -219,6 +219,17 @@ def test_load_settings_rejects_non_directory_project_root(
         load_settings()
 
 
+def test_load_settings_rejects_invalid_credential_encryption_key(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("TCI_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("TCI_CREDENTIAL_ENCRYPTION_KEY", "invalid-key")
+
+    with pytest.raises(RuntimeError, match="TCI_CREDENTIAL_ENCRYPTION_KEY"):
+        load_settings()
+
+
 def test_get_settings_prefers_module_checkout_over_foreign_pyproject_cache(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

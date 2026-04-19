@@ -261,6 +261,45 @@ def test_git_ref_resolver_resolves_branch_head_sha() -> None:
     assert resolved.commit_sha == "0123456789abcdef0123456789abcdef01234567"
 
 
+def test_git_ref_resolver_redacts_https_token_from_runtime_error() -> None:
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult, GitRefResolver
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        return GitCommandResult(
+            returncode=1,
+            stdout="",
+            stderr="fatal: could not access https://x-access-token:secret-token@github.com/acme/repo.git",
+        )
+
+    resolver = GitRefResolver(runner=runner)
+
+    with pytest.raises(RuntimeError, match="REDACTED"):
+        resolver.resolve(
+            remote_url="https://github.com/example/repo.git",
+            ref_type=DefaultRefType.BRANCH,
+            ref_name="main",
+        )
+
+
+def test_git_readonly_validator_redacts_https_token_from_error_detail() -> None:
+    from tci.infrastructure.git.git_readonly_validator import GitReadonlyValidator
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        return GitCommandResult(
+            returncode=1,
+            stdout="",
+            stderr="fatal: Authentication failed for https://x-access-token:secret-token@github.com/acme/repo.git",
+        )
+
+    validator = GitReadonlyValidator(runner=runner)
+    result = validator.probe(remote_url="https://github.com/example/repo.git")
+
+    assert result.problem_code == ProblemCode.CONNECTION_AUTH_FAILED
+    assert "REDACTED" in result.detail
+    assert "secret-token" not in result.detail
+
+
 def test_git_ref_resolver_resolves_local_bare_branch_head_sha_with_subprocess_runner(
     tmp_path: Path,
 ) -> None:

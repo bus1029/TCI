@@ -12,7 +12,11 @@ from fastapi.testclient import TestClient
 from tci.app import AppDependencies, create_app
 from tci.infrastructure.git.git_mirror_manager import ManagedGitMirror
 from tci.infrastructure.git.git_readonly_validator import ReadonlyProbeResult
-from tci.infrastructure.git.git_ref_resolver import ResolvedGitRef
+from tci.infrastructure.git.git_ref_resolver import (
+    GitConnectionAuthError,
+    GitRefNotFoundError,
+    ResolvedGitRef,
+)
 from tci.infrastructure.persistence.models import (
     CredentialRevisionStatus,
     CredentialType,
@@ -41,6 +45,10 @@ class InMemoryRepositoryStore:
     credentials: dict[uuid.UUID, RepositoryCredentialRevision] = field(
         default_factory=dict
     )
+    resolver_requires_bound_credential: bool = False
+    auth_failure_ref_names: set[str] = field(default_factory=set)
+    missing_ref_names: set[str] = field(default_factory=set)
+    last_resolved_remote_url: str | None = None
 
 
 class FakePlanningInputReferenceRepository:
@@ -144,6 +152,24 @@ class FakeRepositoryConnectionRepository:
             connection_id=connection_id,
         )
         connection.active_credential_revision_id = credential_revision_id
+        connection.active_credential_revision = self._store.credentials[credential_revision_id]
+        connection.updated_at = now_utc()
+        return connection
+
+    def update_verification(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        connection_id: uuid.UUID,
+        status: RepositoryConnectionStatus,
+        last_verified_at: datetime,
+    ) -> RepositoryConnection:
+        connection = self._require_connection(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        )
+        connection.status = status
+        connection.last_verified_at = last_verified_at
         connection.updated_at = now_utc()
         return connection
 
@@ -184,14 +210,38 @@ class FakeCredentialRevisionRepository:
         self._store.credentials[revision.id] = revision
         return revision
 
+    def get_active_for_connection(
+        self, *, connection_id: uuid.UUID
+    ) -> RepositoryCredentialRevision | None:
+        connection = self._store.connections.get(connection_id)
+        if connection is None or connection.active_credential_revision_id is None:
+            return None
+        return self._store.credentials.get(connection.active_credential_revision_id)
+
 
 class FakeGitRefResolver:
-    def __init__(self, *, resolved_sha: str = "a" * 40) -> None:
+    def __init__(
+        self,
+        *,
+        store: InMemoryRepositoryStore,
+        resolved_sha: str = "a" * 40,
+    ) -> None:
+        self._store = store
         self._resolved_sha = resolved_sha
 
     def resolve(
         self, *, remote_url: str, ref_type: DefaultRefType, ref_name: str
     ) -> ResolvedGitRef:
+        self._store.last_resolved_remote_url = remote_url
+        if (
+            self._store.resolver_requires_bound_credential
+            and "x-access-token:" not in remote_url
+        ):
+            raise GitConnectionAuthError()
+        if ref_name in self._store.auth_failure_ref_names:
+            raise GitConnectionAuthError()
+        if ref_name in self._store.missing_ref_names:
+            raise GitRefNotFoundError(ref_name)
         return ResolvedGitRef(
             ref_type=ref_type,
             ref_name=ref_name,
@@ -264,7 +314,7 @@ def create_test_client(
     settings = _load_test_settings(tmp_path)
     dependencies = AppDependencies(
         settings=settings,
-        git_ref_resolver=FakeGitRefResolver(),
+        git_ref_resolver=FakeGitRefResolver(store=store),
         git_readonly_validator=FakeGitReadonlyValidator(),
         git_mirror_manager=FakeGitMirrorManager(project_root=settings.project_root),
         snapshot_archive_store=object(),
@@ -311,8 +361,12 @@ def create_connection_payload(
 def _load_test_settings(tmp_path: Path):
     import os
 
+    from cryptography.fernet import Fernet
+
     original_root = os.environ.get("TCI_PROJECT_ROOT")
+    original_key = os.environ.get("TCI_CREDENTIAL_ENCRYPTION_KEY")
     os.environ["TCI_PROJECT_ROOT"] = str(tmp_path)
+    os.environ["TCI_CREDENTIAL_ENCRYPTION_KEY"] = Fernet.generate_key().decode("utf-8")
     try:
         return load_settings()
     finally:
@@ -320,3 +374,7 @@ def _load_test_settings(tmp_path: Path):
             os.environ.pop("TCI_PROJECT_ROOT", None)
         else:
             os.environ["TCI_PROJECT_ROOT"] = original_root
+        if original_key is None:
+            os.environ.pop("TCI_CREDENTIAL_ENCRYPTION_KEY", None)
+        else:
+            os.environ["TCI_CREDENTIAL_ENCRYPTION_KEY"] = original_key

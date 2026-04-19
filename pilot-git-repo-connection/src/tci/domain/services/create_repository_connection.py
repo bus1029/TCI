@@ -8,8 +8,8 @@ from tci.api.problem_details import ProblemCode
 from tci.domain.services.repository_connection_support import (
     RepositoryConnectionProblem,
     bind_git_credential,
+    encrypt_secret_for_storage,
     derive_fingerprint,
-    hash_secret_for_storage,
     parse_credential_type,
     parse_default_ref_type,
     parse_github_remote,
@@ -67,6 +67,10 @@ def create_repository_connection(command, *, dependencies):
     parsed_remote = parse_github_remote(
         remote_url=command.remote_url,
         transport=transport,
+    )
+    encrypted_secret = encrypt_secret_for_storage(
+        command.credential_secret,
+        settings=dependencies.settings,
     )
 
     connection_id = uuid.uuid4()
@@ -134,7 +138,7 @@ def create_repository_connection(command, *, dependencies):
             CredentialRevisionDraft(
                 connection_id=connection.id,
                 credential_type=credential_type,
-                encrypted_secret=hash_secret_for_storage(command.credential_secret),
+                encrypted_secret=encrypted_secret,
                 display_fingerprint=derive_fingerprint(
                     secret=command.credential_secret,
                     provided_fingerprint=command.credential_fingerprint,

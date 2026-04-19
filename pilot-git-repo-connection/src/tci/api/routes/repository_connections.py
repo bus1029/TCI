@@ -137,7 +137,10 @@ def verify_repository_connection_route(connection_id: uuid.UUID, request: Reques
         try:
             create_celery_app(settings).send_task(
                 VERIFY_REPOSITORY_CONNECTION_TASK_NAME,
-                kwargs={"connection_id": str(connection_id)},
+                kwargs={
+                    "workspace_id": str(workspace_id),
+                    "connection_id": str(connection_id),
+                },
             )
         except Exception:
             return JSONResponse(

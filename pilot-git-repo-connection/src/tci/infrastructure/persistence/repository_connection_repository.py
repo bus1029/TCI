@@ -109,6 +109,24 @@ class RepositoryConnectionRepository:
         self._session.refresh(connection)
         return connection
 
+    def update_verification(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        connection_id: uuid.UUID,
+        status: RepositoryConnectionStatus,
+        last_verified_at: datetime,
+    ) -> RepositoryConnection:
+        connection = self._require(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        )
+        connection.status = status
+        connection.last_verified_at = last_verified_at
+        self._session.flush()
+        self._session.refresh(connection)
+        return connection
+
     def _require(
         self, *, workspace_id: uuid.UUID, connection_id: uuid.UUID
     ) -> RepositoryConnection:

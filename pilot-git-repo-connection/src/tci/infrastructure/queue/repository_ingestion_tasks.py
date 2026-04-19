@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import uuid
 
 from celery import Celery
 from kombu import Queue
@@ -61,11 +62,28 @@ def _register_task_if_missing(
     app.task(name=task_name)(func)
 
 
-def _verify_repository_connection_task(*, connection_id: str = "") -> dict[str, str]:
-    return _registered_task_result(
+def _verify_repository_connection_task(
+    *, workspace_id: str = "", connection_id: str = ""
+) -> dict[str, str]:
+    result = _registered_task_result(
         task_name=VERIFY_REPOSITORY_CONNECTION_TASK_NAME,
         connection_id=connection_id,
     )
+    if not workspace_id or not connection_id:
+        return result
+
+    dependencies = _build_verify_dependencies()
+    verify_command_type, verify_service = _load_verify_service()
+
+    verified_connection = verify_service(
+        verify_command_type(
+            workspace_id=uuid.UUID(workspace_id),
+            connection_id=uuid.UUID(connection_id),
+        ),
+        dependencies=dependencies,
+    )
+    result["status"] = verified_connection.status.value
+    return result
 
 
 def _run_manual_snapshot_sync_task(*, connection_id: str = "") -> dict[str, str]:
@@ -88,3 +106,19 @@ def _registered_task_result(*, task_name: str, connection_id: str) -> dict[str, 
         "task_name": task_name,
         "connection_id": connection_id,
     }
+
+
+def _build_verify_dependencies():
+    from tci.app import build_app_dependencies
+    from tci.settings import get_settings
+
+    return build_app_dependencies(get_settings())
+
+
+def _load_verify_service():
+    from tci.domain.services.verify_repository_connection import (
+        VerifyRepositoryConnectionCommand,
+        verify_repository_connection,
+    )
+
+    return VerifyRepositoryConnectionCommand, verify_repository_connection

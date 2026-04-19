@@ -11,6 +11,8 @@ import tempfile
 from threading import Lock
 from urllib.parse import quote
 
+from cryptography.fernet import Fernet, InvalidToken
+
 from tci.api.problem_details import ProblemCode
 from tci.infrastructure.persistence.models import (
     CredentialType,
@@ -97,8 +99,24 @@ def parse_github_remote(
 
 
 def hash_secret_for_storage(secret: str) -> str:
-    # 현재 슬라이스에서는 저장된 credential을 다시 실행 경로에 연결하지 않으므로 평문 저장만 우선 피한다.
+    # fingerprint 표시값은 원문 대신 해시 기반 표현으로 고정한다.
     return sha256(secret.encode("utf-8")).hexdigest()
+
+
+def encrypt_secret_for_storage(secret: str, *, settings) -> str:
+    return _build_fernet(settings).encrypt(secret.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_secret_from_storage(encrypted_secret: str, *, settings) -> str:
+    try:
+        return _build_fernet(settings).decrypt(encrypted_secret.encode("utf-8")).decode(
+            "utf-8"
+        )
+    except InvalidToken as error:
+        raise RepositoryConnectionProblem(
+            ProblemCode.CONNECTION_AUTH_FAILED,
+            "저장된 자격 증명을 복호화할 수 없습니다.",
+        ) from error
 
 
 def derive_fingerprint(*, secret: str, provided_fingerprint: str | None) -> str:
@@ -150,3 +168,19 @@ def bind_git_credential(
             else:
                 os.environ["GIT_SSH_COMMAND"] = previous_ssh_command
             key_file.unlink(missing_ok=True)
+
+
+def _build_fernet(settings) -> Fernet:
+    key = getattr(settings, "credential_encryption_key", None)
+    if not key:
+        raise RepositoryConnectionProblem(
+            ProblemCode.CONNECTION_AUTH_FAILED,
+            "저장소 자격 증명을 사용할 수 없습니다.",
+        )
+    try:
+        return Fernet(key.encode("utf-8"))
+    except ValueError as error:
+        raise RepositoryConnectionProblem(
+            ProblemCode.CONNECTION_AUTH_FAILED,
+            "저장소 자격 증명을 사용할 수 없습니다.",
+        ) from error

@@ -80,6 +80,29 @@ def test_default_ref_change_updates_future_target_without_erasing_existing_state
     assert detail_response.json()["traceability"]["latestSnapshotId"] is None
 
 
+def test_default_ref_change_reuses_stored_credential_for_ref_validation(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = create_response.json()["id"]
+    store.resolver_requires_bound_credential = True
+    store.last_resolved_remote_url = None
+
+    patch_response = client.patch(
+        f"/api/repository-connections/{connection_id}",
+        json={"defaultRefType": "branch", "defaultRefName": "release/secured"},
+    )
+
+    assert patch_response.status_code == 200
+    assert store.last_resolved_remote_url is not None
+    assert "x-access-token:" in store.last_resolved_remote_url
+
+
 def test_verify_endpoint_accepts_known_connection_for_followup_worker_execution(
     tmp_path,
 ) -> None:
