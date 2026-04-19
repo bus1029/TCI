@@ -30,7 +30,7 @@
 
 **Language/Version**: Python 3.12  
 **Primary Dependencies**: FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, Celery 5.x, redis-py, structlog, Jinja2, HTMX  
-**Storage**: PostgreSQL 16 for connection/event/snapshot metadata and trace references, Redis 7 for webhook and snapshot jobs, local disk mirror cache under `.runtime/git-mirrors`, local snapshot archive under `.runtime/code-snapshots`  
+**Storage**: PostgreSQL 16 for connection/event/snapshot metadata and trace references, Redis 7 for webhook and snapshot jobs, local disk mirror cache under `pilot-git-repo-connection/.runtime/git-mirrors`, local snapshot archive under `pilot-git-repo-connection/.runtime/code-snapshots`
 **Testing**: `pytest`, `pytest-asyncio`, `httpx`, `schemathesis`, Playwright for operator flow regression  
 **Target Platform**: Linux-based API/worker runtime with Git CLI available; operator UI served from the Python application as server-rendered HTML  
 **Project Type**: Python web application with JSON API, async worker, and operator-facing server-rendered UI  
@@ -87,46 +87,44 @@ specs/001-git-repo-connection/
 ### Source Code (planned implementation structure)
 
 ```text
-src/
-└── tci/
-    ├── api/
-    │   ├── dependencies/
-    │   ├── routes/
-    │   └── schemas/
-    ├── domain/
-    │   ├── models/
-    │   └── services/
-    ├── infrastructure/
-    │   ├── git/
-    │   ├── persistence/
-    │   ├── queue/
-    │   └── snapshots/
-    ├── web/
-    │   ├── routes/
-    │   ├── templates/
-    │   │   └── connections/
-    │   └── static/
-    ├── workers/
-    ├── settings.py
-    └── app.py
-
-alembic/
-└── versions/
-
-tests/
-├── contract/
-│   └── repository_ingestion/
-├── integration/
-│   └── repository_connections/
-└── unit/
-    └── repository_connections/
-
-.runtime/
-├── git-mirrors/
-└── code-snapshots/
+pilot-git-repo-connection/
+├── src/
+│   └── tci/
+│       ├── api/
+│       │   ├── dependencies/
+│       │   ├── routes/
+│       │   └── schemas/
+│       ├── domain/
+│       │   ├── models/
+│       │   └── services/
+│       ├── infrastructure/
+│       │   ├── git/
+│       │   ├── persistence/
+│       │   ├── queue/
+│       │   └── snapshots/
+│       ├── web/
+│       │   ├── routes/
+│       │   ├── templates/
+│       │   │   └── connections/
+│       │   └── static/
+│       ├── workers/
+│       ├── settings.py
+│       └── app.py
+├── alembic/
+│   └── versions/
+├── tests/
+│   ├── contract/
+│   │   └── repository_ingestion/
+│   ├── integration/
+│   │   └── repository_connections/
+│   └── unit/
+│       └── repository_connections/
+└── .runtime/
+    ├── git-mirrors/
+    └── code-snapshots/
 ```
 
-**Structure Decision**: API, worker, operator UI를 하나의 Python codebase에서 분리된 모듈 경계로 관리한다. 저장소 연결/스냅샷/웹훅은 `src/tci/domain`과 `src/tci/infrastructure` 아래 도메인 모듈로, JSON API는 `src/tci/api/routes`, 운영자 화면은 `src/tci/web/routes`와 `src/tci/web/templates/connections` 아래로 고정한다. 데이터베이스 스키마 이력은 `alembic/versions`, 계약 검증은 `tests/contract`, traceability projection은 connection detail, event list, snapshot detail 조회에 공통으로 노출한다.
+**Structure Decision**: API, worker, operator UI를 하나의 Python codebase에서 분리된 모듈 경계로 관리한다. 구현 루트는 `pilot-git-repo-connection/`으로 두고, 저장소 연결/스냅샷/웹훅은 `pilot-git-repo-connection/src/tci/domain`과 `pilot-git-repo-connection/src/tci/infrastructure` 아래 도메인 모듈로, JSON API는 `pilot-git-repo-connection/src/tci/api/routes`, 운영자 화면은 `pilot-git-repo-connection/src/tci/web/routes`와 `pilot-git-repo-connection/src/tci/web/templates/connections` 아래로 고정한다. 데이터베이스 스키마 이력은 `pilot-git-repo-connection/alembic/versions`, 계약 검증은 `pilot-git-repo-connection/tests/contract`, traceability projection은 connection detail, event list, snapshot detail 조회에 공통으로 노출한다.
 
 ## Design Artifacts
 
@@ -185,7 +183,7 @@ tests/
 - Contract: repository connection, scope rules, snapshot trigger, webhook intake, connection detail summary, event/status 조회, traceability block, rotation health projection OpenAPI 준수
 - Integration: Git mirror fetch, snapshot archive generation, connection provenance persistence, `reauth_required`/`ref_missing` 상태 전이, FastAPI raw-body signature verification, delivery dedupe, stale event skip, grace-period secret rollover, 저장소 접근 불가 실패 처리와 connection detail read-model refresh
 - Quickstart regression: MVP review 전에 연결 생성 -> 초기 스냅샷 완료까지의 소요 시간을 측정해 `SC-001` 근거를 남기고, 전체 릴리스 회귀에서는 연결 생성 -> 규칙 저장 -> 초기 스냅샷 -> Push 최신화 -> PR source snapshot -> connection detail summary 확인 -> secret rotation grace -> traceability 조회를 반복 검증한다.
-- Delivery evidence: 구현 이후 `/specs/001-git-repo-connection/delivery-evidence.md`에서 story별 검증 근거와 FR/SC trace coverage를 링크한다.
+- Delivery evidence: 구현 이후 `/pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`에서 story별 검증 근거와 FR/SC trace coverage를 링크한다.
 
 ## Complexity Tracking
 

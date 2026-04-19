@@ -10,8 +10,8 @@
 2. 읽기 전용 HTTPS PAT 또는 읽기 전용 SSH 키 준비
 3. GitHub webhook 설정 권한과 테스트용 secret 준비
 4. FastAPI application, Celery worker, PostgreSQL 16, Redis 7 실행
-5. 런타임 디렉터리 `.runtime/git-mirrors`, `.runtime/code-snapshots` 생성
-6. 운영자 HTML 화면과 JSON API가 같은 환경 변수 세트를 사용하도록 `src/tci/settings.py` 구성이 끝나 있어야 한다.
+5. 런타임 디렉터리 `pilot-git-repo-connection/.runtime/git-mirrors`, `pilot-git-repo-connection/.runtime/code-snapshots` 생성
+6. 운영자 HTML 화면과 JSON API가 같은 환경 변수 세트를 사용하도록 `pilot-git-repo-connection/src/tci/settings.py` 구성이 끝나 있어야 한다.
 
 ## 검증 시나리오
 
@@ -36,7 +36,7 @@
 1. `POST /api/repository-connections/{id}/snapshots`로 수동 초기 수집을 실행한다.
 2. `RepositorySyncRun`이 `pending -> running -> succeeded`로 전이되는지 확인한다.
 3. 생성된 `CodeSnapshot`에 `resolved_commit_sha`, `scope_rule_version_id`, `file_count`, `archive_path`가 기록되는지 확인한다.
-4. `.runtime/code-snapshots/{snapshotId}`에 manifest와 실제 파일이 저장되는지 확인한다.
+4. `pilot-git-repo-connection/.runtime/code-snapshots/{snapshotId}`에 manifest와 실제 파일이 저장되는지 확인한다.
 5. `GET /api/repository-connections/{id}/snapshots/{snapshotId}` 응답에서 `planningInputReference`, `connectionId`, `syncRunId`, `triggerEventId`, `scopeRuleVersionId`를 통해 추적 체인이 보이는지 확인한다.
 
 ### 4. Push 이벤트 처리

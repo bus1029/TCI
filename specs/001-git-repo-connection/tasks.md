@@ -14,15 +14,16 @@
 - **[P]**: 선행 작업이 끝난 뒤 다른 파일 세트에서 병렬로 진행 가능
 - **[Story]**: 사용자 스토리 소속 작업만 `[US1]`, `[US2]`, `[US3]`를 붙인다
 - 모든 작업은 backlog/issue로 바로 옮길 수 있도록 정확한 파일 경로를 포함한다
+- 이 문서에서 `src/`, `tests/`, `pyproject.toml`, `.env.example` 같은 구현 경로는 `pilot-git-repo-connection/` 실행 루트를 기준으로 해석한다
 
 ## Phase 1: Setup (공통 기반 작업)
 
 **Purpose**: Python 애플리케이션 골격과 공통 검증 산출물을 만든다.
 
-- [ ] T001 Create Python package and template skeleton for FR-014 traceability and FR-012a event timeline surfaces in `src/tci/__init__.py`, `src/tci/api/__init__.py`, `src/tci/web/__init__.py`, and `src/tci/web/templates/connections/.gitkeep`
-- [ ] T002 Create repository ingestion test scaffolding for FR-014 traceability and US1-US3 validation suites in `tests/contract/repository_ingestion/.gitkeep`, `tests/integration/repository_connections/.gitkeep`, and `tests/unit/repository_connections/.gitkeep`
-- [ ] T003 [P] Configure Python project settings, dependencies, and runtime paths for FR-005a and FR-014 in `pyproject.toml`, `.env.example`, and `src/tci/settings.py`
-- [ ] T004 [P] Create feature verification evidence scaffold for FR-014 and SC-001 through SC-005 in `specs/001-git-repo-connection/delivery-evidence.md`
+- [x] T001 Create Python package and template skeleton for FR-014 traceability and FR-012a event timeline surfaces in `pilot-git-repo-connection/src/tci/__init__.py`, `pilot-git-repo-connection/src/tci/api/__init__.py`, `pilot-git-repo-connection/src/tci/web/__init__.py`, and `pilot-git-repo-connection/src/tci/web/templates/connections/.gitkeep`
+- [x] T002 Create repository ingestion test scaffolding for FR-014 traceability and US1-US3 validation suites in `pilot-git-repo-connection/tests/contract/repository_ingestion/.gitkeep`, `pilot-git-repo-connection/tests/integration/repository_connections/.gitkeep`, and `pilot-git-repo-connection/tests/unit/repository_connections/.gitkeep`
+- [x] T003 [P] Configure Python project settings, dependencies, and runtime paths for FR-005a and FR-014 in `pilot-git-repo-connection/pyproject.toml`, `pilot-git-repo-connection/.env.example`, and `pilot-git-repo-connection/src/tci/settings.py`
+- [x] T004 [P] Create feature verification evidence scaffold for FR-014 and SC-001 through SC-005 in `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`
 
 ---
 
@@ -32,9 +33,9 @@
 
 **⚠️ CRITICAL**: 이 단계가 완료되기 전에는 어떤 사용자 스토리도 시작하지 않는다.
 
-- [ ] T005 Model core repository ingestion entities and enums for FR-001b, FR-002a, FR-003b, FR-005a, and FR-014 in `src/tci/infrastructure/persistence/models.py`
-- [ ] T006 Create the core repository ingestion and provenance Alembic migration for FR-001b, FR-002a, FR-003b, FR-005a, and FR-014 in `alembic/versions/001_repository_ingestion_core.py`
-- [ ] T007 [P] Implement repository ingestion problem and failure code mapping for FR-002, FR-013, and FR-017 in `src/tci/api/problem_details.py`
+- [x] T005 Model core repository ingestion entities and enums for FR-001b, FR-002a, FR-003b, FR-005a, and FR-014 in `src/tci/infrastructure/persistence/models.py`
+- [x] T006 Create the core repository ingestion and provenance Alembic migration for FR-001b, FR-002a, FR-003b, FR-005a, and FR-014 in `alembic/versions/001_repository_ingestion_core.py`
+- [x] T007 [P] Implement repository ingestion problem and failure code mapping for FR-002, FR-013, and FR-017 in `src/tci/api/problem_details.py`
 - [ ] T008 [P] Implement Celery app, queue definitions, and worker registration for FR-008, FR-009, FR-011, and SC-002 in `src/tci/workers/celery_app.py` and `src/tci/infrastructure/queue/repository_ingestion_tasks.py`
 - [ ] T009 [P] Implement bare mirror management for FR-002, FR-005a, and FR-014 in `src/tci/infrastructure/git/git_mirror_manager.py`
 - [ ] T010 [P] Implement ref resolution and read-only credential probing for FR-001c, FR-002, FR-002a, FR-003, and FR-003b in `src/tci/infrastructure/git/git_ref_resolver.py` and `src/tci/infrastructure/git/git_readonly_validator.py`
@@ -74,7 +75,7 @@
 - [ ] T028 [US1] Implement repository connection detail query service with MVP summary projections (`lastSuccessfulSnapshotAt`, `lastFailedSyncAt`, nullable `lastProcessedEvent`, `latestSnapshot`), planning-input, and additional-ref guidance projections in `src/tci/domain/services/get_repository_connection_detail.py`
 - [ ] T029 [P] [US1] Implement operator connection list/create route and template in `src/tci/web/routes/repository_connections.py` and `src/tci/web/templates/connections/index.html`
 - [ ] T030 [US1] Implement operator connection detail route and template with latest success/failure summary cards, nullable `lastProcessedEvent` placeholder, additional-ref guidance, and traceability panel in `src/tci/web/routes/repository_connection_detail.py` and `src/tci/web/templates/connections/detail.html`
-- [ ] T031 [US1] Capture User Story 1 verification evidence, including `SC-001` timed first-snapshot validation, unsupported-provider rejection proof, and trace links in `specs/001-git-repo-connection/delivery-evidence.md`
+- [ ] T031 [US1] Capture User Story 1 verification evidence, including `SC-001` timed first-snapshot validation, unsupported-provider rejection proof, and trace links in `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`
 
 **Checkpoint**: User Story 1은 단독으로 구현 및 검증 가능해야 하며 MVP 후보가 된다.
 
@@ -101,7 +102,7 @@
 - [ ] T039 [US2] Integrate active scope rule resolution, scope version stamping, and `NO_INCLUDED_FILES` failure handling into `src/tci/domain/services/build_code_snapshot.py`
 - [ ] T040 [US2] Implement scope rule schemas and API routes in `src/tci/api/schemas/repository_scope.py` and `src/tci/api/routes/repository_scope.py`
 - [ ] T041 [US2] Implement operator scope configuration route and template with warning states in `src/tci/web/routes/repository_scope.py` and `src/tci/web/templates/connections/scope.html`
-- [ ] T042 [US2] Capture User Story 2 verification evidence and trace links in `specs/001-git-repo-connection/delivery-evidence.md`
+- [ ] T042 [US2] Capture User Story 2 verification evidence and trace links in `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`
 
 **Checkpoint**: User Stories 1 and 2는 각각 독립 검증 가능해야 하며, scoped snapshot 결과가 재현 가능해야 한다.
 
@@ -134,7 +135,7 @@
 - [ ] T056 [US3] Implement webhook sync Celery task for default ref and PR source snapshots with `AUTH_FAILED` and `MIRROR_SYNC_FAILED` operator remediation for FR-013 in `src/tci/workers/tasks/run_webhook_sync.py`
 - [ ] T057 [US3] Implement repository event query service and repository connection detail refresh paths for FR-012, FR-012a, FR-016a, FR-017a, and FR-017b in `src/tci/domain/services/list_repository_events.py`, `src/tci/domain/services/get_repository_connection_detail.py`, `src/tci/api/routes/repository_events.py`, and `src/tci/api/routes/repository_connections.py`
 - [ ] T058 [US3] Implement operator event timeline route plus connection detail UI refresh for FR-012a, FR-016a, FR-017a, and FR-017b in `src/tci/web/routes/repository_events.py`, `src/tci/web/templates/connections/events.html`, `src/tci/web/routes/repository_connection_detail.py`, and `src/tci/web/templates/connections/detail.html`
-- [ ] T059 [US3] Capture User Story 3 verification evidence and trace links in `specs/001-git-repo-connection/delivery-evidence.md`
+- [ ] T059 [US3] Capture User Story 3 verification evidence and trace links in `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`
 
 **Checkpoint**: All user stories should now be independently functional and together satisfy the approved spec.
 
@@ -147,7 +148,7 @@
 - [ ] T060 [P] Add regression tests for FR-002a `reauth_required`, FR-003b `ref_missing`, FR-015a additional-ref guidance fallback, and FR-016a/SC-005 webhook secret grace rotation in `tests/integration/repository_connections/test_edge_state_regression.py`
 - [ ] T061 [P] Add webhook processing status latency validation for FR-008, FR-012, and `SC-002` in `tests/integration/repository_connections/test_webhook_status_latency.py`
 - [ ] T062 [P] Add full quickstart validation harness for FR-001 through FR-017b that repeats `SC-001` first-snapshot-under-10-min validation alongside release-scope flow coverage in `tests/integration/repository_connections/test_quickstart_validation.py`
-- [ ] T063 Refresh FR-001 through FR-017b and SC-001 through SC-005 trace coverage and story completion evidence in `specs/001-git-repo-connection/delivery-evidence.md`
+- [ ] T063 Refresh FR-001 through FR-017b and SC-001 through SC-005 trace coverage and story completion evidence in `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`
 
 ---
 
