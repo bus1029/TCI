@@ -34,6 +34,9 @@ packages = ["src/tci"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+  "integration: 데이터베이스나 외부 런타임이 필요한 통합 테스트",
+]
 
 [tool.basedpyright]
 include = ["src", "tests"]
