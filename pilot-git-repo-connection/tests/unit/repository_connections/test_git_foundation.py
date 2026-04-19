@@ -93,6 +93,26 @@ def test_planning_input_reference_repository_rejects_cross_feature_paths() -> No
         repository.create(draft)
 
 
+def test_planning_input_reference_repository_rejects_non_plan_filename() -> None:
+    from tci.infrastructure.persistence.planning_input_reference_repository import (
+        PlanningInputReferenceDraft,
+        PlanningInputReferenceRepository,
+    )
+
+    repository = PlanningInputReferenceRepository(session=MagicMock())
+    draft = PlanningInputReferenceDraft(
+        workspace_id=uuid.uuid4(),
+        source_type=PlanningInputSourceType.USER_REQUEST,
+        source_title="코드 저장소 연동",
+        source_reference="user-request-001",
+        approved_spec_path="specs/001-git-repo-connection/spec.md",
+        approved_plan_path="specs/001-git-repo-connection/notes.md",
+    )
+
+    with pytest.raises(ValueError, match="plan.md"):
+        repository.create(draft)
+
+
 def test_planning_input_reference_repository_rejects_non_spec_tree_paths() -> None:
     from tci.infrastructure.persistence.planning_input_reference_repository import (
         PlanningInputReferenceDraft,
@@ -439,6 +459,25 @@ def test_git_readonly_validator_keeps_unknown_probe_failures_out_of_auth_bucket(
             returncode=1,
             stdout="",
             stderr="fatal: not a git repository (or any of the parent directories): .git\n",
+        )
+
+    validator = GitReadonlyValidator(runner=runner)
+
+    result = validator.probe(remote_url="https://github.com/example/repo.git")
+
+    assert result.is_read_only is False
+    assert result.problem_code is None
+
+
+def test_git_readonly_validator_keeps_hook_declined_out_of_readonly_bucket() -> None:
+    from tci.infrastructure.git.git_readonly_validator import GitReadonlyValidator
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        return GitCommandResult(
+            returncode=1,
+            stdout="",
+            stderr="remote: error: GH013: Repository rule violations found.\nremote: hook declined\n",
         )
 
     validator = GitReadonlyValidator(runner=runner)
