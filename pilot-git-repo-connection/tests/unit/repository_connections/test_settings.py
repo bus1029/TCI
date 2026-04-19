@@ -87,6 +87,29 @@ def test_load_settings_allows_absolute_path_overrides(
     assert settings.template_root == template_root
 
 
+@pytest.mark.parametrize(
+    ("env_key", "child_name"),
+    (
+        ("TCI_RUNTIME_ROOT", "runtime"),
+        ("TCI_GIT_MIRROR_ROOT", "mirrors"),
+        ("TCI_CODE_SNAPSHOT_ROOT", "snapshots"),
+    ),
+)
+def test_load_settings_rejects_runtime_paths_outside_project_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    env_key: str,
+    child_name: str,
+) -> None:
+    outside_root = tmp_path.parent / "outside-runtime"
+    outside_root.mkdir(exist_ok=True)
+    monkeypatch.setenv("TCI_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv(env_key, str(outside_root / child_name))
+
+    with pytest.raises(RuntimeError, match="프로젝트 루트 아래"):
+        load_settings()
+
+
 def test_runtime_directories_are_listed_for_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TCI_PROJECT_ROOT", raising=False)
     monkeypatch.delenv("TCI_RUNTIME_ROOT", raising=False)

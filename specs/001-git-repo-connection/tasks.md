@@ -36,13 +36,13 @@
 - [x] T005 Model core repository ingestion entities and enums for FR-001b, FR-002a, FR-003b, FR-005a, and FR-014 in `src/tci/infrastructure/persistence/models.py`
 - [x] T006 Create the core repository ingestion and provenance Alembic migration for FR-001b, FR-002a, FR-003b, FR-005a, and FR-014 in `alembic/versions/001_repository_ingestion_core.py`
 - [x] T007 [P] Implement repository ingestion problem and failure code mapping for FR-002, FR-013, and FR-017 in `src/tci/api/problem_details.py`
-- [ ] T008 [P] Implement Celery app, queue definitions, and worker registration for FR-008, FR-009, FR-011, and SC-002 in `src/tci/workers/celery_app.py` and `src/tci/infrastructure/queue/repository_ingestion_tasks.py`
-- [ ] T009 [P] Implement bare mirror management for FR-002, FR-005a, and FR-014 in `src/tci/infrastructure/git/git_mirror_manager.py`
-- [ ] T010 [P] Implement ref resolution and read-only credential probing for FR-001c, FR-002, FR-002a, FR-003, and FR-003b in `src/tci/infrastructure/git/git_ref_resolver.py` and `src/tci/infrastructure/git/git_readonly_validator.py`
-- [ ] T011 [P] Implement snapshot archive and manifest storage primitives for FR-005, FR-005a, and FR-014 in `src/tci/infrastructure/snapshots/snapshot_archive_store.py` and `src/tci/infrastructure/snapshots/snapshot_manifest_writer.py`
-- [ ] T012 [P] Implement planning input reference persistence adapter and provenance helpers for FR-014 in `src/tci/infrastructure/persistence/planning_input_reference_repository.py` and `src/tci/domain/services/build_traceability_reference.py`
-- [ ] T013 [P] Add foundational unit tests for FR-001c, FR-005a, and FR-014 across mirror, ref resolution, credential probing, archive storage, and provenance helpers in `tests/unit/repository_connections/test_git_foundation.py`
-- [ ] T014 Implement FastAPI application composition root and dependency wiring for shared FR-012, FR-012a, and FR-014 dependencies in `src/tci/app.py`
+- [x] T008 [P] Implement Celery app, queue definitions, and worker registration for FR-008, FR-009, FR-011, and SC-002 in `src/tci/workers/celery_app.py` and `src/tci/infrastructure/queue/repository_ingestion_tasks.py`
+- [x] T009 [P] Implement bare mirror management for FR-002, FR-005a, and FR-014 in `src/tci/infrastructure/git/git_mirror_manager.py`
+- [x] T010 [P] Implement ref resolution and read-only credential probing for FR-001c, FR-002, FR-002a, FR-003, and FR-003b in `src/tci/infrastructure/git/git_ref_resolver.py` and `src/tci/infrastructure/git/git_readonly_validator.py`
+- [x] T011 [P] Implement snapshot archive and manifest storage primitives for FR-005, FR-005a, and FR-014 in `src/tci/infrastructure/snapshots/snapshot_archive_store.py` and `src/tci/infrastructure/snapshots/snapshot_manifest_writer.py`
+- [x] T012 [P] Implement planning input reference persistence adapter and provenance helpers for FR-014 in `src/tci/infrastructure/persistence/planning_input_reference_repository.py` and `src/tci/domain/services/build_traceability_reference.py`
+- [x] T013 [P] Add foundational unit tests for FR-001c, FR-005a, and FR-014 across mirror, ref resolution, credential probing, archive storage, and provenance helpers in `tests/unit/repository_connections/test_git_foundation.py`
+- [x] T014 Implement FastAPI application composition root and dependency wiring for shared FR-012, FR-012a, and FR-014 dependencies in `src/tci/app.py`
 
 **Checkpoint**: 공통 플랫폼이 준비되어 각 사용자 스토리를 독립적으로 시작할 수 있다.
 

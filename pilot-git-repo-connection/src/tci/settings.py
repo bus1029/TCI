@@ -46,6 +46,16 @@ def _detect_project_root() -> Path:
     )
 
 
+def _ensure_path_within_project_root(
+    path: Path, *, label: str, project_root: Path
+) -> Path:
+    try:
+        path.relative_to(project_root)
+    except ValueError as error:
+        raise RuntimeError(f"{label}는 프로젝트 루트 아래에 있어야 합니다.") from error
+    return path
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     project_root: Path
@@ -67,26 +77,40 @@ class Settings:
 
 def load_settings() -> Settings:
     project_root = _detect_project_root()
-    runtime_root = _resolve_path(
-        os.getenv("TCI_RUNTIME_ROOT"),
-        default=project_root / DEFAULT_RUNTIME_DIRNAME,
-        base_dir=project_root,
+    runtime_root = _ensure_path_within_project_root(
+        _resolve_path(
+            os.getenv("TCI_RUNTIME_ROOT"),
+            default=project_root / DEFAULT_RUNTIME_DIRNAME,
+            base_dir=project_root,
+        ),
+        label="TCI_RUNTIME_ROOT",
+        project_root=project_root,
+    )
+    git_mirror_root = _ensure_path_within_project_root(
+        _resolve_path(
+            os.getenv("TCI_GIT_MIRROR_ROOT"),
+            default=runtime_root / "git-mirrors",
+            base_dir=project_root,
+        ),
+        label="TCI_GIT_MIRROR_ROOT",
+        project_root=project_root,
+    )
+    code_snapshot_root = _ensure_path_within_project_root(
+        _resolve_path(
+            os.getenv("TCI_CODE_SNAPSHOT_ROOT"),
+            default=runtime_root / "code-snapshots",
+            base_dir=project_root,
+        ),
+        label="TCI_CODE_SNAPSHOT_ROOT",
+        project_root=project_root,
     )
 
     return Settings(
         project_root=project_root,
         environment=os.getenv("TCI_ENV", "development"),
         runtime_root=runtime_root,
-        git_mirror_root=_resolve_path(
-            os.getenv("TCI_GIT_MIRROR_ROOT"),
-            default=runtime_root / "git-mirrors",
-            base_dir=project_root,
-        ),
-        code_snapshot_root=_resolve_path(
-            os.getenv("TCI_CODE_SNAPSHOT_ROOT"),
-            default=runtime_root / "code-snapshots",
-            base_dir=project_root,
-        ),
+        git_mirror_root=git_mirror_root,
+        code_snapshot_root=code_snapshot_root,
         template_root=_resolve_path(
             os.getenv("TCI_TEMPLATE_ROOT"),
             default=project_root / DEFAULT_TEMPLATE_SUBPATH,

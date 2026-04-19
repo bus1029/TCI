@@ -1,0 +1,70 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+
+from fastapi import FastAPI
+from sqlalchemy.orm import Session
+
+from tci.domain.services.build_traceability_reference import (
+    build_snapshot_traceability_reference,
+)
+from tci.infrastructure.git.git_mirror_manager import GitMirrorManager, _subprocess_git_runner
+from tci.infrastructure.git.git_readonly_validator import GitReadonlyValidator
+from tci.infrastructure.git.git_ref_resolver import GitRefResolver
+from tci.infrastructure.persistence.planning_input_reference_repository import (
+    PlanningInputReferenceRepository,
+)
+from tci.infrastructure.snapshots.snapshot_archive_store import SnapshotArchiveStore
+from tci.infrastructure.snapshots.snapshot_manifest_writer import SnapshotManifestWriter
+from tci.settings import Settings, get_settings
+
+
+@dataclass(frozen=True, slots=True)
+class AppDependencies:
+    settings: Settings
+    git_ref_resolver: GitRefResolver
+    git_readonly_validator: GitReadonlyValidator
+    git_mirror_manager: GitMirrorManager
+    snapshot_archive_store: SnapshotArchiveStore
+    snapshot_manifest_writer: SnapshotManifestWriter
+    planning_input_reference_repository_factory: Callable[
+        [Session], PlanningInputReferenceRepository
+    ]
+    snapshot_traceability_builder: Callable[..., object]
+
+
+def build_app_dependencies(settings: Settings) -> AppDependencies:
+    # Git 호출 동작을 한 곳으로 맞춰야 인증/타임아웃 가드가 서비스마다 어긋나지 않는다.
+    git_runner = _subprocess_git_runner
+    return AppDependencies(
+        settings=settings,
+        git_ref_resolver=GitRefResolver(runner=git_runner),
+        git_readonly_validator=GitReadonlyValidator(runner=git_runner),
+        git_mirror_manager=GitMirrorManager(settings=settings),
+        snapshot_archive_store=SnapshotArchiveStore(settings=settings),
+        snapshot_manifest_writer=SnapshotManifestWriter(),
+        planning_input_reference_repository_factory=PlanningInputReferenceRepository,
+        snapshot_traceability_builder=build_snapshot_traceability_reference,
+    )
+
+
+def _ensure_runtime_directories(settings: Settings) -> None:
+    for directory in settings.runtime_directories():
+        directory.mkdir(parents=True, exist_ok=True)
+
+
+def create_app(*, settings: Settings | None = None) -> FastAPI:
+    resolved_settings = settings or get_settings()
+    dependencies = build_app_dependencies(resolved_settings)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        _ensure_runtime_directories(resolved_settings)
+        yield
+
+    app = FastAPI(lifespan=lifespan)
+    app.state.settings = resolved_settings
+    app.state.dependencies = dependencies
+    return app
