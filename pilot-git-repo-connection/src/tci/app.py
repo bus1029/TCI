@@ -1,21 +1,31 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import asynccontextmanager
+from contextlib import AbstractContextManager, asynccontextmanager
 from dataclasses import dataclass
 
 from fastapi import FastAPI
 from sqlalchemy.orm import Session
 
+from tci.api.routes.repository_connections import (
+    router as repository_connections_router,
+)
 from tci.domain.services.build_traceability_reference import (
     build_snapshot_traceability_reference,
 )
 from tci.infrastructure.git.git_mirror_manager import GitMirrorManager, _subprocess_git_runner
 from tci.infrastructure.git.git_readonly_validator import GitReadonlyValidator
 from tci.infrastructure.git.git_ref_resolver import GitRefResolver
+from tci.infrastructure.persistence.credential_revision_repository import (
+    CredentialRevisionRepository,
+)
 from tci.infrastructure.persistence.planning_input_reference_repository import (
     PlanningInputReferenceRepository,
 )
+from tci.infrastructure.persistence.repository_connection_repository import (
+    RepositoryConnectionRepository,
+)
+from tci.infrastructure.persistence.session import build_session_factory
 from tci.infrastructure.snapshots.snapshot_archive_store import SnapshotArchiveStore
 from tci.infrastructure.snapshots.snapshot_manifest_writer import SnapshotManifestWriter
 from tci.settings import Settings, get_settings
@@ -33,6 +43,13 @@ class AppDependencies:
         [Session], PlanningInputReferenceRepository
     ]
     snapshot_traceability_builder: Callable[..., object]
+    session_factory: Callable[[], AbstractContextManager[Session]] | None
+    repository_connection_repository_factory: Callable[
+        [Session], RepositoryConnectionRepository
+    ]
+    credential_revision_repository_factory: Callable[
+        [Session], CredentialRevisionRepository
+    ]
 
 
 def build_app_dependencies(settings: Settings) -> AppDependencies:
@@ -47,6 +64,9 @@ def build_app_dependencies(settings: Settings) -> AppDependencies:
         snapshot_manifest_writer=SnapshotManifestWriter(),
         planning_input_reference_repository_factory=PlanningInputReferenceRepository,
         snapshot_traceability_builder=build_snapshot_traceability_reference,
+        session_factory=build_session_factory(settings),
+        repository_connection_repository_factory=RepositoryConnectionRepository,
+        credential_revision_repository_factory=CredentialRevisionRepository,
     )
 
 
@@ -55,9 +75,13 @@ def _ensure_runtime_directories(settings: Settings) -> None:
         directory.mkdir(parents=True, exist_ok=True)
 
 
-def create_app(*, settings: Settings | None = None) -> FastAPI:
+def create_app(
+    *,
+    settings: Settings | None = None,
+    dependencies: AppDependencies | None = None,
+) -> FastAPI:
     resolved_settings = settings or get_settings()
-    dependencies = build_app_dependencies(resolved_settings)
+    resolved_dependencies = dependencies or build_app_dependencies(resolved_settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -66,5 +90,6 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(lifespan=lifespan)
     app.state.settings = resolved_settings
-    app.state.dependencies = dependencies
+    app.state.dependencies = resolved_dependencies
+    app.include_router(repository_connections_router)
     return app

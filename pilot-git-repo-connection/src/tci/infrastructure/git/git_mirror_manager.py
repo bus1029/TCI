@@ -117,6 +117,18 @@ class GitMirrorManager:
             absolute_path=absolute_path,
         )
 
+    def reset_origin_url(self, *, mirror: ManagedGitMirror, remote_url: str) -> None:
+        self._run_git(
+            (
+                "git",
+                f"--git-dir={mirror.absolute_path}",
+                "remote",
+                "set-url",
+                "origin",
+                remote_url,
+            )
+        )
+
     def _ensure_existing_target_is_bare_mirror(self, absolute_path: Path) -> None:
         result = self._runner(
             ("git", f"--git-dir={absolute_path}", "rev-parse", "--is-bare-repository")

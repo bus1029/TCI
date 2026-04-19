@@ -55,6 +55,9 @@ class PlanningInputReferenceRepository:
             return None
         return reference
 
+    def get_any(self, *, reference_id: uuid.UUID) -> PlanningInputReference | None:
+        return self._session.get(PlanningInputReference, reference_id)
+
     @staticmethod
     def _validate_feature_paths(*, spec_path: str, plan_path: str) -> None:
         spec = PurePosixPath(spec_path)
