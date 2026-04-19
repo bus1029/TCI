@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 
 from tests.support.repository_connection_testkit import (
     create_connection_payload,
@@ -146,4 +147,40 @@ def test_verify_connection_returns_accepted_response(tmp_path) -> None:
     assert verify_response.json() == {
         "status": "verification_queued",
         "connectionId": connection_id,
+    }
+
+
+def test_verify_connection_enqueues_workspace_scoped_task_when_redis_is_enabled(
+    tmp_path, monkeypatch
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    captured: dict[str, object] = {}
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = create_response.json()["id"]
+
+    def fake_send_task(name: str, kwargs: dict[str, str]) -> None:
+        captured["name"] = name
+        captured["kwargs"] = kwargs
+
+    object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
+    monkeypatch.setattr(
+        "tci.api.routes.repository_connections.create_celery_app",
+        lambda settings: SimpleNamespace(send_task=fake_send_task),
+    )
+
+    verify_response = client.post(f"/api/repository-connections/{connection_id}/verify")
+
+    assert verify_response.status_code == 202
+    assert captured == {
+        "name": "tci.repository_ingestion.verify_repository_connection",
+        "kwargs": {
+            "workspace_id": str(workspace_id),
+            "connection_id": connection_id,
+        },
     }

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 
 def test_repository_ingestion_tasks_expose_stable_task_names_and_queue_names() -> None:
     from tci.infrastructure.queue.repository_ingestion_tasks import (
@@ -28,4 +30,51 @@ def test_repository_ingestion_tasks_expose_stable_task_names_and_queue_names() -
         RUN_WEBHOOK_SYNC_TASK_NAME: {
             "queue": REPOSITORY_INGESTION_QUEUE_NAME
         },
+    }
+
+
+def test_verify_repository_connection_task_delegates_to_domain_service(
+    monkeypatch,
+) -> None:
+    from tci.infrastructure.persistence.models import RepositoryConnectionStatus
+    from tci.infrastructure.queue import repository_ingestion_tasks as tasks
+
+    workspace_id = uuid.uuid4()
+    connection_id = uuid.uuid4()
+    captured: dict[str, object] = {}
+
+    def fake_verify(command, *, dependencies):
+        captured["workspace_id"] = command.workspace_id
+        captured["connection_id"] = command.connection_id
+        captured["dependencies"] = dependencies
+        return type(
+            "VerifiedConnection",
+            (),
+            {"status": RepositoryConnectionStatus.ACTIVE},
+        )()
+
+    monkeypatch.setattr(tasks, "_build_verify_dependencies", lambda: "deps")
+    monkeypatch.setattr(
+        tasks,
+        "_load_verify_service",
+        lambda: (
+            type("VerifyCommand", (), {"__init__": lambda self, **kwargs: self.__dict__.update(kwargs)}),
+            fake_verify,
+        ),
+    )
+
+    result = tasks._verify_repository_connection_task(
+        workspace_id=str(workspace_id),
+        connection_id=str(connection_id),
+    )
+
+    assert captured == {
+        "workspace_id": workspace_id,
+        "connection_id": connection_id,
+        "dependencies": "deps",
+    }
+    assert result == {
+        "status": "active",
+        "task_name": "tci.repository_ingestion.verify_repository_connection",
+        "connection_id": str(connection_id),
     }

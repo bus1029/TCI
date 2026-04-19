@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from tci.infrastructure.persistence.models import (
@@ -39,3 +40,12 @@ class CredentialRevisionRepository:
         self._session.flush()
         self._session.refresh(revision)
         return revision
+
+    def get_active_for_connection(
+        self, *, connection_id: uuid.UUID
+    ) -> RepositoryCredentialRevision | None:
+        statement = select(RepositoryCredentialRevision).where(
+            RepositoryCredentialRevision.connection_id == connection_id,
+            RepositoryCredentialRevision.status == CredentialRevisionStatus.ACTIVE,
+        )
+        return self._session.scalar(statement)

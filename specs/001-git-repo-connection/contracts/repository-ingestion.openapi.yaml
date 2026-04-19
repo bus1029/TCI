@@ -17,6 +17,8 @@ paths:
       tags: [RepositoryConnections]
       summary: 저장소 연결 생성
       operationId: createRepositoryConnection
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
       requestBody:
         required: true
         content:
@@ -42,6 +44,7 @@ paths:
       summary: 저장소 연결 상세 조회
       operationId: getRepositoryConnection
       parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/ConnectionId'
       responses:
         '200':
@@ -55,6 +58,7 @@ paths:
       summary: 기본 ref 또는 연결 설정 수정
       operationId: updateRepositoryConnection
       parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/ConnectionId'
       requestBody:
         required: true
@@ -81,6 +85,7 @@ paths:
       summary: 저장소 연결 재검증
       operationId: verifyRepositoryConnection
       parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/ConnectionId'
       responses:
         '202':
@@ -236,6 +241,13 @@ paths:
                 $ref: '#/components/schemas/ProblemResponse'
 components:
   parameters:
+    WorkspaceId:
+      name: X-TCI-Workspace-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
     ConnectionId:
       name: connectionId
       in: path
@@ -247,14 +259,17 @@ components:
     CreateRepositoryConnectionRequest:
       type: object
       required:
+        - planningInputReferenceId
         - provider
         - remoteUrl
         - transport
         - defaultRefType
         - defaultRefName
         - credential
-        - webhookSecret
       properties:
+        planningInputReferenceId:
+          type: string
+          format: uuid
         provider:
           type: string
           const: github_cloud
@@ -270,9 +285,6 @@ components:
           type: string
         credential:
           $ref: '#/components/schemas/CredentialInput'
-        webhookSecret:
-          type: string
-          minLength: 16
     UpdateRepositoryConnectionRequest:
       type: object
       properties:
@@ -281,11 +293,6 @@ components:
           enum: [branch, tag]
         defaultRefName:
           type: string
-        credential:
-          $ref: '#/components/schemas/CredentialInput'
-        webhookSecret:
-          type: string
-          minLength: 16
     CredentialInput:
       type: object
       required: [type, secret]
@@ -368,8 +375,13 @@ components:
             lastProcessedEvent:
               $ref: '#/components/schemas/LastProcessedEventSummary'
               nullable: true
+            latestSnapshot:
+              $ref: '#/components/schemas/LatestSnapshotSummary'
+              nullable: true
             traceability:
               $ref: '#/components/schemas/ConnectionTraceability'
+            additionalRefGuidance:
+              $ref: '#/components/schemas/AdditionalRefGuidance'
     ScopeRuleResponse:
       type: object
       properties:
@@ -456,6 +468,36 @@ components:
           type: string
           format: uuid
           nullable: true
+    LatestSnapshotSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        requestedRefType:
+          type: string
+        requestedRefName:
+          type: string
+        resolvedCommitSha:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    AdditionalRefGuidance:
+      type: object
+      properties:
+        message:
+          type: string
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              action:
+                type: string
+                enum: [create_new_connection, replace_default_ref]
+              label:
+                type: string
     VerificationAcceptedResponse:
       type: object
       properties:

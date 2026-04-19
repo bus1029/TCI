@@ -5,6 +5,8 @@ from functools import lru_cache
 import os
 from pathlib import Path
 
+from cryptography.fernet import Fernet
+
 
 DEFAULT_RUNTIME_DIRNAME = ".runtime"
 DEFAULT_TEMPLATE_SUBPATH = Path("src") / "tci" / "web" / "templates"
@@ -66,6 +68,7 @@ class Settings:
     template_root: Path
     database_url: str | None
     redis_url: str | None
+    credential_encryption_key: str | None
 
     def runtime_directories(self) -> tuple[Path, Path, Path]:
         return (
@@ -104,6 +107,9 @@ def load_settings() -> Settings:
         label="TCI_CODE_SNAPSHOT_ROOT",
         project_root=project_root,
     )
+    credential_encryption_key = _validate_credential_encryption_key(
+        os.getenv("TCI_CREDENTIAL_ENCRYPTION_KEY")
+    )
 
     return Settings(
         project_root=project_root,
@@ -118,9 +124,22 @@ def load_settings() -> Settings:
         ),
         database_url=os.getenv("TCI_DATABASE_URL"),
         redis_url=os.getenv("TCI_REDIS_URL"),
+        credential_encryption_key=credential_encryption_key,
     )
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return load_settings()
+
+
+def _validate_credential_encryption_key(raw_value: str | None) -> str | None:
+    if not raw_value:
+        return None
+    try:
+        Fernet(raw_value.encode("utf-8"))
+    except ValueError as error:
+        raise RuntimeError(
+            "TCI_CREDENTIAL_ENCRYPTION_KEY는 유효한 Fernet 키 형식이어야 합니다."
+        ) from error
+    return raw_value

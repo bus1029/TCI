@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import uuid
@@ -161,9 +162,13 @@ class GitMirrorManager:
             return result
         if _looks_like_auth_failure(result.stderr):
             raise GitMirrorAuthError(
-                result.stderr.strip() or "저장소 자격 증명 검증에 실패했습니다."
+                _sanitize_git_error_detail(result.stderr).strip()
+                or "저장소 자격 증명 검증에 실패했습니다."
             )
-        raise GitMirrorSyncError(result.stderr.strip() or "Git mirror 동기화에 실패했습니다.")
+        raise GitMirrorSyncError(
+            _sanitize_git_error_detail(result.stderr).strip()
+            or "Git mirror 동기화에 실패했습니다."
+        )
 
     def _to_project_relative_path(self, absolute_path: Path) -> str:
         try:
@@ -195,3 +200,17 @@ def _normalize_subprocess_output(output: bytes | str | None) -> str:
     if isinstance(output, bytes):
         return output.decode("utf-8", errors="replace")
     return output
+
+
+def _sanitize_git_error_detail(detail: str) -> str:
+    sanitized = re.sub(
+        r"https://x-access-token:[^@\s]+@",
+        "https://x-access-token:[REDACTED]@",
+        detail,
+    )
+    return re.sub(
+        r"(authorization:\s*basic\s+)[A-Za-z0-9+/=]+",
+        r"\1[REDACTED]",
+        sanitized,
+        flags=re.IGNORECASE,
+    )

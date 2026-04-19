@@ -17,6 +17,7 @@ dependencies = [
   "redis",
   "structlog",
   "jinja2",
+  "cryptography",
 ]
 
 [project.optional-dependencies]

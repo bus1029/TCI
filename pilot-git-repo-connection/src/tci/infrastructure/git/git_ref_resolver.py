@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+import re
 
 from tci.api.problem_details import ProblemCode
 from tci.infrastructure.persistence.models import DefaultRefType
@@ -53,7 +54,10 @@ class GitRefResolver:
         if result.returncode != 0:
             if _looks_like_auth_failure(result.stderr):
                 raise GitConnectionAuthError()
-            raise RuntimeError(result.stderr.strip() or "git ls-remote 실행에 실패했습니다.")
+            raise RuntimeError(
+                _sanitize_git_error_detail(result.stderr).strip()
+                or "git ls-remote 실행에 실패했습니다."
+            )
 
         sha_by_ref: dict[str, str] = {}
         for line in result.stdout.splitlines():
@@ -108,4 +112,18 @@ def _looks_like_auth_failure(stderr: str) -> bool:
             "could not read from remote repository",
             "repository not found",
         )
+    )
+
+
+def _sanitize_git_error_detail(detail: str) -> str:
+    sanitized = re.sub(
+        r"https://x-access-token:[^@\s]+@",
+        "https://x-access-token:[REDACTED]@",
+        detail,
+    )
+    return re.sub(
+        r"(authorization:\s*basic\s+)[A-Za-z0-9+/=]+",
+        r"\1[REDACTED]",
+        sanitized,
+        flags=re.IGNORECASE,
     )
