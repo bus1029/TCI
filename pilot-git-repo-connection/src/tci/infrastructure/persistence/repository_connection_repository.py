@@ -8,11 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from tci.infrastructure.persistence.models import (
+    CollectionScopeRuleVersion,
     DefaultRefType,
     RepositoryConnection,
     RepositoryConnectionStatus,
     RepositoryProvider,
     RepositoryTransport,
+    ScopeRuleWarningState,
 )
 
 
@@ -123,6 +125,78 @@ class RepositoryConnectionRepository:
         )
         connection.status = status
         connection.last_verified_at = last_verified_at
+        self._session.flush()
+        self._session.refresh(connection)
+        return connection
+
+    def ensure_default_scope_rule_version(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        connection_id: uuid.UUID,
+        created_by: uuid.UUID,
+    ) -> CollectionScopeRuleVersion:
+        connection = self._require(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        )
+        if connection.active_scope_rule_version is not None:
+            return connection.active_scope_rule_version
+
+        scope_rule = CollectionScopeRuleVersion(
+            connection_id=connection.id,
+            planning_input_reference_id=connection.planning_input_reference_id,
+            include_paths=[],
+            exclude_paths=[],
+            allowed_file_types=[],
+            blocked_file_types=[],
+            max_file_size_bytes=5 * 1024 * 1024,
+            exclude_binary=True,
+            warning_state=ScopeRuleWarningState.OK,
+            created_by=created_by,
+        )
+        self._session.add(scope_rule)
+        self._session.flush()
+        connection.active_scope_rule_version_id = scope_rule.id
+        connection.active_scope_rule_version = scope_rule
+        self._session.flush()
+        self._session.refresh(scope_rule)
+        self._session.refresh(connection)
+        return scope_rule
+
+    def record_sync_failure(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        connection_id: uuid.UUID,
+        failed_at: datetime,
+        status: RepositoryConnectionStatus | None = None,
+    ) -> RepositoryConnection:
+        connection = self._require(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        )
+        connection.last_failed_sync_at = failed_at
+        if status is not None:
+            connection.status = status
+        self._session.flush()
+        self._session.refresh(connection)
+        return connection
+
+    def record_snapshot_success(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        connection_id: uuid.UUID,
+        succeeded_at: datetime,
+        scope_rule_version_id: uuid.UUID,
+    ) -> RepositoryConnection:
+        connection = self._require(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        )
+        connection.last_successful_snapshot_at = succeeded_at
+        connection.active_scope_rule_version_id = scope_rule_version_id
         self._session.flush()
         self._session.refresh(connection)
         return connection

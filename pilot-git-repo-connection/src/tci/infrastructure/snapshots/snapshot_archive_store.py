@@ -18,6 +18,7 @@ class SnapshotArchiveEntryDraft:
     included_by: SnapshotInclusionReason
     extension: str | None = None
     language_hint: str | None = None
+    archive_blob_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,19 +67,19 @@ class SnapshotArchiveStore:
 
         stored_files: list[StoredSnapshotArchiveFile] = []
         try:
-            for safe_path, entry in normalized_entries:
-                file_path = temp_root / safe_path
+            for logical_path, blob_path, entry in normalized_entries:
+                file_path = temp_root / blob_path
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 file_path.write_bytes(entry.content)
 
                 stored_files.append(
                     StoredSnapshotArchiveFile(
-                        path=safe_path.as_posix(),
+                        path=logical_path.as_posix(),
                         extension=entry.extension,
                         language_hint=entry.language_hint,
                         size_bytes=len(entry.content),
                         content_sha256=hashlib.sha256(entry.content).hexdigest(),
-                        archive_blob_path=safe_path.as_posix(),
+                        archive_blob_path=blob_path.as_posix(),
                         included_by=entry.included_by,
                     )
                 )
@@ -100,31 +101,41 @@ class SnapshotArchiveStore:
         )
 
 
-def _validate_relative_path(raw_path: str) -> PurePosixPath:
+def _validate_relative_path(
+    raw_path: str, *, allow_reserved_root_manifest: bool = False
+) -> PurePosixPath:
     if not raw_path.strip():
         raise ValueError("스냅샷 파일 경로는 안전한 상대 경로여야 합니다.")
     safe_path = PurePosixPath(raw_path)
     if safe_path.is_absolute() or any(part in {"", ".", ".."} for part in safe_path.parts):
         raise ValueError("스냅샷 파일 경로는 안전한 상대 경로여야 합니다.")
-    if safe_path.as_posix() == "manifest.json":
+    if not allow_reserved_root_manifest and safe_path.as_posix() == "manifest.json":
         raise ValueError("manifest.json은 루트 메타데이터 파일로 예약되어 있습니다.")
     return safe_path
 
 
 def _normalize_entries(
     entries: tuple[SnapshotArchiveEntryDraft, ...]
-) -> list[tuple[PurePosixPath, SnapshotArchiveEntryDraft]]:
-    normalized_entries: list[tuple[PurePosixPath, SnapshotArchiveEntryDraft]] = []
+) -> list[tuple[PurePosixPath, PurePosixPath, SnapshotArchiveEntryDraft]]:
+    normalized_entries: list[tuple[PurePosixPath, PurePosixPath, SnapshotArchiveEntryDraft]] = []
     seen_paths: set[str] = set()
+    seen_blob_paths: set[str] = set()
 
     for entry in entries:
-        safe_path = _validate_relative_path(entry.path)
-        normalized_path = safe_path.as_posix()
-        collision_key = normalized_path.casefold()
+        logical_path = _validate_relative_path(
+            entry.path,
+            allow_reserved_root_manifest=entry.archive_blob_path is not None,
+        )
+        blob_path = _validate_relative_path(entry.archive_blob_path or entry.path)
+        collision_key = logical_path.as_posix().casefold()
         if collision_key in seen_paths:
             raise ValueError("중복된 스냅샷 파일 경로는 허용되지 않습니다.")
         seen_paths.add(collision_key)
-        normalized_entries.append((safe_path, entry))
+        blob_collision_key = blob_path.as_posix().casefold()
+        if blob_collision_key in seen_blob_paths:
+            raise ValueError("중복된 아카이브 저장 경로는 허용되지 않습니다.")
+        seen_blob_paths.add(blob_collision_key)
+        normalized_entries.append((logical_path, blob_path, entry))
 
     return normalized_entries
 

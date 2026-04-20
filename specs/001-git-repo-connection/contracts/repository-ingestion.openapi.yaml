@@ -94,6 +94,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VerificationAcceptedResponse'
+        '404':
+          description: 연결 없음
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+        '503':
+          description: 작업 큐 미구성 또는 큐 연결 실패
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
   /api/repository-connections/{connectionId}/scope-rules:
     post:
       tags: [RepositoryConnections]
@@ -126,6 +144,7 @@ paths:
       summary: 수동 스냅샷 생성
       operationId: createSnapshot
       parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/ConnectionId'
       requestBody:
         required: false
@@ -136,6 +155,7 @@ paths:
               properties:
                 reason:
                   type: string
+                  minLength: 1
                   enum: [manual_initial, manual_refresh]
       responses:
         '202':
@@ -144,12 +164,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SyncRunAcceptedResponse'
+        '400':
+          description: 잘못된 요청 본문
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+        '422':
+          description: 요청 본문 형식 오류
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: array
+                    items:
+                      type: object
         '409':
           description: 실행 불가 상태
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemResponse'
+        '404':
+          description: 연결 없음
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+        '503':
+          description: 작업 큐 미구성 또는 큐 연결 실패
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
   /api/repository-connections/{connectionId}/events:
     get:
       tags: [RepositoryEvents]
@@ -175,6 +230,7 @@ paths:
       summary: 스냅샷 상세 조회
       operationId: getSnapshot
       parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/ConnectionId'
         - name: snapshotId
           in: path
@@ -189,6 +245,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CodeSnapshotResponse'
+        '404':
+          description: 연결 또는 스냅샷 없음
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
   /api/webhooks/github/{connectionId}:
     post:
       tags: [GitHubWebhooks]
@@ -378,6 +443,9 @@ components:
             latestSnapshot:
               $ref: '#/components/schemas/LatestSnapshotSummary'
               nullable: true
+            latestSyncRun:
+              $ref: '#/components/schemas/LatestSyncRunSummary'
+              nullable: true
             traceability:
               $ref: '#/components/schemas/ConnectionTraceability'
             additionalRefGuidance:
@@ -483,6 +551,34 @@ components:
         createdAt:
           type: string
           format: date-time
+    LatestSyncRunSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        requestedRefType:
+          type: string
+        requestedRefName:
+          type: string
+        resolvedCommitSha:
+          type: string
+          nullable: true
+        failureCode:
+          type: string
+          nullable: true
+        failureMessage:
+          type: string
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
     AdditionalRefGuidance:
       type: object
       properties:
@@ -608,6 +704,27 @@ components:
           type: string
           format: uuid
           nullable: true
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              extension:
+                type: string
+                nullable: true
+              languageHint:
+                type: string
+                nullable: true
+              sizeBytes:
+                type: integer
+              contentSha256:
+                type: string
+              archiveBlobPath:
+                type: string
+              includedBy:
+                type: string
         traceability:
           type: object
           properties:

@@ -133,20 +133,25 @@ def verify_repository_connection_route(connection_id: uuid.UUID, request: Reques
         return JSONResponse(status_code=404, content={"detail": "저장소 연결을 찾을 수 없습니다."})
 
     settings = request.app.state.settings
-    if settings.redis_url:
-        try:
-            create_celery_app(settings).send_task(
-                VERIFY_REPOSITORY_CONNECTION_TASK_NAME,
-                kwargs={
-                    "workspace_id": str(workspace_id),
-                    "connection_id": str(connection_id),
-                },
-            )
-        except Exception:
-            return JSONResponse(
-                status_code=503,
-                content={"detail": "검증 작업 큐에 연결할 수 없습니다."},
-            )
+    if not settings.redis_url:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "검증 작업 큐가 설정되지 않았습니다."},
+        )
+
+    try:
+        create_celery_app(settings).send_task(
+            VERIFY_REPOSITORY_CONNECTION_TASK_NAME,
+            kwargs={
+                "workspace_id": str(workspace_id),
+                "connection_id": str(connection_id),
+            },
+        )
+    except Exception:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "검증 작업 큐에 연결할 수 없습니다."},
+        )
 
     return JSONResponse(
         status_code=202,

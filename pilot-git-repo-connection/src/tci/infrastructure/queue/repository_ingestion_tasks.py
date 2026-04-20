@@ -86,11 +86,29 @@ def _verify_repository_connection_task(
     return result
 
 
-def _run_manual_snapshot_sync_task(*, connection_id: str = "") -> dict[str, str]:
-    return _registered_task_result(
+def _run_manual_snapshot_sync_task(
+    *, workspace_id: str = "", connection_id: str = "", sync_run_id: str = ""
+) -> dict[str, str]:
+    result = _registered_task_result(
         task_name=RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME,
         connection_id=connection_id,
+        sync_run_id=sync_run_id,
     )
+    if not workspace_id or not connection_id or not sync_run_id:
+        return result
+
+    dependencies = _build_snapshot_dependencies()
+    build_command_type, build_service = _load_build_snapshot_service()
+    build_service(
+        build_command_type(
+            workspace_id=uuid.UUID(workspace_id),
+            connection_id=uuid.UUID(connection_id),
+            sync_run_id=uuid.UUID(sync_run_id),
+        ),
+        dependencies=dependencies,
+    )
+    result["status"] = "completed"
+    return result
 
 
 def _run_webhook_sync_task(*, connection_id: str = "") -> dict[str, str]:
@@ -100,15 +118,27 @@ def _run_webhook_sync_task(*, connection_id: str = "") -> dict[str, str]:
     )
 
 
-def _registered_task_result(*, task_name: str, connection_id: str) -> dict[str, str]:
-    return {
+def _registered_task_result(
+    *, task_name: str, connection_id: str, sync_run_id: str = ""
+) -> dict[str, str]:
+    result = {
         "status": "registered",
         "task_name": task_name,
         "connection_id": connection_id,
     }
+    if sync_run_id:
+        result["sync_run_id"] = sync_run_id
+    return result
 
 
 def _build_verify_dependencies():
+    from tci.app import build_app_dependencies
+    from tci.settings import get_settings
+
+    return build_app_dependencies(get_settings())
+
+
+def _build_snapshot_dependencies():
     from tci.app import build_app_dependencies
     from tci.settings import get_settings
 
@@ -122,3 +152,12 @@ def _load_verify_service():
     )
 
     return VerifyRepositoryConnectionCommand, verify_repository_connection
+
+
+def _load_build_snapshot_service():
+    from tci.domain.services.build_code_snapshot import (
+        BuildCodeSnapshotCommand,
+        build_code_snapshot,
+    )
+
+    return BuildCodeSnapshotCommand, build_code_snapshot

@@ -429,6 +429,29 @@ def test_git_ref_resolver_maps_permission_denied_to_connection_auth_failed() -> 
     assert error_info.value.problem_code is ProblemCode.CONNECTION_AUTH_FAILED
 
 
+def test_git_ref_resolver_maps_repository_not_found_to_connection_auth_failed() -> None:
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult, GitConnectionAuthError
+    from tci.infrastructure.git.git_ref_resolver import GitRefResolver
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        return GitCommandResult(
+            returncode=128,
+            stdout="",
+            stderr="fatal: repository 'https://github.com/example/private-repo.git/' not found\n",
+        )
+
+    resolver = GitRefResolver(runner=runner)
+
+    with pytest.raises(GitConnectionAuthError) as error_info:
+        resolver.resolve(
+            remote_url="https://github.com/example/private-repo.git",
+            ref_type=DefaultRefType.BRANCH,
+            ref_name="main",
+        )
+
+    assert error_info.value.problem_code is ProblemCode.CONNECTION_AUTH_FAILED
+
+
 def test_git_readonly_validator_accepts_readonly_probe_result() -> None:
     from tci.infrastructure.git.git_readonly_validator import GitReadonlyValidator
     from tci.infrastructure.git.git_ref_resolver import GitCommandResult
