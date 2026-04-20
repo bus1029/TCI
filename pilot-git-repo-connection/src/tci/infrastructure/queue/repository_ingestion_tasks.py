@@ -7,6 +7,9 @@ import uuid
 from celery import Celery
 from kombu import Queue
 
+from tci.infrastructure.persistence.repository_event_cursor_repository import (
+    RepositoryEventCursorDraft,
+)
 
 REPOSITORY_INGESTION_QUEUE_NAME = "repository_ingestion"
 
@@ -156,28 +159,77 @@ def _run_webhook_sync_task(
                         ProcessingDecision,
                     )
 
-                    event_repository.update_processing(
-                        event_id=uuid.UUID(event_id),
-                        processing_decision=ProcessingDecision.QUEUED,
-                        processing_status=EventProcessingStatus.COMPLETED,
-                        processed_at=snapshot.created_at,
-                        snapshot_id=snapshot.id,
-                    )
+                    event = event_repository.get(event_id=uuid.UUID(event_id))
+                    if event is not None and event.sync_run_id == sync_run_uuid:
+                        event_repository.update_processing(
+                            event_id=uuid.UUID(event_id),
+                            processing_decision=ProcessingDecision.QUEUED,
+                            processing_status=EventProcessingStatus.COMPLETED,
+                            processed_at=snapshot.created_at,
+                            snapshot_id=snapshot.id,
+                        )
     except Exception:
         if event_id and dependencies.session_factory is not None:
+            failed_at = datetime.now(tz=UTC)
             with dependencies.session_factory() as session:
                 event_repository = dependencies.repository_event_repository_factory(session)
+                event_cursor_repository = (
+                    dependencies.repository_event_cursor_repository_factory(session)
+                )
+                sync_run_repository = dependencies.repository_sync_run_repository_factory(
+                    session
+                )
+                connection_repository = dependencies.repository_connection_repository_factory(
+                    session
+                )
                 from tci.infrastructure.persistence.models import (
                     EventProcessingStatus,
                     ProcessingDecision,
+                    SyncFailureCode,
+                    SyncRunStatus,
+                    WebhookHealthState,
                 )
 
-                event_repository.update_processing(
-                    event_id=uuid.UUID(event_id),
-                    processing_decision=ProcessingDecision.QUEUED,
-                    processing_status=EventProcessingStatus.FAILED,
-                    processed_at=datetime.now(tz=UTC),
+                failed_event = event_repository.get(event_id=uuid.UUID(event_id))
+                connection = connection_repository.get_any(connection_id=connection_uuid)
+                sync_run = sync_run_repository.get(
+                    connection_id=connection_uuid,
+                    sync_run_id=sync_run_uuid,
                 )
+                if sync_run is not None and sync_run.status is not SyncRunStatus.FAILED:
+                    sync_run_repository.mark_failed(
+                        connection_id=connection_uuid,
+                        sync_run_id=sync_run_uuid,
+                        failure_code=SyncFailureCode.SNAPSHOT_WRITE_FAILED,
+                        failure_message="웹훅 스냅샷 처리 중 예기치 못한 오류가 발생했습니다.",
+                        completed_at=failed_at,
+                    )
+                if failed_event is not None and failed_event.sync_run_id == sync_run_uuid:
+                    event_repository.update_processing(
+                        event_id=uuid.UUID(event_id),
+                        processing_decision=ProcessingDecision.QUEUED,
+                        processing_status=EventProcessingStatus.FAILED,
+                        processed_at=failed_at,
+                    )
+                    _restore_event_cursor_after_failure(
+                        connection_id=connection_uuid,
+                        failed_event=failed_event,
+                        event_repository=event_repository,
+                        event_cursor_repository=event_cursor_repository,
+                        restored_at=failed_at,
+                    )
+                    if connection is not None:
+                        connection_repository.record_sync_failure(
+                            workspace_id=connection.workspace_id,
+                            connection_id=connection_uuid,
+                            failed_at=failed_at,
+                        )
+                        connection_repository.record_processed_event(
+                            connection_id=connection_uuid,
+                            event_id=failed_event.id,
+                            processed_at=failed_at,
+                            health_state=WebhookHealthState.HEALTHY,
+                        )
         raise
     if snapshot is not None:
         result["status"] = "completed"
@@ -210,6 +262,49 @@ def _build_snapshot_dependencies():
     from tci.settings import get_settings
 
     return build_app_dependencies(get_settings())
+
+
+def _restore_event_cursor_after_failure(
+    *,
+    connection_id: uuid.UUID,
+    failed_event,
+    event_repository,
+    event_cursor_repository,
+    restored_at: datetime,
+) -> None:
+    fallback_event = next(
+        (
+            candidate
+            for candidate in event_repository.list_for_connection(
+                connection_id=connection_id
+            )
+            if candidate.id != failed_event.id
+            and candidate.target_key == failed_event.target_key
+            and candidate.target_head_sha is not None
+            and getattr(candidate.processing_decision, "value", candidate.processing_decision)
+            == "queued"
+            and getattr(candidate.processing_status, "value", candidate.processing_status)
+            != "failed"
+        ),
+        None,
+    )
+    if fallback_event is None:
+        event_cursor_repository.delete_if_latest_event(
+            connection_id=connection_id,
+            target_key=failed_event.target_key,
+            latest_event_id=failed_event.id,
+        )
+        return
+    event_cursor_repository.upsert(
+        RepositoryEventCursorDraft(
+            id=uuid.uuid4(),
+            connection_id=connection_id,
+            target_key=fallback_event.target_key,
+            latest_head_sha=fallback_event.target_head_sha,
+            latest_event_id=fallback_event.id,
+            updated_at=restored_at,
+        )
+    )
 
 
 def _load_verify_service():

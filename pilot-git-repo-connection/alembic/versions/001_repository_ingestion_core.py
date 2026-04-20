@@ -77,6 +77,7 @@ SYNC_FAILURE_CODE = sa.Enum(
     "NO_INCLUDED_FILES",
     "MIRROR_SYNC_FAILED",
     "SNAPSHOT_WRITE_FAILED",
+    "QUEUE_DISPATCH_FAILED",
     name="sync_failure_code",
 )
 SNAPSHOT_INCLUSION_REASON = sa.Enum(

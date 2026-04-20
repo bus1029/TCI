@@ -144,6 +144,7 @@ def test_phase2_enums_match_spec_language() -> None:
         "NO_INCLUDED_FILES",
         "MIRROR_SYNC_FAILED",
         "SNAPSHOT_WRITE_FAILED",
+        "QUEUE_DISPATCH_FAILED",
     ]
 
 
