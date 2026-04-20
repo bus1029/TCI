@@ -65,7 +65,10 @@ class RepositoryConnectionRepository:
     ) -> RepositoryConnection | None:
         statement = (
             select(RepositoryConnection)
-            .options(joinedload(RepositoryConnection.planning_input_reference))
+            .options(
+                joinedload(RepositoryConnection.planning_input_reference),
+                joinedload(RepositoryConnection.active_scope_rule_version),
+            )
             .where(
                 RepositoryConnection.id == connection_id,
                 RepositoryConnection.workspace_id == workspace_id,
@@ -78,7 +81,10 @@ class RepositoryConnectionRepository:
     ) -> list[RepositoryConnection]:
         statement = (
             select(RepositoryConnection)
-            .options(joinedload(RepositoryConnection.planning_input_reference))
+            .options(
+                joinedload(RepositoryConnection.planning_input_reference),
+                joinedload(RepositoryConnection.active_scope_rule_version),
+            )
             .where(RepositoryConnection.workspace_id == workspace_id)
             .order_by(RepositoryConnection.created_at.desc(), RepositoryConnection.id.desc())
         )
@@ -200,14 +206,12 @@ class RepositoryConnectionRepository:
         workspace_id: uuid.UUID,
         connection_id: uuid.UUID,
         succeeded_at: datetime,
-        scope_rule_version_id: uuid.UUID,
     ) -> RepositoryConnection:
         connection = self._require(
             workspace_id=workspace_id,
             connection_id=connection_id,
         )
         connection.last_successful_snapshot_at = succeeded_at
-        connection.active_scope_rule_version_id = scope_rule_version_id
         self._session.flush()
         self._session.refresh(connection)
         return connection

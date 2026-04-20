@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>수집 범위 설정</title>
+  </head>
+  <body>
+    <main>
+      <a href="/connections/{{ connection.id }}?workspaceId={{ workspace_id }}">상세로 돌아가기</a>
+
+      <h1>수집 범위 설정</h1>
+      <p>{{ connection.remoteUrl }}</p>
+      <p>현재 활성 규칙 버전: {{ connection.traceability.activeScopeRuleVersionId or "없음" }}</p>
+      {% if connection.latestScopeRule %}
+      <p>현재 경고 상태: {{ connection.latestScopeRule.warningState }}</p>
+      {% else %}
+      <p>아직 저장된 범위 규칙이 없습니다.</p>
+      {% endif %}
+
+      {% if error_message %}
+      <section>
+        <strong>오류</strong>
+        <p>{{ error_message }}</p>
+      </section>
+      {% endif %}
+
+      <form
+        method="post"
+        action="/connections/{{ connection.id }}/scope?workspaceId={{ workspace_id }}"
+      >
+        <label>
+          포함 경로
+          <input type="text" name="includePaths" value="{{ form_data.includePaths }}" />
+        </label>
+        <label>
+          제외 경로
+          <input type="text" name="excludePaths" value="{{ form_data.excludePaths }}" />
+        </label>
+        <label>
+          허용 파일 타입
+          <input
+            type="text"
+            name="allowedFileTypes"
+            value="{{ form_data.allowedFileTypes }}"
+          />
+        </label>
+        <label>
+          차단 파일 타입
+          <input
+            type="text"
+            name="blockedFileTypes"
+            value="{{ form_data.blockedFileTypes }}"
+          />
+        </label>
+        <label>
+          최대 파일 크기(byte)
+          <input
+            type="text"
+            name="maxFileSizeBytes"
+            value="{{ form_data.maxFileSizeBytes }}"
+          />
+        </label>
+        <button type="submit">범위 규칙 저장</button>
+      </form>
+    </main>
+  </body>
+</html>

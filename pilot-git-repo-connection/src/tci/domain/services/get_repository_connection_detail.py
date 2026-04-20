@@ -27,4 +27,5 @@ def get_repository_connection_detail(
         connection.latest_sync_run = sync_run_repository.get_latest_for_connection(
             connection_id=connection_id
         )
+        connection.latest_scope_rule = connection.active_scope_rule_version
         return connection

@@ -74,6 +74,7 @@ def test_get_connection_detail_returns_null_last_processed_event_and_traceabilit
         "defaultRefName": "main",
         "status": "active",
         "lastVerifiedAt": create_response.json()["lastVerifiedAt"],
+        "latestScopeRule": None,
         "lastSuccessfulSnapshotAt": None,
         "lastFailedSyncAt": None,
         "lastProcessedEventAt": None,

@@ -275,17 +275,12 @@ class FakeRepositoryConnectionRepository:
         workspace_id: uuid.UUID,
         connection_id: uuid.UUID,
         succeeded_at: datetime,
-        scope_rule_version_id: uuid.UUID,
     ) -> RepositoryConnection:
         connection = self._require_connection(
             workspace_id=workspace_id,
             connection_id=connection_id,
         )
         connection.last_successful_snapshot_at = succeeded_at
-        connection.active_scope_rule_version_id = scope_rule_version_id
-        connection.active_scope_rule_version = self._store.scope_rule_versions[
-            scope_rule_version_id
-        ]
         connection.updated_at = now_utc()
         return connection
 
@@ -294,6 +289,73 @@ class FakeRepositoryConnectionRepository:
     ) -> RepositoryConnection:
         connection = self.get(workspace_id=workspace_id, connection_id=connection_id)
         if connection is None:
+            raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        return connection
+
+
+@dataclass(frozen=True, slots=True)
+class ScopeRuleVersionDraft:
+    include_paths: list[str]
+    exclude_paths: list[str]
+    allowed_file_types: list[str]
+    blocked_file_types: list[str]
+    max_file_size_bytes: int
+    exclude_binary: bool
+    warning_state: ScopeRuleWarningState
+    created_by: uuid.UUID
+
+
+class FakeScopeRuleRepository:
+    def __init__(self, store: InMemoryRepositoryStore) -> None:
+        self._store = store
+
+    def get_active_for_connection(
+        self, *, workspace_id: uuid.UUID, connection_id: uuid.UUID
+    ) -> CollectionScopeRuleVersion | None:
+        connection = self._require_connection(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        )
+        if connection.active_scope_rule_version_id is None:
+            return None
+        return self._store.scope_rule_versions[connection.active_scope_rule_version_id]
+
+    def create_active_version(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        connection_id: uuid.UUID,
+        draft: ScopeRuleVersionDraft,
+    ) -> CollectionScopeRuleVersion:
+        connection = self._require_connection(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        )
+        scope_rule = CollectionScopeRuleVersion(
+            id=uuid.uuid4(),
+            connection_id=connection.id,
+            planning_input_reference_id=connection.planning_input_reference_id,
+            include_paths=list(draft.include_paths),
+            exclude_paths=list(draft.exclude_paths),
+            allowed_file_types=list(draft.allowed_file_types),
+            blocked_file_types=list(draft.blocked_file_types),
+            max_file_size_bytes=draft.max_file_size_bytes,
+            exclude_binary=draft.exclude_binary,
+            warning_state=draft.warning_state,
+            created_at=now_utc(),
+            created_by=draft.created_by,
+        )
+        self._store.scope_rule_versions[scope_rule.id] = scope_rule
+        connection.active_scope_rule_version_id = scope_rule.id
+        connection.active_scope_rule_version = scope_rule
+        connection.updated_at = now_utc()
+        return scope_rule
+
+    def _require_connection(
+        self, *, workspace_id: uuid.UUID, connection_id: uuid.UUID
+    ) -> RepositoryConnection:
+        connection = self._store.connections.get(connection_id)
+        if connection is None or connection.workspace_id != workspace_id:
             raise LookupError("저장소 연결을 찾을 수 없습니다.")
         return connection
 
@@ -646,6 +708,45 @@ def seed_planning_input_reference(
     return reference
 
 
+def seed_active_scope_rule_version(
+    store: InMemoryRepositoryStore,
+    *,
+    workspace_id: uuid.UUID,
+    connection_id: uuid.UUID,
+    include_paths: list[str] | None = None,
+    exclude_paths: list[str] | None = None,
+    allowed_file_types: list[str] | None = None,
+    blocked_file_types: list[str] | None = None,
+    max_file_size_bytes: int = 5 * 1024 * 1024,
+    exclude_binary: bool = True,
+    warning_state: ScopeRuleWarningState = ScopeRuleWarningState.OK,
+    created_by: uuid.UUID | None = None,
+) -> CollectionScopeRuleVersion:
+    connection = store.connections.get(connection_id)
+    if connection is None or connection.workspace_id != workspace_id:
+        raise LookupError("저장소 연결을 찾을 수 없습니다.")
+
+    scope_rule = CollectionScopeRuleVersion(
+        id=uuid.uuid4(),
+        connection_id=connection.id,
+        planning_input_reference_id=connection.planning_input_reference_id,
+        include_paths=list(include_paths or []),
+        exclude_paths=list(exclude_paths or []),
+        allowed_file_types=list(allowed_file_types or []),
+        blocked_file_types=list(blocked_file_types or []),
+        max_file_size_bytes=max_file_size_bytes,
+        exclude_binary=exclude_binary,
+        warning_state=warning_state,
+        created_at=now_utc(),
+        created_by=created_by or workspace_id,
+    )
+    store.scope_rule_versions[scope_rule.id] = scope_rule
+    connection.active_scope_rule_version_id = scope_rule.id
+    connection.active_scope_rule_version = scope_rule
+    connection.updated_at = now_utc()
+    return scope_rule
+
+
 def create_test_client(
     *,
     tmp_path: Path,
@@ -671,6 +772,7 @@ def create_test_client(
         repository_connection_repository_factory=lambda session: FakeRepositoryConnectionRepository(
             store
         ),
+        scope_rule_repository_factory=lambda session: FakeScopeRuleRepository(store),
         credential_revision_repository_factory=lambda session: FakeCredentialRevisionRepository(
             store
         ),

@@ -11,6 +11,10 @@ from tci.domain.services.repository_connection_support import (
     bind_git_credential,
     decrypt_secret_from_storage,
 )
+from tci.domain.services.scope_filter_engine import (
+    filter_snapshot_entries,
+    rule_set_from_scope_rule,
+)
 from tci.infrastructure.git.git_mirror_manager import GitMirrorSyncError
 from tci.infrastructure.persistence.code_snapshot_repository import (
     CodeSnapshotDraft,
@@ -137,16 +141,31 @@ def build_code_snapshot(command, *, dependencies):
             dependencies=dependencies,
         )
 
-    try:
-        scope_rule_version = _ensure_default_scope_rule_version(
+    scope_rule_version = _ensure_active_scope_rule_version(
+        workspace_id=command.workspace_id,
+        connection_id=command.connection_id,
+        dependencies=dependencies,
+    )
+    filtered_entries = filter_snapshot_entries(
+        entries=materialized_snapshot.entries,
+        rule_set=rule_set_from_scope_rule(scope_rule_version),
+    )
+    if not filtered_entries:
+        return _fail_snapshot_build(
             workspace_id=command.workspace_id,
             connection_id=command.connection_id,
+            sync_run_id=command.sync_run_id,
+            failure_code=SyncFailureCode.NO_INCLUDED_FILES,
+            failure_message="범위 규칙을 적용한 결과 스냅샷에 포함할 파일이 없습니다.",
+            connection_status=None,
             dependencies=dependencies,
         )
+
+    try:
         snapshot_id = uuid.uuid4()
         archive = dependencies.snapshot_archive_store.store(
             snapshot_id=snapshot_id,
-            entries=materialized_snapshot.entries,
+            entries=filtered_entries,
         )
         traceability = dependencies.snapshot_traceability_builder(
             planning_input_reference_id=context.planning_input_reference_id,
@@ -219,7 +238,6 @@ def build_code_snapshot(command, *, dependencies):
                 workspace_id=command.workspace_id,
                 connection_id=context.connection_id,
                 succeeded_at=now,
-                scope_rule_version_id=scope_rule_version.id,
             )
             return snapshot
     except Exception as error:
@@ -308,6 +326,24 @@ def _ensure_default_scope_rule_version(
             connection_id=connection_id,
             created_by=workspace_id,
         )
+
+
+def _ensure_active_scope_rule_version(
+    *, workspace_id: uuid.UUID, connection_id: uuid.UUID, dependencies
+):
+    with dependencies.session_factory() as session:
+        scope_rule_repository = dependencies.scope_rule_repository_factory(session)
+        scope_rule = scope_rule_repository.get_active_for_connection(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        )
+        if scope_rule is not None:
+            return scope_rule
+    return _ensure_default_scope_rule_version(
+        workspace_id=workspace_id,
+        connection_id=connection_id,
+        dependencies=dependencies,
+    )
 
 
 def _classify_snapshot_failure(
