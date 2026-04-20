@@ -73,6 +73,17 @@ class RepositoryConnectionRepository:
         )
         return self._session.scalar(statement)
 
+    def list_for_workspace(
+        self, *, workspace_id: uuid.UUID
+    ) -> list[RepositoryConnection]:
+        statement = (
+            select(RepositoryConnection)
+            .options(joinedload(RepositoryConnection.planning_input_reference))
+            .where(RepositoryConnection.workspace_id == workspace_id)
+            .order_by(RepositoryConnection.created_at.desc(), RepositoryConnection.id.desc())
+        )
+        return list(self._session.scalars(statement).unique())
+
     def set_active_credential_revision(
         self,
         *,

@@ -2,3 +2,6 @@
 .DS_Store
 __pycache__
 pilot-git-repo-connection/.runtime/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/

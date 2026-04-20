@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>저장소 연결 운영 화면</title>
+  </head>
+  <body>
+    <main>
+      <h1>저장소 연결 운영 화면</h1>
+      <p>워크스페이스: {{ workspace_id }}</p>
+
+      {% if error_message %}
+      <section>
+        <strong>오류</strong>
+        <p>{{ error_message }}</p>
+      </section>
+      {% endif %}
+
+      <section>
+        <h2>새 저장소 연결</h2>
+        <form
+          method="post"
+          action="/connections?workspaceId={{ workspace_id }}"
+        >
+          <label>
+            계획 입력 참조
+            <input
+              type="text"
+              name="planningInputReferenceId"
+              value="{{ form_data.planningInputReferenceId }}"
+            />
+          </label>
+          <label>
+            제공자
+            <input type="text" name="provider" value="{{ form_data.provider }}" />
+          </label>
+          <label>
+            저장소 주소
+            <input
+              type="text"
+              name="remoteUrl"
+              value="{{ form_data.remoteUrl }}"
+            />
+          </label>
+          <label>
+            전송 방식
+            <input type="text" name="transport" value="{{ form_data.transport }}" />
+          </label>
+          <label>
+            기본 ref 종류
+            <input
+              type="text"
+              name="defaultRefType"
+              value="{{ form_data.defaultRefType }}"
+            />
+          </label>
+          <label>
+            기본 ref 이름
+            <input
+              type="text"
+              name="defaultRefName"
+              value="{{ form_data.defaultRefName }}"
+            />
+          </label>
+          <label>
+            자격 증명 종류
+            <input
+              type="text"
+              name="credentialType"
+              value="{{ form_data.credentialType }}"
+            />
+          </label>
+          <label>
+            자격 증명 비밀값
+            <input
+              type="password"
+              name="credentialSecret"
+              value="{{ form_data.credentialSecret }}"
+            />
+          </label>
+          <label>
+            자격 증명 식별자
+            <input
+              type="text"
+              name="credentialFingerprint"
+              value="{{ form_data.credentialFingerprint }}"
+            />
+          </label>
+          <button type="submit">저장소 연결 생성</button>
+        </form>
+      </section>
+
+      <section>
+        <h2>연결 목록</h2>
+        {% if connections %}
+        <ul>
+          {% for connection in connections %}
+          <li>
+            <strong
+              >{{ connection.repository_owner }}/{{ connection.repository_name }}</strong
+            >
+            <div>상태: {{ connection.status.value }}</div>
+            <div>기본 ref: {{ connection.default_ref_type.value }} {{ connection.default_ref_name }}</div>
+            <div>{{ connection.remote_url }}</div>
+            <a
+              href="/connections/{{ connection.id }}?workspaceId={{ workspace_id }}"
+              >상세 보기</a
+            >
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p>등록된 저장소 연결이 없습니다.</p>
+        {% endif %}
+      </section>
+    </main>
+  </body>
+</html>
