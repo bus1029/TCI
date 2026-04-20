@@ -13,6 +13,7 @@ def get_repository_connection_detail(
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )
+        event_repository = dependencies.repository_event_repository_factory(session)
         snapshot_repository = dependencies.code_snapshot_repository_factory(session)
         sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
         connection = connection_repository.get(
@@ -28,4 +29,12 @@ def get_repository_connection_detail(
             connection_id=connection_id
         )
         connection.latest_scope_rule = connection.active_scope_rule_version
+        connection.last_processed_event = (
+            None
+            if getattr(connection, "last_processed_event_id", None) is None
+            else event_repository.get(event_id=connection.last_processed_event_id)
+        )
+        connection.last_previous_secret_accepted_at = None
+        connection.previous_secret_deliveries_during_grace = 0
+        connection.webhook_secret_grace_until = None
         return connection

@@ -15,6 +15,8 @@ from tci.infrastructure.persistence.models import (
     RepositoryProvider,
     RepositoryTransport,
     ScopeRuleWarningState,
+    WebhookHealthState,
+    WebhookRejectionReason,
 )
 
 
@@ -73,6 +75,19 @@ class RepositoryConnectionRepository:
                 RepositoryConnection.id == connection_id,
                 RepositoryConnection.workspace_id == workspace_id,
             )
+        )
+        return self._session.scalar(statement)
+
+    def get_any(self, *, connection_id: uuid.UUID) -> RepositoryConnection | None:
+        statement = (
+            select(RepositoryConnection)
+            .options(
+                joinedload(RepositoryConnection.planning_input_reference),
+                joinedload(RepositoryConnection.active_scope_rule_version),
+                joinedload(RepositoryConnection.active_webhook_secret_revision),
+                joinedload(RepositoryConnection.last_processed_event),
+            )
+            .where(RepositoryConnection.id == connection_id)
         )
         return self._session.scalar(statement)
 
@@ -216,10 +231,51 @@ class RepositoryConnectionRepository:
         self._session.refresh(connection)
         return connection
 
+    def record_webhook_rejection(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        health_state: WebhookHealthState,
+        rejection_reason: WebhookRejectionReason,
+        rejected_at: datetime,
+    ) -> RepositoryConnection:
+        connection = self._require_any(connection_id=connection_id)
+        connection.webhook_health_state = health_state
+        connection.last_webhook_rejection_reason = rejection_reason
+        connection.last_webhook_rejected_at = rejected_at
+        self._session.flush()
+        self._session.refresh(connection)
+        return connection
+
+    def record_processed_event(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        event_id: uuid.UUID,
+        processed_at: datetime,
+        health_state: WebhookHealthState,
+    ) -> RepositoryConnection:
+        connection = self._require_any(connection_id=connection_id)
+        connection.last_processed_event_id = event_id
+        connection.last_processed_event_at = processed_at
+        connection.webhook_health_state = health_state
+        if health_state is WebhookHealthState.HEALTHY:
+            connection.last_webhook_rejection_reason = None
+            connection.last_webhook_rejected_at = None
+        self._session.flush()
+        self._session.refresh(connection)
+        return connection
+
     def _require(
         self, *, workspace_id: uuid.UUID, connection_id: uuid.UUID
     ) -> RepositoryConnection:
         connection = self.get(workspace_id=workspace_id, connection_id=connection_id)
+        if connection is None:
+            raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        return connection
+
+    def _require_any(self, *, connection_id: uuid.UUID) -> RepositoryConnection:
+        connection = self.get_any(connection_id=connection_id)
         if connection is None:
             raise LookupError("저장소 연결을 찾을 수 없습니다.")
         return connection

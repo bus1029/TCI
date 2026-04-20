@@ -67,6 +67,25 @@ class CredentialRevisionStatus(StrEnum):
     REVOKED = "revoked"
 
 
+class WebhookSecretRevisionStatus(StrEnum):
+    ACTIVE = "active"
+    PREVIOUS_GRACE = "previous_grace"
+    REVOKED = "revoked"
+
+
+class WebhookHealthState(StrEnum):
+    HEALTHY = "healthy"
+    MISSING_SECRET = "missing_secret"
+    SECRET_MISMATCH_DETECTED = "secret_mismatch_detected"
+    SIGNATURE_INVALID_RECENTLY = "signature_invalid_recently"
+
+
+class WebhookRejectionReason(StrEnum):
+    SECRET_MISSING = "secret_missing"
+    SECRET_MISMATCH = "secret_mismatch"
+    SIGNATURE_INVALID = "signature_invalid"
+
+
 class ScopeRuleWarningState(StrEnum):
     OK = "ok"
     EMPTY_RESULT_RISK = "empty_result_risk"
@@ -94,6 +113,53 @@ class SyncFailureCode(StrEnum):
     NO_INCLUDED_FILES = "NO_INCLUDED_FILES"
     MIRROR_SYNC_FAILED = "MIRROR_SYNC_FAILED"
     SNAPSHOT_WRITE_FAILED = "SNAPSHOT_WRITE_FAILED"
+
+
+class ProviderEventType(StrEnum):
+    PUSH = "push"
+    PULL_REQUEST = "pull_request"
+    PING = "ping"
+    UNKNOWN = "unknown"
+
+
+class DomainEventType(StrEnum):
+    COMMIT_RECORDED = "commit_recorded"
+    PUSH_RECEIVED = "push_received"
+    PR_RECEIVED = "pr_received"
+    SIGNATURE_REJECTED = "signature_rejected"
+    SECRET_MISSING = "secret_missing"
+    SECRET_MISMATCH = "secret_mismatch"
+
+
+class EventTargetKind(StrEnum):
+    DEFAULT_REF = "default_ref"
+    PULL_REQUEST_SOURCE = "pull_request_source"
+    NONE = "none"
+
+
+class SignatureStatus(StrEnum):
+    VERIFIED = "verified"
+    SECRET_MISSING = "secret_missing"
+    SECRET_MISMATCH = "secret_mismatch"
+    SIGNATURE_INVALID = "signature_invalid"
+
+
+class ProcessingDecision(StrEnum):
+    RECORD_ONLY = "record_only"
+    QUEUED = "queued"
+    DUPLICATE_DELIVERY = "duplicate_delivery"
+    DUPLICATE_HEAD = "duplicate_head"
+    STALE_HEAD = "stale_head"
+    REJECTED = "rejected"
+
+
+class EventProcessingStatus(StrEnum):
+    RECEIVED = "received"
+    VALIDATED = "validated"
+    QUEUED = "queued"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    REJECTED = "rejected"
 
 
 class SnapshotInclusionReason(StrEnum):
@@ -225,11 +291,39 @@ class RepositoryConnection(Base):
         ),
         nullable=True,
     )
+    active_webhook_secret_revision_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(),
+        ForeignKey(
+            "webhook_secret_revisions.id",
+            use_alter=True,
+            name="fk_repo_conn_active_webhook_secret_id",
+        ),
+        nullable=True,
+    )
+    webhook_health_state: Mapped[WebhookHealthState] = mapped_column(
+        sql_enum(WebhookHealthState, name="webhook_health_state"),
+        nullable=False,
+        default=WebhookHealthState.HEALTHY,
+        server_default=text("'healthy'"),
+    )
+    last_webhook_rejection_reason: Mapped[WebhookRejectionReason | None] = mapped_column(
+        sql_enum(WebhookRejectionReason, name="webhook_rejection_reason")
+    )
+    last_webhook_rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_successful_snapshot_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
     last_failed_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_processed_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(),
+        ForeignKey(
+            "repository_events.id",
+            use_alter=True,
+            name="fk_repo_conn_last_processed_event_id",
+        ),
+    )
+    last_processed_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -253,6 +347,15 @@ class RepositoryConnection(Base):
         foreign_keys=[active_credential_revision_id],
         post_update=True,
     )
+    webhook_secret_revisions: Mapped[list[WebhookSecretRevision]] = relationship(
+        back_populates="connection",
+        cascade="all, delete-orphan",
+        foreign_keys="WebhookSecretRevision.connection_id",
+    )
+    active_webhook_secret_revision: Mapped[WebhookSecretRevision | None] = relationship(
+        foreign_keys=[active_webhook_secret_revision_id],
+        post_update=True,
+    )
     scope_rule_versions: Mapped[list[CollectionScopeRuleVersion]] = relationship(
         back_populates="connection",
         cascade="all, delete-orphan",
@@ -265,8 +368,22 @@ class RepositoryConnection(Base):
     sync_runs: Mapped[list[RepositorySyncRun]] = relationship(
         back_populates="connection", cascade="all, delete-orphan"
     )
+    repository_events: Mapped[list[RepositoryEvent]] = relationship(
+        back_populates="connection",
+        cascade="all, delete-orphan",
+        foreign_keys="RepositoryEvent.connection_id",
+    )
+    event_cursors: Mapped[list[RepositoryEventCursor]] = relationship(
+        back_populates="connection",
+        cascade="all, delete-orphan",
+        foreign_keys="RepositoryEventCursor.connection_id",
+    )
     code_snapshots: Mapped[list[CodeSnapshot]] = relationship(
         back_populates="connection", cascade="all, delete-orphan"
+    )
+    last_processed_event: Mapped[RepositoryEvent | None] = relationship(
+        foreign_keys=[last_processed_event_id],
+        post_update=True,
     )
 
 
@@ -315,6 +432,45 @@ class RepositoryCredentialRevision(Base):
 
     connection: Mapped[RepositoryConnection] = relationship(
         back_populates="credential_revisions",
+        foreign_keys=[connection_id],
+    )
+
+
+class WebhookSecretRevision(Base):
+    __tablename__ = "webhook_secret_revisions"
+    __table_args__ = (
+        UniqueConstraint("connection_id", "id", name="uq_webhook_secret_rev_conn_id_id"),
+        CheckConstraint(
+            "status != 'previous_grace' OR grace_until IS NOT NULL",
+            name="ck_webhook_secret_rev_grace_until_required",
+        ),
+        Index(
+            "ix_webhook_secret_rev_one_active",
+            "connection_id",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
+    connection_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("repository_connections.id", name="fk_webhook_secret_rev_conn_id"),
+        nullable=False,
+    )
+    encrypted_secret: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[WebhookSecretRevisionStatus] = mapped_column(
+        sql_enum(WebhookSecretRevisionStatus, name="webhook_secret_revision_status"),
+        nullable=False,
+        default=WebhookSecretRevisionStatus.ACTIVE,
+        server_default=text("'active'"),
+    )
+    grace_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    connection: Mapped[RepositoryConnection] = relationship(
+        back_populates="webhook_secret_revisions",
         foreign_keys=[connection_id],
     )
 
@@ -383,6 +539,104 @@ class CollectionScopeRuleVersion(Base):
     )
 
 
+class RepositoryEvent(Base):
+    __tablename__ = "repository_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "connection_id",
+            "provider_delivery_id",
+            name="uq_repository_events_connection_delivery",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
+    connection_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("repository_connections.id", name="fk_repository_event_conn_id"),
+        nullable=False,
+    )
+    provider_delivery_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    provider_event_type: Mapped[ProviderEventType] = mapped_column(
+        sql_enum(ProviderEventType, name="provider_event_type"),
+        nullable=False,
+    )
+    provider_action: Mapped[str | None] = mapped_column(String(128))
+    domain_event_type: Mapped[DomainEventType] = mapped_column(
+        sql_enum(DomainEventType, name="domain_event_type"),
+        nullable=False,
+    )
+    target_kind: Mapped[EventTargetKind] = mapped_column(
+        sql_enum(EventTargetKind, name="event_target_kind"),
+        nullable=False,
+    )
+    target_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    target_ref_name: Mapped[str | None] = mapped_column(String(255))
+    target_head_sha: Mapped[str | None] = mapped_column(String(64))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    signature_status: Mapped[SignatureStatus] = mapped_column(
+        sql_enum(SignatureStatus, name="signature_status"),
+        nullable=False,
+    )
+    verified_secret_revision_status: Mapped[WebhookSecretRevisionStatus | None] = mapped_column(
+        sql_enum(
+            WebhookSecretRevisionStatus, name="verified_webhook_secret_revision_status"
+        )
+    )
+    rejection_reason: Mapped[WebhookRejectionReason | None] = mapped_column(
+        sql_enum(WebhookRejectionReason, name="repository_event_rejection_reason")
+    )
+    processing_decision: Mapped[ProcessingDecision] = mapped_column(
+        sql_enum(ProcessingDecision, name="processing_decision"),
+        nullable=False,
+    )
+    processing_status: Mapped[EventProcessingStatus] = mapped_column(
+        sql_enum(EventProcessingStatus, name="event_processing_status"),
+        nullable=False,
+    )
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    sync_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("repository_sync_runs.id", name="fk_repository_event_sync_run_id")
+    )
+    snapshot_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("code_snapshots.id", name="fk_repository_event_snapshot_id")
+    )
+
+    connection: Mapped[RepositoryConnection] = relationship(
+        back_populates="repository_events",
+        foreign_keys=[connection_id],
+    )
+
+
+class RepositoryEventCursor(Base):
+    __tablename__ = "repository_event_cursors"
+    __table_args__ = (
+        UniqueConstraint(
+            "connection_id",
+            "target_key",
+            name="uq_repository_event_cursors_connection_target",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
+    connection_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("repository_connections.id", name="fk_repository_event_cursor_conn_id"),
+        nullable=False,
+    )
+    target_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    latest_head_sha: Mapped[str] = mapped_column(String(64), nullable=False)
+    latest_event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("repository_events.id", name="fk_repository_event_cursor_latest_event_id"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    connection: Mapped[RepositoryConnection] = relationship(
+        back_populates="event_cursors",
+        foreign_keys=[connection_id],
+    )
+
+
 class RepositorySyncRun(Base):
     __tablename__ = "repository_sync_runs"
     __table_args__ = (
@@ -392,6 +646,9 @@ class RepositorySyncRun(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
     connection_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("repository_connections.id", name="fk_sync_run_conn_id"), nullable=False
+    )
+    trigger_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("repository_events.id", name="fk_sync_run_trigger_event_id")
     )
     trigger_type: Mapped[SyncTriggerType] = mapped_column(
         sql_enum(SyncTriggerType, name="sync_trigger_type"),

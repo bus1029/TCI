@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 import uuid
 
 from celery import Celery
@@ -111,11 +112,77 @@ def _run_manual_snapshot_sync_task(
     return result
 
 
-def _run_webhook_sync_task(*, connection_id: str = "") -> dict[str, str]:
-    return _registered_task_result(
+def _run_webhook_sync_task(
+    *, connection_id: str = "", event_id: str = "", sync_run_id: str = ""
+) -> dict[str, str]:
+    result = _registered_task_result(
         task_name=RUN_WEBHOOK_SYNC_TASK_NAME,
         connection_id=connection_id,
     )
+    if event_id:
+        result["event_id"] = event_id
+    if sync_run_id:
+        result["sync_run_id"] = sync_run_id
+    if not connection_id or not sync_run_id:
+        return result
+
+    dependencies = _build_snapshot_dependencies()
+    build_command_type, build_service = _load_build_snapshot_service()
+    connection_uuid = uuid.UUID(connection_id)
+    sync_run_uuid = uuid.UUID(sync_run_id)
+    snapshot = None
+
+    try:
+        if dependencies.session_factory is not None:
+            with dependencies.session_factory() as session:
+                connection_repository = dependencies.repository_connection_repository_factory(
+                    session
+                )
+                connection = connection_repository.get_any(connection_id=connection_uuid)
+                if connection is None:
+                    return result
+                snapshot = build_service(
+                    build_command_type(
+                        workspace_id=connection.workspace_id,
+                        connection_id=connection_uuid,
+                        sync_run_id=sync_run_uuid,
+                    ),
+                    dependencies=dependencies,
+                )
+                if event_id:
+                    event_repository = dependencies.repository_event_repository_factory(session)
+                    from tci.infrastructure.persistence.models import (
+                        EventProcessingStatus,
+                        ProcessingDecision,
+                    )
+
+                    event_repository.update_processing(
+                        event_id=uuid.UUID(event_id),
+                        processing_decision=ProcessingDecision.QUEUED,
+                        processing_status=EventProcessingStatus.COMPLETED,
+                        processed_at=snapshot.created_at,
+                        snapshot_id=snapshot.id,
+                    )
+    except Exception:
+        if event_id and dependencies.session_factory is not None:
+            with dependencies.session_factory() as session:
+                event_repository = dependencies.repository_event_repository_factory(session)
+                from tci.infrastructure.persistence.models import (
+                    EventProcessingStatus,
+                    ProcessingDecision,
+                )
+
+                event_repository.update_processing(
+                    event_id=uuid.UUID(event_id),
+                    processing_decision=ProcessingDecision.QUEUED,
+                    processing_status=EventProcessingStatus.FAILED,
+                    processed_at=datetime.now(tz=UTC),
+                )
+        raise
+    if snapshot is not None:
+        result["status"] = "completed"
+        result["snapshot_id"] = str(snapshot.id)
+    return result
 
 
 def _registered_task_result(

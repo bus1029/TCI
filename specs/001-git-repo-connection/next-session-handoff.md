@@ -2,164 +2,171 @@
 
 ## 짧은 요약
 
-`US2`가 닫혔다. `tasks.md` 기준으로 `T032`~`T042`가 완료됐고, 범위 규칙 저장 API, 필터 엔진, scoped snapshot, 운영 화면, 검증 증빙까지 현재 코드와 문서에 반영돼 있다. 다음 세션은 `US3`의 webhook 계약과 이벤트 처리(`T043`~`T059`)를 TDD로 시작하면 된다. 시작점은 contract/unit/integration RED 테스트 3개를 먼저 추가하고, 그다음 모델 확장과 webhook 라우트/워커를 잇는 순서가 가장 안전하다.
+이번 세션에서 `US3`의 API 중심 웹훅 흐름을 실제로 구현했다. `GitHub webhook intake -> 서명 검증 -> 이벤트 기록/중복·stale 판정 -> sync run 생성 -> worker 실행 -> 연결 상세/이벤트 목록 반영`까지 `pilot-git-repo-connection` 코드에 들어갔고, 관련 테스트는 모두 통과했다. 다만 `specs/001-git-repo-connection/tasks.md`와 `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`는 아직 이번 구현 상태를 반영하지 못해 문서와 코드가 어긋나 있다. 다음 세션은 문서 정합성 복구, secret rotation 운영 가시성 보강, 그리고 큐 전송 시점의 커밋 이후 처리 정리부터 시작하는 것이 가장 안전하다.
 
 ## 현재 상태
 
-- `Phase 1`, `Phase 2` 완료
-- `US1`, `US2` 완료
-- `tasks.md` 기준 완료 범위는 `T015`~`T042`
-- 남은 범위는 `US3`와 `Phase 6`
-- 이번 세션은 실제 구현, 테스트, 운영 화면 추가, 증빙 문서 갱신까지 포함했다
+- `Phase 1`, `Phase 2`, `US1`, `US2`는 완료 상태다.
+- 이번 세션에서 `US3`의 핵심 백엔드/API 범위를 구현했다.
+- 실제로 반영된 범위
+  - webhook 계약 테스트
+  - secret 검증과 rejection 분기
+  - push/PR 이벤트 파싱
+  - dedupe와 stale head 판정
+  - 이벤트/커서/웹훅 시크릿 저장소
+  - webhook intake API
+  - repository event 목록 API
+  - 연결 상세의 `webhookHealth`, `lastProcessedEvent`, `latestEventId`
+  - webhook worker에서 snapshot 실행과 이벤트 상태 갱신
+  - webhook 관련 Alembic 마이그레이션
+- 아직 끝나지 않은 범위
+  - `T052` webhook secret rotation 서비스
+  - `T058` 운영 화면 event timeline 및 detail 화면 확장
+  - `T059`, `T063` 증빙 문서 갱신
+  - `SC-002`, `SC-005` 검증 근거 채우기
+  - webhook enqueue를 커밋 이후로 보내는 구조 정리
 
 ## 이번 세션에서 바뀐 것
 
-- 범위 규칙 저장과 필터 엔진 추가
-  - `pilot-git-repo-connection/src/tci/infrastructure/persistence/scope_rule_repository.py`
-  - `pilot-git-repo-connection/src/tci/domain/services/default_scope_policy.py`
-  - `pilot-git-repo-connection/src/tci/domain/services/scope_filter_engine.py`
-  - `pilot-git-repo-connection/src/tci/domain/services/evaluate_scope_rule_warning.py`
-  - `pilot-git-repo-connection/src/tci/domain/services/save_scope_rules.py`
-- 스냅샷 파이프라인에 active scope rule 적용
-  - `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`
-  - `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
-  - snapshot 성공 시 active scope rule을 과거 버전으로 되돌리지 않게 수정함
-- scope API와 스키마 추가
-  - `pilot-git-repo-connection/src/tci/api/schemas/_base.py`
-  - `pilot-git-repo-connection/src/tci/api/schemas/repository_scope.py`
-  - `pilot-git-repo-connection/src/tci/api/routes/repository_scope.py`
-  - `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
-- scope 운영 화면 추가
-  - `pilot-git-repo-connection/src/tci/web/routes/repository_scope.py`
-  - `pilot-git-repo-connection/src/tci/web/templates/connections/scope.html`
-  - `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
+- 새 파일 추가
+  - `pilot-git-repo-connection/src/tci/api/routes/github_webhooks.py`
+  - `pilot-git-repo-connection/src/tci/api/routes/repository_events.py`
+  - `pilot-git-repo-connection/src/tci/domain/services/process_github_event.py`
+  - `pilot-git-repo-connection/src/tci/domain/services/list_repository_events.py`
+  - `pilot-git-repo-connection/src/tci/infrastructure/persistence/webhook_secret_repository.py`
+  - `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_repository.py`
+  - `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_cursor_repository.py`
+  - `pilot-git-repo-connection/src/tci/infrastructure/webhooks/github_signature.py`
+  - `pilot-git-repo-connection/src/tci/infrastructure/webhooks/github_event_parser.py`
+  - `pilot-git-repo-connection/alembic/versions/002_repository_ingestion_webhooks.py`
+  - `pilot-git-repo-connection/tests/contract/repository_ingestion/test_github_webhook_contract.py`
+  - `pilot-git-repo-connection/tests/integration/repository_connections/test_github_webhook_refresh.py`
+  - `pilot-git-repo-connection/tests/unit/repository_connections/test_process_github_event.py`
+  - `pilot-git-repo-connection/tests/unit/repository_connections/test_webhook_sync_task.py`
+- 핵심 수정 파일
   - `pilot-git-repo-connection/src/tci/app.py`
-- US2 테스트 추가
-  - `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_scope_contract.py`
-  - `pilot-git-repo-connection/tests/unit/repository_connections/test_scope_filter_engine.py`
-  - `pilot-git-repo-connection/tests/integration/repository_connections/test_scoped_snapshot.py`
-  - `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_scope_pages.py`
+  - `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
+  - `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`
+  - `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py`
+  - `pilot-git-repo-connection/src/tci/domain/services/get_code_snapshot_detail.py`
+  - `pilot-git-repo-connection/src/tci/domain/services/get_repository_connection_detail.py`
+  - `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
+  - `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
+  - `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_sync_run_repository.py`
+  - `pilot-git-repo-connection/src/tci/infrastructure/queue/repository_ingestion_tasks.py`
   - `pilot-git-repo-connection/tests/support/repository_connection_testkit.py`
-- 작업표와 검증 증빙 갱신
-  - `specs/001-git-repo-connection/tasks.md`
-  - `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`
+- 외부 계약 변화
+  - `POST /api/webhooks/github/{connectionId}`가 추가됐다.
+  - `GET /api/repository-connections/{connectionId}/events`가 추가됐다.
+  - 연결 상세 응답에 `webhookHealth`, `lastProcessedEvent`, `traceability.latestEventId`가 실제 값으로 채워진다.
+  - snapshot detail의 `triggerEventId`가 webhook-triggered sync일 때 실제 값으로 채워진다.
 
 ## 다음 에이전트가 먼저 봐야 할 파일
 
-- 다음 시작점
+- 구현 진입점
+  - `pilot-git-repo-connection/src/tci/domain/services/process_github_event.py`
+  - `pilot-git-repo-connection/src/tci/api/routes/github_webhooks.py`
+  - `pilot-git-repo-connection/src/tci/infrastructure/queue/repository_ingestion_tasks.py`
+  - `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`
+- 저장소/스키마
+  - `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
+  - `pilot-git-repo-connection/alembic/versions/002_repository_ingestion_webhooks.py`
+- 조회 모델
+  - `pilot-git-repo-connection/src/tci/domain/services/get_repository_connection_detail.py`
+  - `pilot-git-repo-connection/src/tci/domain/services/get_code_snapshot_detail.py`
+  - `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
+- 테스트 기준선
+  - `pilot-git-repo-connection/tests/contract/repository_ingestion/test_github_webhook_contract.py`
+  - `pilot-git-repo-connection/tests/integration/repository_connections/test_github_webhook_refresh.py`
+  - `pilot-git-repo-connection/tests/unit/repository_connections/test_process_github_event.py`
+  - `pilot-git-repo-connection/tests/unit/repository_connections/test_webhook_sync_task.py`
+- 문서 정합성 복구 대상
   - `specs/001-git-repo-connection/tasks.md`
   - `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`
   - `specs/001-git-repo-connection/quickstart.md`
-- `US2` 기준선과 `US3` 진입점
-  - `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`
-  - `pilot-git-repo-connection/src/tci/api/routes/repository_scope.py`
-  - `pilot-git-repo-connection/src/tci/domain/services/get_repository_connection_detail.py`
-  - `pilot-git-repo-connection/src/tci/infrastructure/queue/repository_ingestion_tasks.py`
-  - `pilot-git-repo-connection/src/tci/workers/celery_app.py`
-- 다음 테스트 시작점
-  - `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_scope_contract.py`
-  - `pilot-git-repo-connection/tests/unit/repository_connections/test_scope_filter_engine.py`
-  - `pilot-git-repo-connection/tests/integration/repository_connections/test_scoped_snapshot.py`
-  - 다음으로 만들 파일: `tests/contract/repository_ingestion/test_github_webhook_contract.py`
-  - 다음으로 만들 파일: `tests/unit/repository_connections/test_process_github_event.py`
-  - 다음으로 만들 파일: `tests/integration/repository_connections/test_github_webhook_refresh.py`
 
 ## 꼭 유지해야 할 기준
 
-- `RepositoryConnection.default_ref_type`는 `branch`, `tag`만 허용
-- canonical connection 상태는 `active`, `reauth_required`, `ref_missing`만 사용
-- `remote_url`은 GitHub Cloud 패턴만 허용하고 userinfo 포함 URL은 차단
-- 활성 credential은 `read_only_validated = true`여야 하며 connection당 `active`는 하나만 허용
-- `TCI_RUNTIME_ROOT`, `TCI_GIT_MIRROR_ROOT`, `TCI_CODE_SNAPSHOT_ROOT`는 모두 프로젝트 루트 아래여야 함
-- `mirror_path`, `archive_path`, `archive_blob_path`는 절대경로와 `..`를 허용하지 않음
-- 루트 `manifest.json`은 논리 경로로는 허용되지만 아카이브 내부에서는 예약 경로로 우회 저장됨
-- `POST`, `GET`, `PATCH`, `verify`, `snapshots`, `scope-rules` API는 모두 `X-TCI-Workspace-Id` 헤더를 요구
-- `PATCH /api/repository-connections/{connectionId}`는 기본 ref 변경만 지원
-- `SaveScopeRulesRequest.maxFileSizeBytes`는 `1` 이상이어야 하며 web 폼도 같은 검증을 따라야 함
-- 범위 규칙 우선순위는 하드 제외 경로 -> 사용자 include -> 사용자 exclude -> 파일 타입 -> 바이너리/크기 가드 순서를 유지
-- 바이너리, `5 MiB` 초과 파일, 하드 제외 경로는 v1에서 사용자 include가 있어도 계속 제외
-- `VERIFY_REPOSITORY_CONNECTION_TASK_NAME`, `RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME`, `RUN_WEBHOOK_SYNC_TASK_NAME`는 stable task name으로 유지
+- `VERIFY_REPOSITORY_CONNECTION_TASK_NAME`, `RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME`, `RUN_WEBHOOK_SYNC_TASK_NAME`는 stable task name으로 유지한다.
+- 모든 API 라우트는 기존 규칙대로 `X-TCI-Workspace-Id` 헤더를 유지한다. 단, webhook intake는 공개 엔드포인트라 workspace header를 요구하지 않는다.
+- `RepositoryConnection.default_ref_type`는 계속 `branch`, `tag`만 허용한다.
+- non-default push는 snapshot 큐잉 대상이 아니라 `record_only`로 남겨야 한다.
+- PR webhook snapshot은 source branch 기준이며, snapshot 메타데이터의 `requestedRefType`은 `pull_request_branch`를 보존해야 한다.
+- webhook payload의 `repository.full_name`은 연결된 `repository_owner/repository_name`과 반드시 일치해야 한다.
+- 저장된 webhook secret은 복호화한 평문으로만 HMAC 비교해야 하며, 응답/로그에 원문을 남기지 말아야 한다.
+- 거부된 webhook과 중복 delivery 모두 멱등하게 처리해야 하며, 기존 `syncRunId`/`snapshotId` traceability를 덮어쓰면 안 된다.
+- worker 실패 시 이벤트 `processingStatus`가 계속 `queued`로 남아 있으면 안 된다.
 
 ## 다시 논의하지 말아야 할 결정
 
-- v1 공식 지원 범위는 GitHub Cloud만 사용
-- `PATCH`에서 credential 교체를 당장 지원하지 않음
-- `verify`와 `snapshots`는 Redis 미설정 시 `503`으로 fail-fast
-- `UpdateRepositoryConnectionRequest`에서 `credential` 입력은 제거된 상태를 유지
-- `US2`에서 scope rule 저장 시 미리보기 실패가 나도 저장 자체는 막지 않고 `warningState = ok`로 저장한다
-- snapshot 성공 시 active scope rule을 다시 덮어써 현재 규칙을 과거 버전으로 되돌리지 않는다
-- 다음 구현 시작점은 `US3`다. `US2`를 다시 확장하기보다 webhook/event 흐름으로 넘어간다
+- v1 공식 지원 범위는 GitHub Cloud만 사용한다.
+- `PATCH`에서 credential 교체를 당장 지원하지 않는다.
+- `verify`와 `snapshots`는 Redis 미설정 시 `503`으로 fail-fast 한다.
+- `UpdateRepositoryConnectionRequest`에서 `credential` 입력은 제거된 상태를 유지한다.
+- `US2`에서 scope rule 저장 시 미리보기 실패가 나도 저장 자체는 막지 않는다.
+- snapshot 성공 시 active scope rule을 과거 버전으로 되돌리지 않는다.
+- webhook rejection reason은 `secret_missing`, `secret_mismatch`, `signature_invalid`로 고정한다.
+- `push`와 허용된 `pull_request` action만 sync 후보이며, 그 외 PR action은 `record_only`로 남긴다.
 
 ## 이번 세션에서 얻은 중요한 메모
 
-- `tests/support/repository_connection_testkit.py`는 fake session 기반이라 integration 이름이어도 실제 DB 통합 테스트는 아니다
-- 이 환경에서는 `pytest ...` 대신 `python -c "import pytest, sys; sys.exit(pytest.main([...]))"` 형태가 가장 안정적이었다
-- HTTPS credential은 여전히 `https://x-access-token:<token>@...` 형태 URL을 Git 인자에 싣는다
-- stderr 마스킹과 origin 복구는 넣었지만, argv 노출 자체는 아직 남아 있는 보안 리스크다
-- scope 경고 미리보기는 Git 접근 실패를 저장 차단 사유로 쓰지 않는다. 따라서 `warningState = ok`가 항상 “안전”을 뜻하는 것은 아니다
-- 운영 화면은 `workspaceId` 쿼리 파라미터와 동일 출처 검사만 있는 상태라 인증/인가 계층이 붙기 전까지는 내부 개발용 기준선으로 봐야 한다
-- 저장소 루트에는 이번 작업과 무관한 변경 파일도 많으니 다음 세션에서는 `pilot-git-repo-connection/`과 `specs/001-git-repo-connection/` 범위만 집중하는 편이 안전하다
+- `tests/support/repository_connection_testkit.py`는 fake session 기반이라 integration 이름이어도 실제 DB 통합 테스트는 아니다.
+- 이 환경에서는 `pytest ...`보다 `python -c "import pytest, sys; sys.exit(pytest.main([...]))"` 형태가 가장 안정적이었다.
+- 테스트 실행 중 `pilot-git-repo-connection/src/tci/infrastructure/persistence/__pycache__/models.cpython-313.pyc`가 수정됐다. 코드 파일은 아니지만 working tree를 볼 때 잡음으로 보일 수 있다.
+- 저장소 루트에는 이번 작업과 무관한 변경도 많다. 다음 세션은 `pilot-git-repo-connection/`과 관련 spec 문서 범위만 집중하는 편이 안전하다.
+- 현재 코드에는 webhook enqueue가 트랜잭션 커밋 전에 호출되는 구조가 남아 있다. 테스트는 통과하지만 운영 race 가능성이 있어 다음 세션 첫 리팩터링 후보다.
+- `get_repository_connection_detail()`의 secret rotation 운영 가시성 값은 아직 placeholder다. 응답 shape는 있으나 실제 계산은 안 붙었다.
+- `tasks.md`는 여전히 `T043`~`T059`를 대부분 미완료로 표시한다. 실제 구현과 문서 상태가 어긋난다.
 
 ## 테스트와 검증 상태
 
-- 마지막 확인 기준 `US1` + `US2` 관련 회귀 `45 passed`
-- 마지막으로 통과한 검증 범위
-  - contract: 저장소 연결 계약, scope rule 저장 계약
-  - integration: 연결 생성, 기본 ref 변경, 초기 스냅샷, scoped snapshot, 운영 화면 목록/생성/상세/scope
-  - unit: app 배선, scope filter engine
-- `coverage` 도구는 현재 환경에 설치되어 있지 않아 수치는 확인하지 못함
-- 마이그레이션 스모크 테스트는 여전히 조건부 skip 상태
-- 재실행에 사용한 안전한 명령
-
-```bash
-python -c "import pytest, sys; sys.exit(pytest.main([
-  'tests/contract/repository_ingestion/test_repository_connection_contract.py',
-  'tests/contract/repository_ingestion/test_repository_scope_contract.py',
-  'tests/integration/repository_connections/test_connection_and_initial_snapshot.py',
-  'tests/integration/repository_connections/test_scoped_snapshot.py',
-  'tests/integration/repository_connections/test_operator_connection_pages.py',
-  'tests/integration/repository_connections/test_operator_scope_pages.py',
-  'tests/unit/repository_connections/test_scope_filter_engine.py',
-  'tests/unit/repository_connections/test_app.py',
-  '-q',
-]))"
-```
+- 마지막 전체 회귀 결과
+  - `python -c "import pytest, sys; sys.exit(pytest.main(['tests/contract/repository_ingestion','tests/integration/repository_connections','tests/unit/repository_connections','-q']))"` -> `147 passed, 1 skipped`
+- 이번 세션에서 추가한 테스트
+  - Contract
+    - `tests/contract/repository_ingestion/test_github_webhook_contract.py`
+  - Integration
+    - `tests/integration/repository_connections/test_github_webhook_refresh.py`
+  - Unit
+    - `tests/unit/repository_connections/test_process_github_event.py`
+    - `tests/unit/repository_connections/test_webhook_sync_task.py`
+- 웹훅 관련 집중 검증
+  - `python -c "import pytest, sys; sys.exit(pytest.main(['tests/contract/repository_ingestion/test_github_webhook_contract.py','tests/unit/repository_connections/test_process_github_event.py','tests/unit/repository_connections/test_webhook_sync_task.py','tests/integration/repository_connections/test_github_webhook_refresh.py','-q']))"` -> `16 passed`
+- 린트
+  - 이번 세션에서 수정한 파일 기준 `ReadLints` 오류 없음
+- 아직 실행 못 한 것
+  - 실제 DB migration apply/rollback 스모크
+  - secret rotation service가 붙은 뒤의 `SC-005` 운영 시나리오
+  - event timeline 운영 화면 및 quickstart 전체 플로우
 
 ## 다음 세션의 시작 순서
 
-1. `T043`~`T045` RED 테스트부터 추가
-   - GitHub webhook 계약
-   - PR action gating
-   - secret 누락/불일치/서명 실패
-   - delivery dedupe와 stale head skip
-2. `T046`~`T047`로 모델/마이그레이션 확장
-   - `WebhookSecretRevision`
-   - `RepositoryEvent`
-   - `RepositoryEventCursor`
-   - `lastProcessedEvent` summary linkage
-3. `T048`~`T056` 구현
-   - webhook secret 저장소
-   - event/cursor 저장소
-   - GitHub signature 검증
-   - payload parser
-   - webhook intake route
-   - enqueue/sync task
-4. `T057`~`T059` 조회 모델, 운영 화면, 증빙 정리
-   - connection detail summary refresh
-   - event timeline
-   - `delivery-evidence.md` 갱신
+1. `tasks.md`와 `delivery-evidence.md`를 실제 코드 상태에 맞게 갱신한다.
+   - 최소한 이번 세션에서 구현한 `T043`~`T051`, `T053`~`T057` 범위의 상태를 다시 판정해야 한다.
+   - `T052`, `T058`, `T059`, `T060`~`T063`는 아직 남은 범위로 정리해야 한다.
+2. webhook enqueue를 커밋 이후로 보내는 구조로 정리한다.
+   - 현재는 `process_github_event()` 안에서 task 전송이 일어난다.
+   - `on-commit` 또는 outbox 형태로 바꾸는 편이 안전하다.
+3. secret rotation 운영 가시성을 실제 값으로 채운다.
+   - `graceUntil`
+   - `previousSecretDeliveriesDuringGrace`
+   - `lastPreviousSecretAcceptedAt`
+4. 운영 화면 범위를 마저 구현한다.
+   - `T058`의 event timeline route와 template
+   - detail 화면에서 event/history 노출
+5. `delivery-evidence.md`와 quickstart를 갱신하고 `SC-002`, `SC-005` 근거를 채운다.
 
 ## 마지막 액션과 바로 다음 액션
 
 - 마지막 액션
-  - `evaluate_scope_rule_warning.py`를 정리해 미리보기 실패가 scope 저장을 깨지 않도록 수정
-  - 관련 contract 테스트를 추가하고 회귀를 `45 passed`까지 다시 확인
-  - `tasks.md`, `delivery-evidence.md`를 `US2` 완료 상태로 갱신
+  - webhook schema migration `002_repository_ingestion_webhooks.py`를 추가했다.
+  - PR source branch snapshot 메타데이터 보존과 snapshot detail의 `triggerEventId` 연결을 맞췄다.
+  - 전체 저장소 연결 회귀를 다시 돌려 `147 passed, 1 skipped`를 확인했다.
 - 바로 다음 액션
-  - `US3` contract/unit/integration RED 테스트 3개를 먼저 추가
+  - `specs/001-git-repo-connection/tasks.md`와 `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`부터 현재 구현 상태에 맞게 갱신한다.
 
 ## 병렬 작업과 소유권
 
-- 현재 활성 구현 흐름은 `US3` 시작 전 상태
-- 별도 브랜치나 worktree를 새로 만든 작업은 없음
-- `US1`, `US2`는 완료됐고, 다음 에이전트는 `US3`부터 이어가면 된다
+- 현재 활성 구현 흐름은 `001-git-repo-connection`의 `US3` 백엔드/API 후반부다.
+- 별도 브랜치나 worktree를 새로 만든 작업은 없다.
+- 다음 에이전트는 새 기능 구현을 무작정 이어가기보다, 먼저 문서 정합성과 남은 리스크 정리를 이어야 한다.

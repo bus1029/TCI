@@ -116,24 +116,24 @@
 
 ### Tests for User Story 3
 
-- [ ] T043 [P] [US3] Add contract tests for GitHub webhook intake, PR action gating for FR-010a, FR-012a event timeline responses, connection detail summary refresh, webhook health, rotation grace projection, and event traceability responses in `tests/contract/repository_ingestion/test_github_webhook_contract.py`
-- [ ] T044 [P] [US3] Add unit tests for webhook rejection classification, previous-grace secret acceptance, and stale-head decisions in `tests/unit/repository_connections/test_process_github_event.py`
+- [x] T043 [P] [US3] Add contract tests for GitHub webhook intake, PR action gating for FR-010a, FR-012a event timeline responses, connection detail summary refresh, webhook health, rotation grace projection, and event traceability responses in `tests/contract/repository_ingestion/test_github_webhook_contract.py`
+- [x] T044 [P] [US3] Add unit tests for webhook rejection classification, previous-grace secret acceptance, and stale-head decisions in `tests/unit/repository_connections/test_process_github_event.py`
 - [ ] T045 [P] [US3] Add integration tests for `secret_missing`, `secret_mismatch`, `signature_invalid`, secret grace rotation, delivery dedupe, stale head skip, ignored PR actions, and PR source snapshots in `tests/integration/repository_connections/test_github_webhook_refresh.py`
 
 ### Implementation for User Story 3
 
-- [ ] T046 [P] [US3] Extend SQLAlchemy models for `WebhookSecretRevision`, `RepositoryEvent`, `RepositoryEventCursor`, `lastProcessedEvent` summary linkage, `verifiedSecretRevisionStatus`, and webhook health projection fields in `src/tci/infrastructure/persistence/models.py`
-- [ ] T047 [US3] Create the webhook and repository event Alembic migration in `alembic/versions/002_repository_ingestion_events.py`
-- [ ] T048 [P] [US3] Implement webhook secret persistence adapter in `src/tci/infrastructure/persistence/webhook_secret_repository.py`
-- [ ] T049 [P] [US3] Implement repository event and cursor persistence adapters in `src/tci/infrastructure/persistence/repository_event_repository.py` and `src/tci/infrastructure/persistence/repository_event_cursor_repository.py`
-- [ ] T050 [P] [US3] Implement GitHub signature verification with active and previous-grace secret support in `src/tci/infrastructure/webhooks/github_signature.py`
-- [ ] T051 [P] [US3] Implement GitHub event payload parser in `src/tci/infrastructure/webhooks/github_event_parser.py`
+- [x] T046 [P] [US3] Extend SQLAlchemy models for `WebhookSecretRevision`, `RepositoryEvent`, `RepositoryEventCursor`, `lastProcessedEvent` summary linkage, `verifiedSecretRevisionStatus`, and webhook health projection fields in `src/tci/infrastructure/persistence/models.py`
+- [x] T047 [US3] Create the webhook and repository event Alembic migration in `alembic/versions/002_repository_ingestion_webhooks.py`
+- [x] T048 [P] [US3] Implement webhook secret persistence adapter in `src/tci/infrastructure/persistence/webhook_secret_repository.py`
+- [x] T049 [P] [US3] Implement repository event and cursor persistence adapters in `src/tci/infrastructure/persistence/repository_event_repository.py` and `src/tci/infrastructure/persistence/repository_event_cursor_repository.py`
+- [x] T050 [P] [US3] Implement GitHub signature verification with active and previous-grace secret support in `src/tci/infrastructure/webhooks/github_signature.py`
+- [x] T051 [P] [US3] Implement GitHub event payload parser in `src/tci/infrastructure/webhooks/github_event_parser.py`
 - [ ] T052 [US3] Implement webhook secret rotation service and repository connection schema updates for FR-016a, FR-017a, and FR-017b in `src/tci/domain/services/rotate_webhook_secret.py` and `src/tci/api/schemas/repository_connection.py`
-- [ ] T053 [US3] Implement webhook intake API route with raw-body validation and rejection logging in `src/tci/api/routes/github_webhooks.py`
-- [ ] T054 [US3] Implement event processing service for commit recording, target selection, PR action gating, dedupe, stale-head handling, FR-012 summary refresh, verified secret revision status, and webhook health updates in `src/tci/domain/services/process_github_event.py`
+- [x] T053 [US3] Implement webhook intake API route with raw-body validation and rejection logging in `src/tci/api/routes/github_webhooks.py`
+- [x] T054 [US3] Implement event processing service for commit recording, target selection, PR action gating, dedupe, stale-head handling, FR-012 summary refresh, verified secret revision status, and webhook health updates in `src/tci/domain/services/process_github_event.py`
 - [ ] T055 [US3] Implement webhook enqueue Celery task in `src/tci/workers/tasks/enqueue_webhook_sync.py`
-- [ ] T056 [US3] Implement webhook sync Celery task for default ref and PR source snapshots with `AUTH_FAILED` and `MIRROR_SYNC_FAILED` operator remediation for FR-013 in `src/tci/workers/tasks/run_webhook_sync.py`
-- [ ] T057 [US3] Implement repository event query service and repository connection detail refresh paths for FR-012, FR-012a, FR-016a, FR-017a, and FR-017b in `src/tci/domain/services/list_repository_events.py`, `src/tci/domain/services/get_repository_connection_detail.py`, `src/tci/api/routes/repository_events.py`, and `src/tci/api/routes/repository_connections.py`
+- [x] T056 [US3] Implement webhook sync Celery task for default ref and PR source snapshots with `AUTH_FAILED` and `MIRROR_SYNC_FAILED` operator remediation for FR-013 in `src/tci/infrastructure/queue/repository_ingestion_tasks.py`
+- [x] T057 [US3] Implement repository event query service and repository connection detail refresh paths for FR-012, FR-012a, FR-016a, FR-017a, and FR-017b in `src/tci/domain/services/list_repository_events.py`, `src/tci/domain/services/get_repository_connection_detail.py`, `src/tci/api/routes/repository_events.py`, and `src/tci/api/schemas/repository_connection.py`
 - [ ] T058 [US3] Implement operator event timeline route plus connection detail UI refresh for FR-012a, FR-016a, FR-017a, and FR-017b in `src/tci/web/routes/repository_events.py`, `src/tci/web/templates/connections/events.html`, `src/tci/web/routes/repository_connection_detail.py`, and `src/tci/web/templates/connections/detail.html`
 - [ ] T059 [US3] Capture User Story 3 verification evidence and trace links in `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`
 

@@ -21,6 +21,8 @@ from tci.infrastructure.persistence.code_snapshot_repository import (
     CodeSnapshotFileDraft,
 )
 from tci.infrastructure.persistence.models import (
+    DefaultRefType,
+    RefType,
     RepositoryConnectionStatus,
     SyncFailureCode,
     SyncRunStatus,
@@ -102,7 +104,7 @@ def build_code_snapshot(command, *, dependencies):
         ) as credential_bound_remote_url:
             resolved_ref = dependencies.git_ref_resolver.resolve(
                 remote_url=credential_bound_remote_url,
-                ref_type=context.requested_ref_type,
+                ref_type=_resolver_ref_type(context.requested_ref_type),
                 ref_name=context.requested_ref_name,
             )
             mirror = dependencies.git_mirror_manager.ensure_synced_mirror(
@@ -207,8 +209,8 @@ def build_code_snapshot(command, *, dependencies):
                     connection_id=context.connection_id,
                     sync_run_id=command.sync_run_id,
                     scope_rule_version_id=scope_rule_version.id,
-                    requested_ref_type=resolved_ref.ref_type,
-                    requested_ref_name=resolved_ref.ref_name,
+                    requested_ref_type=context.requested_ref_type,
+                    requested_ref_name=context.requested_ref_name,
                     resolved_commit_sha=resolved_ref.commit_sha,
                     tree_sha=materialized_snapshot.tree_sha,
                     archive_path=archive.archive_path,
@@ -421,3 +423,9 @@ def _fail_snapshot_build(
             status=connection_status,
         )
     raise problem
+
+
+def _resolver_ref_type(requested_ref_type):
+    if requested_ref_type is RefType.PULL_REQUEST_BRANCH:
+        return DefaultRefType.BRANCH
+    return requested_ref_type

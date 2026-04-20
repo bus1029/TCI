@@ -20,6 +20,7 @@ from tci.infrastructure.persistence.models import (
 class RepositorySyncRunDraft:
     id: uuid.UUID
     connection_id: uuid.UUID
+    trigger_event_id: uuid.UUID | None
     trigger_type: SyncTriggerType
     requested_ref_type: RefType
     requested_ref_name: str
@@ -33,6 +34,7 @@ class RepositorySyncRunRepository:
         sync_run = RepositorySyncRun(
             id=draft.id,
             connection_id=draft.connection_id,
+            trigger_event_id=draft.trigger_event_id,
             trigger_type=draft.trigger_type,
             requested_ref_type=draft.requested_ref_type,
             requested_ref_name=draft.requested_ref_name,
