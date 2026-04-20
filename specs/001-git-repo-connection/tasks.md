@@ -73,9 +73,9 @@
 - [x] T026 [US1] Implement repository connection API routes in `src/tci/api/routes/repository_connections.py`
 - [x] T027 [US1] Implement repository snapshot detail query service and API routes with traceability block in `src/tci/domain/services/get_code_snapshot_detail.py` and `src/tci/api/routes/repository_snapshots.py`
 - [x] T028 [US1] Implement repository connection detail query service with MVP summary projections (`lastSuccessfulSnapshotAt`, `lastFailedSyncAt`, nullable `lastProcessedEvent`, `latestSnapshot`), planning-input, and additional-ref guidance projections in `src/tci/domain/services/get_repository_connection_detail.py`
-- [ ] T029 [P] [US1] Implement operator connection list/create route and template in `src/tci/web/routes/repository_connections.py` and `src/tci/web/templates/connections/index.html`
-- [ ] T030 [US1] Implement operator connection detail route and template with latest success/failure summary cards, nullable `lastProcessedEvent` placeholder, additional-ref guidance, and traceability panel in `src/tci/web/routes/repository_connection_detail.py` and `src/tci/web/templates/connections/detail.html`
-- [ ] T031 [US1] Capture User Story 1 verification evidence, including `SC-001` timed first-snapshot validation, unsupported-provider rejection proof, and trace links in `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`
+- [x] T029 [P] [US1] Implement operator connection list/create route and template in `src/tci/web/routes/repository_connections.py` and `src/tci/web/templates/connections/index.html`
+- [x] T030 [US1] Implement operator connection detail route and template with latest success/failure summary cards, nullable `lastProcessedEvent` placeholder, additional-ref guidance, and traceability panel in `src/tci/web/routes/repository_connection_detail.py` and `src/tci/web/templates/connections/detail.html`
+- [x] T031 [US1] Capture User Story 1 verification evidence, including `SC-001` timed first-snapshot validation, unsupported-provider rejection proof, and trace links in `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`
 
 **Checkpoint**: User Story 1은 단독으로 구현 및 검증 가능해야 하며 MVP 후보가 된다.
 

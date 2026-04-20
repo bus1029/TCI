@@ -150,6 +150,19 @@ class FakeRepositoryConnectionRepository:
             return None
         return connection
 
+    def list_for_workspace(
+        self, *, workspace_id: uuid.UUID
+    ) -> list[RepositoryConnection]:
+        return sorted(
+            [
+                connection
+                for connection in self._store.connections.values()
+                if connection.workspace_id == workspace_id
+            ],
+            key=lambda connection: (connection.created_at, connection.id),
+            reverse=True,
+        )
+
     def update_default_ref(
         self,
         *,
@@ -700,8 +713,11 @@ def _load_test_settings(tmp_path: Path):
 
     original_root = os.environ.get("TCI_PROJECT_ROOT")
     original_key = os.environ.get("TCI_CREDENTIAL_ENCRYPTION_KEY")
+    original_template_root = os.environ.get("TCI_TEMPLATE_ROOT")
+    template_root = Path(__file__).resolve().parents[2] / "src" / "tci" / "web" / "templates"
     os.environ["TCI_PROJECT_ROOT"] = str(tmp_path)
     os.environ["TCI_CREDENTIAL_ENCRYPTION_KEY"] = Fernet.generate_key().decode("utf-8")
+    os.environ["TCI_TEMPLATE_ROOT"] = str(template_root)
     try:
         return load_settings()
     finally:
@@ -713,3 +729,7 @@ def _load_test_settings(tmp_path: Path):
             os.environ.pop("TCI_CREDENTIAL_ENCRYPTION_KEY", None)
         else:
             os.environ["TCI_CREDENTIAL_ENCRYPTION_KEY"] = original_key
+        if original_template_root is None:
+            os.environ.pop("TCI_TEMPLATE_ROOT", None)
+        else:
+            os.environ["TCI_TEMPLATE_ROOT"] = original_template_root

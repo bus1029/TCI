@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>저장소 연결 상세</title>
+  </head>
+  <body>
+    <main>
+      <a href="/connections?workspaceId={{ workspace_id }}">목록으로 돌아가기</a>
+
+      <h1>저장소 연결 상세</h1>
+      <p>{{ connection.provider }} / {{ connection.transport }}</p>
+      <p>{{ connection.remoteUrl }}</p>
+      <p>상태: {{ connection.status }}</p>
+      <p>기본 ref: {{ connection.defaultRefType }} {{ connection.defaultRefName }}</p>
+
+      <section>
+        <h2>최근 스냅샷 상태</h2>
+        <p>마지막 성공 시각: {{ connection.lastSuccessfulSnapshotAt or "없음" }}</p>
+        <p>마지막 실패 시각: {{ connection.lastFailedSyncAt or "없음" }}</p>
+        {% if connection.latestSnapshot %}
+        <p>최신 스냅샷 ID: {{ connection.latestSnapshot.id }}</p>
+        <p>최신 스냅샷 ref: {{ connection.latestSnapshot.requestedRefName }}</p>
+        {% else %}
+        <p>아직 생성된 스냅샷이 없습니다.</p>
+        {% endif %}
+        {% if connection.latestSyncRun %}
+        <p>최근 실행 상태: {{ connection.latestSyncRun.status }}</p>
+        <p>최근 실행 ID: {{ connection.latestSyncRun.id }}</p>
+        {% else %}
+        <p>아직 실행된 동기화가 없습니다.</p>
+        {% endif %}
+      </section>
+
+      <section>
+        <h2>최근 처리 이벤트</h2>
+        {% if connection.lastProcessedEvent %}
+        <p>{{ connection.lastProcessedEvent }}</p>
+        {% else %}
+        <p>아직 처리된 이벤트가 없습니다.</p>
+        {% endif %}
+      </section>
+
+      <section>
+        <h2>추가 ref 안내</h2>
+        <p>{{ connection.additionalRefGuidance.message }}</p>
+        <ul>
+          {% for option in connection.additionalRefGuidance.options %}
+          <li>{{ option.label }}</li>
+          {% endfor %}
+        </ul>
+      </section>
+
+      <section>
+        <h2>추적성 패널</h2>
+        <p>승인된 스펙: {{ connection.traceability.planningInputReference.approvedSpecPath }}</p>
+        <p>승인된 계획: {{ connection.traceability.planningInputReference.approvedPlanPath }}</p>
+        <p>계획 입력 참조: {{ connection.traceability.planningInputReference.id }}</p>
+        <p>활성 규칙 버전: {{ connection.traceability.activeScopeRuleVersionId or "없음" }}</p>
+        <p>최신 스냅샷: {{ connection.traceability.latestSnapshotId or "없음" }}</p>
+      </section>
+    </main>
+  </body>
+</html>

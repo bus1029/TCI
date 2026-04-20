@@ -5,6 +5,7 @@ from contextlib import AbstractContextManager, asynccontextmanager
 from dataclasses import dataclass
 
 from fastapi import FastAPI
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from tci.api.routes.repository_connections import (
@@ -34,6 +35,12 @@ from tci.infrastructure.persistence.session import build_session_factory
 from tci.infrastructure.snapshots.snapshot_archive_store import SnapshotArchiveStore
 from tci.infrastructure.snapshots.snapshot_manifest_writer import SnapshotManifestWriter
 from tci.settings import Settings, get_settings
+from tci.web.routes.repository_connection_detail import (
+    router as repository_connection_detail_web_router,
+)
+from tci.web.routes.repository_connections import (
+    router as repository_connections_web_router,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +109,11 @@ def create_app(
     app = FastAPI(lifespan=lifespan)
     app.state.settings = resolved_settings
     app.state.dependencies = resolved_dependencies
+    app.state.templates = Jinja2Templates(
+        directory=str(resolved_settings.template_root)
+    )
     app.include_router(repository_connections_router)
     app.include_router(repository_snapshots_router)
+    app.include_router(repository_connections_web_router)
+    app.include_router(repository_connection_detail_web_router)
     return app

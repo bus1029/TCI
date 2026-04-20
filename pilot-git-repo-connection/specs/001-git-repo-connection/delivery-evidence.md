@@ -14,14 +14,27 @@
 
 ### User Story 1
 
-- 상태: 미검증
+- 상태: 검증 완료
 - 범위
   - 저장소 연결 생성
   - 기본 ref 검증
   - 초기 스냅샷 생성
   - traceability 기본 조회
 - 근거
-  - TODO
+  - Contract
+    - `tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_rejects_unsupported_provider`
+    - `tests/contract/repository_ingestion/test_repository_connection_contract.py::test_get_connection_detail_returns_null_last_processed_event_and_traceability`
+  - Integration
+    - `tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_connection_detail_reflects_latest_snapshot_after_manual_initial_snapshot`
+    - `tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_default_ref_change_updates_future_target_without_erasing_existing_state`
+    - `tests/integration/repository_connections/test_operator_connection_pages.py::test_connections_page_renders_empty_state_and_create_form`
+    - `tests/integration/repository_connections/test_operator_connection_pages.py::test_connections_page_renders_existing_connection_summary`
+    - `tests/integration/repository_connections/test_operator_connection_pages.py::test_connections_create_route_redirects_to_detail_page`
+    - `tests/integration/repository_connections/test_operator_connection_pages.py::test_connection_detail_page_renders_summary_guidance_and_traceability`
+    - `tests/integration/repository_connections/test_operator_connection_pages.py::test_connections_create_route_does_not_echo_secret_after_validation_error`
+    - `tests/integration/repository_connections/test_operator_connection_pages.py::test_connections_create_route_rejects_cross_origin_submission`
+  - 실행 결과
+    - `python -c "import pytest, sys; sys.exit(pytest.main(['tests/integration/repository_connections/test_operator_connection_pages.py','tests/integration/repository_connections/test_connection_and_initial_snapshot.py','tests/unit/repository_connections/test_app.py','tests/contract/repository_ingestion/test_repository_connection_contract.py','-q']))"` -> `34 passed`
 
 ### User Story 2
 
@@ -49,22 +62,26 @@
 ## FR-014 추적성 근거
 
 - 계획 입력 -> 연결 설정
-  - TODO
+  - `test_connection_detail_exposes_traceability_and_placeholder_summaries`
+  - `test_connection_detail_page_renders_summary_guidance_and_traceability`
 - 연결 설정 -> scope rule version
-  - TODO
+  - `test_connection_detail_reflects_latest_snapshot_after_manual_initial_snapshot`
 - trigger event -> sync run
-  - TODO
+  - `US1` 범위에서는 수동 초기 수집만 다루므로 `triggerEventId = null`이 계약대로 유지된다.
 - sync run -> code snapshot
-  - TODO
+  - `test_connection_detail_reflects_latest_snapshot_after_manual_initial_snapshot`
 - code snapshot -> snapshot manifest
-  - TODO
+  - `test_connection_detail_reflects_latest_snapshot_after_manual_initial_snapshot`
 
 ## 성공 기준 검증
 
 ### SC-001
 
 - 목표: 저장소 연결부터 첫 스냅샷 완료 확인까지 10분 이내
-- 근거: TODO
+- 근거:
+  - 재현 스크립트: `python tests/support/measure_us1_first_snapshot.py`
+  - 로컬 인메모리 검증에서 연결 생성 -> 초기 스냅샷 생성 -> 스냅샷 상세 조회까지 `0.0111초`
+  - 현재 측정은 worker/Redis를 생략한 `US1` 기준선 검증이며, full quickstart 회귀는 `T062`에서 다시 확인 예정
 
 ### SC-002
 
@@ -74,7 +91,10 @@
 ### SC-003
 
 - 목표: 모든 스냅샷의 저장소, ref, 규칙, 수집 시점 추적 가능
-- 근거: TODO
+- 근거:
+  - `test_get_connection_detail_returns_null_last_processed_event_and_traceability`
+  - `test_connection_detail_reflects_latest_snapshot_after_manual_initial_snapshot`
+  - `test_connection_detail_page_renders_summary_guidance_and_traceability`
 
 ### SC-004
 
@@ -89,14 +109,16 @@
 ## 테스트 증거 인덱스
 
 - Unit
-  - TODO
+  - `tests/unit/repository_connections/test_app.py`
 - Integration
-  - TODO
+  - `tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
+  - `tests/integration/repository_connections/test_operator_connection_pages.py`
 - Contract
-  - TODO
+  - `tests/contract/repository_ingestion/test_repository_connection_contract.py`
 - End-to-End
-  - TODO
+  - 아직 미실행 (`US1` 범위는 contract/integration 검증으로 종료)
 
 ## 변경 이력
 
 - 2026-04-17: Phase 1 스캐폴드 초안 생성
+- 2026-04-20: `US1` 운영 화면 구현 완료, `T029`~`T031` 검증 근거 반영
