@@ -38,14 +38,29 @@
 
 ### User Story 2
 
-- 상태: 미검증
+- 상태: 검증 완료
 - 범위
   - 범위 규칙 저장
   - `empty_result_risk` 경고
   - `NO_INCLUDED_FILES` 실패 처리
   - scope rule version 추적
 - 근거
-  - TODO
+  - Contract
+    - `tests/contract/repository_ingestion/test_repository_scope_contract.py::test_scope_rule_routes_require_workspace_header`
+    - `tests/contract/repository_ingestion/test_repository_scope_contract.py::test_save_scope_rule_returns_warning_and_latest_scope_projection`
+    - `tests/contract/repository_ingestion/test_repository_scope_contract.py::test_save_scope_rule_rejects_non_positive_max_file_size`
+    - `tests/contract/repository_ingestion/test_repository_scope_contract.py::test_save_scope_rule_tolerates_preview_failure_and_still_saves_rule`
+  - Unit
+    - `tests/unit/repository_connections/test_scope_filter_engine.py::test_scope_filter_engine_applies_include_exclude_and_file_type_in_defined_order`
+    - `tests/unit/repository_connections/test_scope_filter_engine.py::test_scope_filter_engine_keeps_v1_hard_excluded_files_out_even_when_included`
+  - Integration
+    - `tests/integration/repository_connections/test_scoped_snapshot.py::test_scoped_snapshot_stores_filtered_files_and_scope_version`
+    - `tests/integration/repository_connections/test_scoped_snapshot.py::test_scoped_snapshot_fails_when_scope_rule_excludes_everything`
+    - `tests/integration/repository_connections/test_operator_scope_pages.py::test_scope_page_renders_current_warning_state`
+    - `tests/integration/repository_connections/test_operator_scope_pages.py::test_scope_page_save_redirects_back_to_scope_view`
+    - `tests/integration/repository_connections/test_operator_scope_pages.py::test_scope_page_rejects_non_positive_max_file_size`
+  - 실행 결과
+    - `python -c "import pytest, sys; sys.exit(pytest.main(['tests/contract/repository_ingestion/test_repository_connection_contract.py','tests/contract/repository_ingestion/test_repository_scope_contract.py','tests/integration/repository_connections/test_connection_and_initial_snapshot.py','tests/integration/repository_connections/test_scoped_snapshot.py','tests/integration/repository_connections/test_operator_connection_pages.py','tests/integration/repository_connections/test_operator_scope_pages.py','tests/unit/repository_connections/test_scope_filter_engine.py','tests/unit/repository_connections/test_app.py','-q']))"` -> `45 passed`
 
 ### User Story 3
 
@@ -66,12 +81,16 @@
   - `test_connection_detail_page_renders_summary_guidance_and_traceability`
 - 연결 설정 -> scope rule version
   - `test_connection_detail_reflects_latest_snapshot_after_manual_initial_snapshot`
+  - `test_save_scope_rule_returns_warning_and_latest_scope_projection`
+  - `test_scoped_snapshot_stores_filtered_files_and_scope_version`
 - trigger event -> sync run
   - `US1` 범위에서는 수동 초기 수집만 다루므로 `triggerEventId = null`이 계약대로 유지된다.
 - sync run -> code snapshot
   - `test_connection_detail_reflects_latest_snapshot_after_manual_initial_snapshot`
+  - `test_scoped_snapshot_stores_filtered_files_and_scope_version`
 - code snapshot -> snapshot manifest
   - `test_connection_detail_reflects_latest_snapshot_after_manual_initial_snapshot`
+  - `test_scoped_snapshot_stores_filtered_files_and_scope_version`
 
 ## 성공 기준 검증
 
@@ -99,7 +118,11 @@
 ### SC-004
 
 - 목표: 규칙과 실제 스냅샷 결과의 일치율 100%
-- 근거: TODO
+- 근거:
+  - `test_scope_filter_engine_applies_include_exclude_and_file_type_in_defined_order`
+  - `test_scope_filter_engine_keeps_v1_hard_excluded_files_out_even_when_included`
+  - `test_scoped_snapshot_stores_filtered_files_and_scope_version`
+  - `test_scoped_snapshot_fails_when_scope_rule_excludes_everything`
 
 ### SC-005
 
@@ -110,11 +133,15 @@
 
 - Unit
   - `tests/unit/repository_connections/test_app.py`
+  - `tests/unit/repository_connections/test_scope_filter_engine.py`
 - Integration
   - `tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
   - `tests/integration/repository_connections/test_operator_connection_pages.py`
+  - `tests/integration/repository_connections/test_scoped_snapshot.py`
+  - `tests/integration/repository_connections/test_operator_scope_pages.py`
 - Contract
   - `tests/contract/repository_ingestion/test_repository_connection_contract.py`
+  - `tests/contract/repository_ingestion/test_repository_scope_contract.py`
 - End-to-End
   - 아직 미실행 (`US1` 범위는 contract/integration 검증으로 종료)
 
@@ -122,3 +149,4 @@
 
 - 2026-04-17: Phase 1 스캐폴드 초안 생성
 - 2026-04-20: `US1` 운영 화면 구현 완료, `T029`~`T031` 검증 근거 반영
+- 2026-04-20: `US2` 범위 규칙 저장, 필터 엔진, scoped snapshot, 운영 화면, `T032`~`T042` 검증 근거 반영

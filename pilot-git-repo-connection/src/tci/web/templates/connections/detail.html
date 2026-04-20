@@ -13,6 +13,11 @@
       <p>{{ connection.remoteUrl }}</p>
       <p>상태: {{ connection.status }}</p>
       <p>기본 ref: {{ connection.defaultRefType }} {{ connection.defaultRefName }}</p>
+      <p>
+        <a href="/connections/{{ connection.id }}/scope?workspaceId={{ workspace_id }}"
+          >수집 범위 설정</a
+        >
+      </p>
 
       <section>
         <h2>최근 스냅샷 상태</h2>

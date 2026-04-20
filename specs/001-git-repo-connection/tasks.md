@@ -89,20 +89,20 @@
 
 ### Tests for User Story 2
 
-- [ ] T032 [P] [US2] Add contract tests for scope rule save, validation warning responses, and scope version projection in `tests/contract/repository_ingestion/test_repository_scope_contract.py`
-- [ ] T033 [P] [US2] Add unit tests for include/exclude/type/binary/size precedence and FR-006 v1 hard-exclude behavior in `tests/unit/repository_connections/test_scope_filter_engine.py`
-- [ ] T034 [P] [US2] Add integration tests for empty-result blocking, filtered snapshot manifests, and scope version traceability in `tests/integration/repository_connections/test_scoped_snapshot.py`
+- [x] T032 [P] [US2] Add contract tests for scope rule save, validation warning responses, and scope version projection in `tests/contract/repository_ingestion/test_repository_scope_contract.py`
+- [x] T033 [P] [US2] Add unit tests for include/exclude/type/binary/size precedence and FR-006 v1 hard-exclude behavior in `tests/unit/repository_connections/test_scope_filter_engine.py`
+- [x] T034 [P] [US2] Add integration tests for empty-result blocking, filtered snapshot manifests, and scope version traceability in `tests/integration/repository_connections/test_scoped_snapshot.py`
 
 ### Implementation for User Story 2
 
-- [ ] T035 [P] [US2] Implement scope rule persistence adapter in `src/tci/infrastructure/persistence/scope_rule_repository.py`
-- [ ] T036 [P] [US2] Implement scope warning evaluator in `src/tci/domain/services/evaluate_scope_rule_warning.py`
-- [ ] T037 [P] [US2] Implement FR-006 v1 default hard-exclude and text/binary/size guard policy in `src/tci/domain/services/default_scope_policy.py`
-- [ ] T038 [US2] Implement scope filter engine with manifest inclusion reasons in `src/tci/domain/services/scope_filter_engine.py`
-- [ ] T039 [US2] Integrate active scope rule resolution, scope version stamping, and `NO_INCLUDED_FILES` failure handling into `src/tci/domain/services/build_code_snapshot.py`
-- [ ] T040 [US2] Implement scope rule schemas and API routes in `src/tci/api/schemas/repository_scope.py` and `src/tci/api/routes/repository_scope.py`
-- [ ] T041 [US2] Implement operator scope configuration route and template with warning states in `src/tci/web/routes/repository_scope.py` and `src/tci/web/templates/connections/scope.html`
-- [ ] T042 [US2] Capture User Story 2 verification evidence and trace links in `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`
+- [x] T035 [P] [US2] Implement scope rule persistence adapter in `src/tci/infrastructure/persistence/scope_rule_repository.py`
+- [x] T036 [P] [US2] Implement scope warning evaluator in `src/tci/domain/services/evaluate_scope_rule_warning.py`
+- [x] T037 [P] [US2] Implement FR-006 v1 default hard-exclude and text/binary/size guard policy in `src/tci/domain/services/default_scope_policy.py`
+- [x] T038 [US2] Implement scope filter engine with manifest inclusion reasons in `src/tci/domain/services/scope_filter_engine.py`
+- [x] T039 [US2] Integrate active scope rule resolution, scope version stamping, and `NO_INCLUDED_FILES` failure handling into `src/tci/domain/services/build_code_snapshot.py`
+- [x] T040 [US2] Implement scope rule schemas and API routes in `src/tci/api/schemas/repository_scope.py` and `src/tci/api/routes/repository_scope.py`
+- [x] T041 [US2] Implement operator scope configuration route and template with warning states in `src/tci/web/routes/repository_scope.py` and `src/tci/web/templates/connections/scope.html`
+- [x] T042 [US2] Capture User Story 2 verification evidence and trace links in `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`
 
 **Checkpoint**: User Stories 1 and 2는 각각 독립 검증 가능해야 하며, scoped snapshot 결과가 재현 가능해야 한다.
 

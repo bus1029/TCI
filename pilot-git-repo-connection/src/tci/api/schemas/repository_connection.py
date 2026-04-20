@@ -3,11 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 import uuid
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
-
-class CamelModel(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+from tci.api.schemas._base import CamelModel
+from tci.api.schemas.repository_scope import serialize_scope_rule
 
 
 class CredentialInput(CamelModel):
@@ -63,8 +62,14 @@ def serialize_repository_connection_detail(connection) -> dict[str, object]:
     planning_input_reference = connection.planning_input_reference
     latest_snapshot = getattr(connection, "latest_snapshot", None)
     latest_sync_run = getattr(connection, "latest_sync_run", None)
+    latest_scope_rule = getattr(connection, "latest_scope_rule", None)
+    if latest_scope_rule is None:
+        latest_scope_rule = getattr(connection, "active_scope_rule_version", None)
     payload.update(
         {
+            "latestScopeRule": (
+                None if latest_scope_rule is None else serialize_scope_rule(latest_scope_rule)
+            ),
             "lastSuccessfulSnapshotAt": _format_datetime(
                 connection.last_successful_snapshot_at
             ),

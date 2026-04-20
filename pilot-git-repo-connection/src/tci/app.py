@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from tci.api.routes.repository_connections import (
     router as repository_connections_router,
 )
+from tci.api.routes.repository_scope import router as repository_scope_router
 from tci.api.routes.repository_snapshots import router as repository_snapshots_router
 from tci.domain.services.build_traceability_reference import (
     build_snapshot_traceability_reference,
@@ -28,6 +29,7 @@ from tci.infrastructure.persistence.planning_input_reference_repository import (
 from tci.infrastructure.persistence.repository_connection_repository import (
     RepositoryConnectionRepository,
 )
+from tci.infrastructure.persistence.scope_rule_repository import ScopeRuleRepository
 from tci.infrastructure.persistence.repository_sync_run_repository import (
     RepositorySyncRunRepository,
 )
@@ -41,6 +43,7 @@ from tci.web.routes.repository_connection_detail import (
 from tci.web.routes.repository_connections import (
     router as repository_connections_web_router,
 )
+from tci.web.routes.repository_scope import router as repository_scope_web_router
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +62,7 @@ class AppDependencies:
     repository_connection_repository_factory: Callable[
         [Session], RepositoryConnectionRepository
     ]
+    scope_rule_repository_factory: Callable[[Session], ScopeRuleRepository]
     credential_revision_repository_factory: Callable[
         [Session], CredentialRevisionRepository
     ]
@@ -82,6 +86,7 @@ def build_app_dependencies(settings: Settings) -> AppDependencies:
         snapshot_traceability_builder=build_snapshot_traceability_reference,
         session_factory=build_session_factory(settings),
         repository_connection_repository_factory=RepositoryConnectionRepository,
+        scope_rule_repository_factory=ScopeRuleRepository,
         credential_revision_repository_factory=CredentialRevisionRepository,
         repository_sync_run_repository_factory=RepositorySyncRunRepository,
         code_snapshot_repository_factory=CodeSnapshotRepository,
@@ -113,7 +118,9 @@ def create_app(
         directory=str(resolved_settings.template_root)
     )
     app.include_router(repository_connections_router)
+    app.include_router(repository_scope_router)
     app.include_router(repository_snapshots_router)
     app.include_router(repository_connections_web_router)
     app.include_router(repository_connection_detail_web_router)
+    app.include_router(repository_scope_web_router)
     return app
