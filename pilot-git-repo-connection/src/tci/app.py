@@ -30,6 +30,15 @@ from tci.infrastructure.persistence.repository_connection_repository import (
     RepositoryConnectionRepository,
 )
 from tci.infrastructure.persistence.scope_rule_repository import ScopeRuleRepository
+from tci.infrastructure.persistence.webhook_secret_repository import (
+    WebhookSecretRepository,
+)
+from tci.infrastructure.persistence.repository_event_repository import (
+    RepositoryEventRepository,
+)
+from tci.infrastructure.persistence.repository_event_cursor_repository import (
+    RepositoryEventCursorRepository,
+)
 from tci.infrastructure.persistence.repository_sync_run_repository import (
     RepositorySyncRunRepository,
 )
@@ -43,6 +52,8 @@ from tci.web.routes.repository_connection_detail import (
 from tci.web.routes.repository_connections import (
     router as repository_connections_web_router,
 )
+from tci.api.routes.repository_events import router as repository_events_router
+from tci.api.routes.github_webhooks import router as github_webhooks_router
 from tci.web.routes.repository_scope import router as repository_scope_web_router
 
 
@@ -66,6 +77,11 @@ class AppDependencies:
     credential_revision_repository_factory: Callable[
         [Session], CredentialRevisionRepository
     ]
+    webhook_secret_repository_factory: Callable[[Session], WebhookSecretRepository]
+    repository_event_repository_factory: Callable[[Session], RepositoryEventRepository]
+    repository_event_cursor_repository_factory: Callable[
+        [Session], RepositoryEventCursorRepository
+    ]
     repository_sync_run_repository_factory: Callable[
         [Session], RepositorySyncRunRepository
     ]
@@ -88,6 +104,9 @@ def build_app_dependencies(settings: Settings) -> AppDependencies:
         repository_connection_repository_factory=RepositoryConnectionRepository,
         scope_rule_repository_factory=ScopeRuleRepository,
         credential_revision_repository_factory=CredentialRevisionRepository,
+        webhook_secret_repository_factory=WebhookSecretRepository,
+        repository_event_repository_factory=RepositoryEventRepository,
+        repository_event_cursor_repository_factory=RepositoryEventCursorRepository,
         repository_sync_run_repository_factory=RepositorySyncRunRepository,
         code_snapshot_repository_factory=CodeSnapshotRepository,
     )
@@ -118,6 +137,8 @@ def create_app(
         directory=str(resolved_settings.template_root)
     )
     app.include_router(repository_connections_router)
+    app.include_router(repository_events_router)
+    app.include_router(github_webhooks_router)
     app.include_router(repository_scope_router)
     app.include_router(repository_snapshots_router)
     app.include_router(repository_connections_web_router)

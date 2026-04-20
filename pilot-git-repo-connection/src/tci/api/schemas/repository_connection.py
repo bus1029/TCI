@@ -63,6 +63,7 @@ def serialize_repository_connection_detail(connection) -> dict[str, object]:
     latest_snapshot = getattr(connection, "latest_snapshot", None)
     latest_sync_run = getattr(connection, "latest_sync_run", None)
     latest_scope_rule = getattr(connection, "latest_scope_rule", None)
+    last_processed_event = getattr(connection, "last_processed_event", None)
     if latest_scope_rule is None:
         latest_scope_rule = getattr(connection, "active_scope_rule_version", None)
     payload.update(
@@ -74,8 +75,8 @@ def serialize_repository_connection_detail(connection) -> dict[str, object]:
                 connection.last_successful_snapshot_at
             ),
             "lastFailedSyncAt": _format_datetime(connection.last_failed_sync_at),
-            "lastProcessedEventAt": None,
-            "lastProcessedEvent": None,
+            "lastProcessedEventAt": _format_datetime(connection.last_processed_event_at),
+            "lastProcessedEvent": _serialize_last_processed_event(last_processed_event),
             "latestSnapshot": _serialize_latest_snapshot_summary(latest_snapshot),
             "latestSyncRun": _serialize_latest_sync_run_summary(latest_sync_run),
             "traceability": {
@@ -89,7 +90,11 @@ def serialize_repository_connection_detail(connection) -> dict[str, object]:
                 "activeScopeRuleVersionId": _format_uuid(
                     connection.active_scope_rule_version_id
                 ),
-                "latestEventId": None,
+                "latestEventId": _format_uuid(
+                    getattr(connection, "last_processed_event_id", None)
+                    if last_processed_event is None
+                    else last_processed_event.id
+                ),
                 "latestSnapshotId": _format_uuid(
                     None if latest_snapshot is None else latest_snapshot.id
                 ),
@@ -109,6 +114,9 @@ def serialize_repository_connection_detail(connection) -> dict[str, object]:
             },
         }
     )
+    webhook_health = _serialize_webhook_health(connection)
+    if webhook_health is not None:
+        payload["webhookHealth"] = webhook_health
     return payload
 
 
@@ -168,6 +176,26 @@ def serialize_code_snapshot_detail(detail) -> dict[str, object]:
     }
 
 
+def serialize_repository_event(event) -> dict[str, object]:
+    return {
+        "id": str(event.id),
+        "providerDeliveryId": event.provider_delivery_id,
+        "providerEventType": _enum_value(event.provider_event_type),
+        "providerAction": event.provider_action,
+        "targetKey": event.target_key,
+        "targetHeadSha": event.target_head_sha,
+        "signatureStatus": _enum_value(event.signature_status),
+        "verifiedSecretRevisionStatus": _enum_value(
+            getattr(event, "verified_secret_revision_status", None)
+        ),
+        "rejectionReason": _enum_value(getattr(event, "rejection_reason", None)),
+        "processingDecision": _enum_value(event.processing_decision),
+        "processingStatus": _enum_value(event.processing_status),
+        "snapshotId": _format_uuid(getattr(event, "snapshot_id", None)),
+        "syncRunId": _format_uuid(getattr(event, "sync_run_id", None)),
+    }
+
+
 def _format_datetime(value: datetime | None) -> str | None:
     if value is None:
         return None
@@ -206,3 +234,57 @@ def _serialize_latest_sync_run_summary(sync_run) -> dict[str, object] | None:
         "startedAt": _format_datetime(sync_run.started_at),
         "completedAt": _format_datetime(sync_run.completed_at),
     }
+
+
+def _serialize_last_processed_event(event) -> dict[str, object] | None:
+    if event is None:
+        return None
+    return {
+        "id": str(event.id),
+        "providerEventType": _enum_value(event.provider_event_type),
+        "providerAction": event.provider_action,
+        "targetKey": event.target_key,
+        "processingDecision": _enum_value(event.processing_decision),
+        "processedAt": _format_datetime(getattr(event, "processed_at", None)),
+    }
+
+
+def _serialize_webhook_health(connection) -> dict[str, object] | None:
+    if (
+        getattr(connection, "active_webhook_secret_revision_id", None) is None
+        and getattr(connection, "last_webhook_rejection_reason", None) is None
+        and getattr(connection, "last_processed_event_id", None) is None
+    ):
+        return None
+    previous_secret_deliveries = getattr(connection, "previous_secret_deliveries_during_grace", 0)
+    last_previous_secret_accepted_at = getattr(
+        connection, "last_previous_secret_accepted_at", None
+    )
+    return {
+        "status": _enum_value(getattr(connection, "webhook_health_state", None)) or "healthy",
+        "lastRejectedReason": _enum_value(
+            getattr(connection, "last_webhook_rejection_reason", None)
+        ),
+        "lastRejectedAt": _format_datetime(
+            getattr(connection, "last_webhook_rejected_at", None)
+        ),
+        "rotationState": _serialize_rotation_state(connection),
+        "graceUntil": _format_datetime(getattr(connection, "webhook_secret_grace_until", None)),
+        "previousSecretDeliveriesDuringGrace": previous_secret_deliveries,
+        "lastPreviousSecretAcceptedAt": _format_datetime(last_previous_secret_accepted_at),
+    }
+
+
+def _serialize_rotation_state(connection) -> str:
+    grace_until = getattr(connection, "webhook_secret_grace_until", None)
+    if grace_until is None:
+        return "not_rotating"
+    if grace_until > datetime.now(tz=grace_until.tzinfo):
+        return "grace_active"
+    return "grace_expired"
+
+
+def _enum_value(value) -> str | None:
+    if value is None:
+        return None
+    return getattr(value, "value", value)

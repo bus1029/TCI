@@ -22,6 +22,7 @@ def get_code_snapshot_detail(
             session
         )
         snapshot_repository = dependencies.code_snapshot_repository_factory(session)
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
         connection = connection_repository.get(
             workspace_id=workspace_id,
             connection_id=connection_id,
@@ -34,8 +35,12 @@ def get_code_snapshot_detail(
         )
         if snapshot is None:
             raise LookupError("코드 스냅샷을 찾을 수 없습니다.")
+        sync_run = sync_run_repository.get(
+            connection_id=connection_id,
+            sync_run_id=snapshot.sync_run_id,
+        )
         return CodeSnapshotDetail(
             snapshot=snapshot,
             planning_input_reference=connection.planning_input_reference,
-            trigger_event_id=None,
+            trigger_event_id=None if sync_run is None else sync_run.trigger_event_id,
         )

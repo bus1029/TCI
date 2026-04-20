@@ -3,6 +3,9 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+import hashlib
+import hmac
+import json
 from pathlib import Path
 from typing import Any
 import uuid
@@ -44,6 +47,8 @@ from tci.infrastructure.persistence.models import (
     SyncFailureCode,
     SyncRunStatus,
     SyncTriggerType,
+    WebhookHealthState,
+    WebhookRejectionReason,
 )
 from tci.infrastructure.snapshots.snapshot_archive_store import (
     SnapshotArchiveEntryDraft,
@@ -58,6 +63,46 @@ def now_utc() -> datetime:
 
 
 @dataclass(slots=True)
+class TestWebhookSecretRevision:
+    id: uuid.UUID
+    connection_id: uuid.UUID
+    secret: str
+    status: str
+    created_at: datetime
+    grace_until: datetime | None = None
+
+
+@dataclass(slots=True)
+class TestRepositoryEventCursor:
+    id: uuid.UUID
+    connection_id: uuid.UUID
+    target_key: str
+    latest_head_sha: str
+    latest_event_id: uuid.UUID
+    updated_at: datetime
+
+
+@dataclass(slots=True)
+class TestRepositoryEvent:
+    id: uuid.UUID
+    connection_id: uuid.UUID
+    provider_delivery_id: str
+    provider_event_type: str
+    provider_action: str | None
+    target_key: str
+    target_head_sha: str | None
+    signature_status: str
+    processing_decision: str
+    processing_status: str
+    received_at: datetime
+    verified_secret_revision_status: str | None = None
+    rejection_reason: str | None = None
+    sync_run_id: uuid.UUID | None = None
+    snapshot_id: uuid.UUID | None = None
+    processed_at: datetime | None = None
+
+
+@dataclass(slots=True)
 class InMemoryRepositoryStore:
     planning_input_references: dict[uuid.UUID, PlanningInputReference] = field(
         default_factory=dict
@@ -69,12 +114,20 @@ class InMemoryRepositoryStore:
     credentials: dict[uuid.UUID, RepositoryCredentialRevision] = field(
         default_factory=dict
     )
+    webhook_secret_revisions: dict[uuid.UUID, TestWebhookSecretRevision] = field(
+        default_factory=dict
+    )
+    repository_events: dict[uuid.UUID, TestRepositoryEvent] = field(default_factory=dict)
+    event_cursors: dict[tuple[uuid.UUID, str], TestRepositoryEventCursor] = field(
+        default_factory=dict
+    )
     sync_runs: dict[uuid.UUID, RepositorySyncRun] = field(default_factory=dict)
     snapshots: dict[uuid.UUID, CodeSnapshot] = field(default_factory=dict)
     resolver_requires_bound_credential: bool = False
     auth_failure_ref_names: set[str] = field(default_factory=set)
     missing_ref_names: set[str] = field(default_factory=set)
     last_resolved_remote_url: str | None = None
+    resolved_ref_commits: dict[str, str] = field(default_factory=dict)
     mirror_sync_error: Exception | None = None
     mirror_tree_sha: str = "b" * 40
     mirror_snapshot_entries: tuple[tuple[str, bytes], ...] = field(
@@ -149,6 +202,9 @@ class FakeRepositoryConnectionRepository:
         if connection is None or connection.workspace_id != workspace_id:
             return None
         return connection
+
+    def get_any(self, *, connection_id: uuid.UUID) -> RepositoryConnection | None:
+        return self._store.connections.get(connection_id)
 
     def list_for_workspace(
         self, *, workspace_id: uuid.UUID
@@ -284,10 +340,49 @@ class FakeRepositoryConnectionRepository:
         connection.updated_at = now_utc()
         return connection
 
+    def record_webhook_rejection(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        health_state: WebhookHealthState,
+        rejection_reason: WebhookRejectionReason,
+        rejected_at: datetime,
+    ) -> RepositoryConnection:
+        connection = self._require_any(connection_id=connection_id)
+        connection.webhook_health_state = health_state
+        connection.last_webhook_rejection_reason = rejection_reason
+        connection.last_webhook_rejected_at = rejected_at
+        connection.updated_at = now_utc()
+        return connection
+
+    def record_processed_event(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        event_id: uuid.UUID,
+        processed_at: datetime,
+        health_state: WebhookHealthState,
+    ) -> RepositoryConnection:
+        connection = self._require_any(connection_id=connection_id)
+        connection.last_processed_event_id = event_id
+        connection.last_processed_event_at = processed_at
+        connection.webhook_health_state = health_state
+        if health_state is WebhookHealthState.HEALTHY:
+            connection.last_webhook_rejection_reason = None
+            connection.last_webhook_rejected_at = None
+        connection.updated_at = now_utc()
+        return connection
+
     def _require_connection(
         self, *, workspace_id: uuid.UUID, connection_id: uuid.UUID
     ) -> RepositoryConnection:
         connection = self.get(workspace_id=workspace_id, connection_id=connection_id)
+        if connection is None:
+            raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        return connection
+
+    def _require_any(self, *, connection_id: uuid.UUID) -> RepositoryConnection:
+        connection = self.get_any(connection_id=connection_id)
         if connection is None:
             raise LookupError("저장소 연결을 찾을 수 없습니다.")
         return connection
@@ -397,6 +492,145 @@ class FakeCredentialRevisionRepository:
         return self._store.credentials.get(connection.active_credential_revision_id)
 
 
+class FakeWebhookSecretRepository:
+    def __init__(self, store: InMemoryRepositoryStore) -> None:
+        self._store = store
+
+    def list_verification_candidates(
+        self, *, connection_id: uuid.UUID, as_of: datetime
+    ) -> list[TestWebhookSecretRevision]:
+        return [
+            revision
+            for revision in self._store.webhook_secret_revisions.values()
+            if revision.connection_id == connection_id
+            and (
+                revision.status == "active"
+                or (
+                    revision.status == "previous_grace"
+                    and revision.grace_until is not None
+                    and revision.grace_until >= as_of
+                )
+            )
+        ]
+
+    def get_active_for_connection(
+        self, *, connection_id: uuid.UUID
+    ) -> TestWebhookSecretRevision | None:
+        for revision in self._store.webhook_secret_revisions.values():
+            if revision.connection_id == connection_id and revision.status == "active":
+                return revision
+        return None
+
+
+class FakeRepositoryEventRepository:
+    def __init__(self, store: InMemoryRepositoryStore) -> None:
+        self._store = store
+
+    def create(self, draft) -> TestRepositoryEvent:
+        event = TestRepositoryEvent(
+            id=draft.id,
+            connection_id=draft.connection_id,
+            provider_delivery_id=draft.provider_delivery_id,
+            provider_event_type=draft.provider_event_type.value,
+            provider_action=draft.provider_action,
+            target_key=draft.target_key,
+            target_head_sha=draft.target_head_sha,
+            signature_status=draft.signature_status.value,
+            processing_decision=draft.processing_decision.value,
+            processing_status=draft.processing_status.value,
+            received_at=draft.received_at,
+            verified_secret_revision_status=(
+                None
+                if draft.verified_secret_revision_status is None
+                else draft.verified_secret_revision_status.value
+            ),
+            rejection_reason=(
+                None
+                if draft.rejection_reason is None
+                else draft.rejection_reason.value
+            ),
+            sync_run_id=draft.sync_run_id,
+            snapshot_id=draft.snapshot_id,
+            processed_at=draft.processed_at,
+        )
+        self._store.repository_events[event.id] = event
+        return event
+
+    def get_by_delivery_id(
+        self, *, connection_id: uuid.UUID, provider_delivery_id: str
+    ) -> TestRepositoryEvent | None:
+        for event in self._store.repository_events.values():
+            if (
+                event.connection_id == connection_id
+                and event.provider_delivery_id == provider_delivery_id
+            ):
+                return event
+        return None
+
+    def get(self, *, event_id: uuid.UUID) -> TestRepositoryEvent | None:
+        return self._store.repository_events.get(event_id)
+
+    def list_for_connection(self, *, connection_id: uuid.UUID) -> list[TestRepositoryEvent]:
+        events = [
+            event
+            for event in self._store.repository_events.values()
+            if event.connection_id == connection_id
+        ]
+        return sorted(
+            events,
+            key=lambda event: (event.received_at, event.id),
+            reverse=True,
+        )
+
+    def update_processing(
+        self,
+        *,
+        event_id: uuid.UUID,
+        processing_decision,
+        processing_status,
+        processed_at: datetime,
+        sync_run_id: uuid.UUID | None = None,
+        snapshot_id: uuid.UUID | None = None,
+    ) -> TestRepositoryEvent:
+        event = self._store.repository_events[event_id]
+        event.processing_decision = processing_decision.value
+        event.processing_status = processing_status.value
+        event.processed_at = processed_at
+        if sync_run_id is not None:
+            event.sync_run_id = sync_run_id
+        if snapshot_id is not None:
+            event.snapshot_id = snapshot_id
+        return event
+
+
+class FakeRepositoryEventCursorRepository:
+    def __init__(self, store: InMemoryRepositoryStore) -> None:
+        self._store = store
+
+    def get(
+        self, *, connection_id: uuid.UUID, target_key: str
+    ) -> TestRepositoryEventCursor | None:
+        return self._store.event_cursors.get((connection_id, target_key))
+
+    def upsert(self, draft) -> TestRepositoryEventCursor:
+        cursor = self._store.event_cursors.get((draft.connection_id, draft.target_key))
+        if cursor is None:
+            cursor = TestRepositoryEventCursor(
+                id=draft.id,
+                connection_id=draft.connection_id,
+                target_key=draft.target_key,
+                latest_head_sha=draft.latest_head_sha,
+                latest_event_id=draft.latest_event_id,
+                updated_at=draft.updated_at,
+            )
+            self._store.event_cursors[(draft.connection_id, draft.target_key)] = cursor
+            return cursor
+        cursor.latest_head_sha = draft.latest_head_sha
+        cursor.latest_event_id = draft.latest_event_id
+        cursor.updated_at = draft.updated_at
+        return cursor
+
+
 class FakeGitRefResolver:
     def __init__(
         self,
@@ -423,7 +657,7 @@ class FakeGitRefResolver:
         return ResolvedGitRef(
             ref_type=ref_type,
             ref_name=ref_name,
-            commit_sha=self._resolved_sha,
+            commit_sha=self._store.resolved_ref_commits.get(ref_name, self._resolved_sha),
         )
 
 
@@ -487,6 +721,7 @@ class FakeGitMirrorManager:
 class RepositorySyncRunDraft:
     id: uuid.UUID
     connection_id: uuid.UUID
+    trigger_event_id: uuid.UUID | None
     trigger_type: SyncTriggerType
     requested_ref_type: RefType
     requested_ref_name: str
@@ -500,6 +735,7 @@ class FakeRepositorySyncRunRepository:
         sync_run = RepositorySyncRun(
             id=draft.id,
             connection_id=draft.connection_id,
+            trigger_event_id=draft.trigger_event_id,
             trigger_type=draft.trigger_type,
             requested_ref_type=draft.requested_ref_type,
             requested_ref_name=draft.requested_ref_name,
@@ -776,6 +1012,15 @@ def create_test_client(
         credential_revision_repository_factory=lambda session: FakeCredentialRevisionRepository(
             store
         ),
+        webhook_secret_repository_factory=lambda session: FakeWebhookSecretRepository(
+            store
+        ),
+        repository_event_repository_factory=lambda session: FakeRepositoryEventRepository(
+            store
+        ),
+        repository_event_cursor_repository_factory=lambda session: FakeRepositoryEventCursorRepository(
+            store
+        ),
         repository_sync_run_repository_factory=lambda session: FakeRepositorySyncRunRepository(
             store
         ),
@@ -806,6 +1051,142 @@ def create_connection_payload(
             "fingerprint": "pat-01",
         },
     }
+
+
+def build_github_push_payload(
+    *,
+    ref_name: str = "main",
+    after_sha: str = "a" * 40,
+    repository_full_name: str = "acme/sample-repo",
+    commits: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    return {
+        "ref": f"refs/heads/{ref_name}",
+        "after": after_sha,
+        "repository": {"full_name": repository_full_name},
+        "commits": commits
+        or [
+            {
+                "id": after_sha,
+                "message": "update repository snapshot",
+            }
+        ],
+    }
+
+
+def build_github_pull_request_payload(
+    *,
+    action: str = "opened",
+    number: int = 101,
+    head_ref: str = "feature/us3",
+    head_sha: str = "b" * 40,
+    base_ref: str = "main",
+    repository_full_name: str = "acme/sample-repo",
+) -> dict[str, Any]:
+    return {
+        "action": action,
+        "number": number,
+        "repository": {"full_name": repository_full_name},
+        "pull_request": {
+            "head": {"ref": head_ref, "sha": head_sha},
+            "base": {"ref": base_ref},
+        },
+    }
+
+
+def build_github_webhook_headers(
+    *,
+    secret: str,
+    payload: dict[str, Any],
+    delivery_id: str,
+    event_name: str,
+) -> dict[str, str]:
+    body = serialize_github_webhook_payload(payload)
+    signature = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    return {
+        "X-GitHub-Delivery": delivery_id,
+        "X-GitHub-Event": event_name,
+        "X-Hub-Signature-256": f"sha256={signature}",
+    }
+
+
+def seed_active_webhook_secret(
+    store: InMemoryRepositoryStore,
+    *,
+    connection_id: uuid.UUID,
+    secret: str = "webhook-secret",
+) -> TestWebhookSecretRevision:
+    revision = TestWebhookSecretRevision(
+        id=uuid.uuid4(),
+        connection_id=connection_id,
+        secret=secret,
+        status="active",
+        created_at=now_utc(),
+    )
+    store.webhook_secret_revisions[revision.id] = revision
+    connection = store.connections.get(connection_id)
+    if connection is not None:
+        connection.active_webhook_secret_revision_id = revision.id
+        connection.webhook_health_state = WebhookHealthState.HEALTHY
+        connection.updated_at = now_utc()
+    return revision
+
+
+def seed_rotated_webhook_secret_with_grace(
+    store: InMemoryRepositoryStore,
+    *,
+    connection_id: uuid.UUID,
+    active_secret: str = "current-secret",
+    previous_secret: str = "previous-secret",
+    grace_until: datetime | None = None,
+) -> tuple[TestWebhookSecretRevision, TestWebhookSecretRevision]:
+    previous_revision = TestWebhookSecretRevision(
+        id=uuid.uuid4(),
+        connection_id=connection_id,
+        secret=previous_secret,
+        status="previous_grace",
+        created_at=now_utc(),
+        grace_until=grace_until or now_utc(),
+    )
+    active_revision = TestWebhookSecretRevision(
+        id=uuid.uuid4(),
+        connection_id=connection_id,
+        secret=active_secret,
+        status="active",
+        created_at=now_utc(),
+    )
+    store.webhook_secret_revisions[previous_revision.id] = previous_revision
+    store.webhook_secret_revisions[active_revision.id] = active_revision
+    connection = store.connections.get(connection_id)
+    if connection is not None:
+        connection.active_webhook_secret_revision_id = active_revision.id
+        connection.webhook_health_state = WebhookHealthState.HEALTHY
+        connection.updated_at = now_utc()
+    return active_revision, previous_revision
+
+
+def seed_repository_event_cursor(
+    store: InMemoryRepositoryStore,
+    *,
+    connection_id: uuid.UUID,
+    target_key: str,
+    latest_head_sha: str,
+    latest_event_id: uuid.UUID | None = None,
+) -> TestRepositoryEventCursor:
+    cursor = TestRepositoryEventCursor(
+        id=uuid.uuid4(),
+        connection_id=connection_id,
+        target_key=target_key,
+        latest_head_sha=latest_head_sha,
+        latest_event_id=latest_event_id or uuid.uuid4(),
+        updated_at=now_utc(),
+    )
+    store.event_cursors[(connection_id, target_key)] = cursor
+    return cursor
+
+
+def serialize_github_webhook_payload(payload: dict[str, Any]) -> bytes:
+    return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
 
 def _load_test_settings(tmp_path: Path):

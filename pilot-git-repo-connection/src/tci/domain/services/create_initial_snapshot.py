@@ -40,6 +40,7 @@ def create_initial_snapshot(command, *, dependencies, prepared_request=None):
             RepositorySyncRunDraft(
                 id=uuid.uuid4(),
                 connection_id=prepared.connection_id,
+                trigger_event_id=None,
                 trigger_type=prepared.trigger_type,
                 requested_ref_type=prepared.requested_ref_type,
                 requested_ref_name=prepared.requested_ref_name,
