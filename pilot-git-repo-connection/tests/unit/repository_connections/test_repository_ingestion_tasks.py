@@ -78,3 +78,56 @@ def test_verify_repository_connection_task_delegates_to_domain_service(
         "task_name": "tci.repository_ingestion.verify_repository_connection",
         "connection_id": str(connection_id),
     }
+
+
+def test_run_manual_snapshot_sync_task_delegates_to_snapshot_builder(monkeypatch) -> None:
+    from tci.infrastructure.queue import repository_ingestion_tasks as tasks
+
+    workspace_id = uuid.uuid4()
+    connection_id = uuid.uuid4()
+    sync_run_id = uuid.uuid4()
+    captured: dict[str, object] = {}
+
+    def fake_build_snapshot(command, *, dependencies):
+        captured["workspace_id"] = command.workspace_id
+        captured["connection_id"] = command.connection_id
+        captured["sync_run_id"] = command.sync_run_id
+        captured["dependencies"] = dependencies
+        return type(
+            "BuiltSnapshot",
+            (),
+            {"id": uuid.uuid4()},
+        )()
+
+    monkeypatch.setattr(tasks, "_build_snapshot_dependencies", lambda: "deps")
+    monkeypatch.setattr(
+        tasks,
+        "_load_build_snapshot_service",
+        lambda: (
+            type(
+                "BuildSnapshotCommand",
+                (),
+                {"__init__": lambda self, **kwargs: self.__dict__.update(kwargs)},
+            ),
+            fake_build_snapshot,
+        ),
+    )
+
+    result = tasks._run_manual_snapshot_sync_task(
+        workspace_id=str(workspace_id),
+        connection_id=str(connection_id),
+        sync_run_id=str(sync_run_id),
+    )
+
+    assert captured == {
+        "workspace_id": workspace_id,
+        "connection_id": connection_id,
+        "sync_run_id": sync_run_id,
+        "dependencies": "deps",
+    }
+    assert result == {
+        "status": "completed",
+        "task_name": "tci.repository_ingestion.run_manual_snapshot_sync",
+        "connection_id": str(connection_id),
+        "sync_run_id": str(sync_run_id),
+    }

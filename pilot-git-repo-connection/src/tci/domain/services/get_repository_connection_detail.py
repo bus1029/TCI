@@ -13,10 +13,18 @@ def get_repository_connection_detail(
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )
+        snapshot_repository = dependencies.code_snapshot_repository_factory(session)
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
         connection = connection_repository.get(
             workspace_id=workspace_id,
             connection_id=connection_id,
         )
         if connection is None:
             raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        connection.latest_snapshot = snapshot_repository.get_latest_for_connection(
+            connection_id=connection_id
+        )
+        connection.latest_sync_run = sync_run_repository.get_latest_for_connection(
+            connection_id=connection_id
+        )
         return connection

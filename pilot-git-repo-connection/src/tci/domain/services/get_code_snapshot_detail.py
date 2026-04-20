@@ -1,0 +1,41 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import uuid
+
+
+@dataclass(frozen=True, slots=True)
+class CodeSnapshotDetail:
+    snapshot: object
+    planning_input_reference: object
+    trigger_event_id: uuid.UUID | None = None
+
+
+def get_code_snapshot_detail(
+    *, workspace_id: uuid.UUID, connection_id: uuid.UUID, snapshot_id: uuid.UUID, dependencies
+):
+    if dependencies.session_factory is None:
+        raise RuntimeError("스냅샷을 조회하려면 데이터베이스 세션이 필요합니다.")
+
+    with dependencies.session_factory() as session:
+        connection_repository = dependencies.repository_connection_repository_factory(
+            session
+        )
+        snapshot_repository = dependencies.code_snapshot_repository_factory(session)
+        connection = connection_repository.get(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        )
+        if connection is None:
+            raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        snapshot = snapshot_repository.get(
+            connection_id=connection_id,
+            snapshot_id=snapshot_id,
+        )
+        if snapshot is None:
+            raise LookupError("코드 스냅샷을 찾을 수 없습니다.")
+        return CodeSnapshotDetail(
+            snapshot=snapshot,
+            planning_input_reference=connection.planning_input_reference,
+            trigger_event_id=None,
+        )

@@ -56,23 +56,23 @@
 
 ### Tests for User Story 1
 
-- [ ] T015 [P] [US1] Add contract tests for repository connection create/get/patch/verify endpoints, unsupported-provider rejection for FR-001a, nullable `lastProcessedEvent` placeholder in connection detail, traceability blocks, and additional-ref guidance responses in `tests/contract/repository_ingestion/test_repository_connection_contract.py`
-- [ ] T016 [P] [US1] Add integration tests for GitHub Cloud-only validation, read-only credential validation, `reauth_required` and `ref_missing` recovery, default ref change preservation, latest success/failure summary projection, additional-ref guidance, and initial snapshot traceability in `tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
+- [x] T015 [P] [US1] Add contract tests for repository connection create/get/patch/verify endpoints, unsupported-provider rejection for FR-001a, nullable `lastProcessedEvent` placeholder in connection detail, traceability blocks, and additional-ref guidance responses in `tests/contract/repository_ingestion/test_repository_connection_contract.py`
+- [x] T016 [P] [US1] Add integration tests for GitHub Cloud-only validation, read-only credential validation, `reauth_required` and `ref_missing` recovery, default ref change preservation, latest success/failure summary projection, additional-ref guidance, and initial snapshot traceability in `tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
 
 ### Implementation for User Story 1
 
-- [ ] T017 [P] [US1] Implement repository connection persistence adapter in `src/tci/infrastructure/persistence/repository_connection_repository.py`
-- [ ] T018 [P] [US1] Implement credential revision persistence adapter in `src/tci/infrastructure/persistence/credential_revision_repository.py`
-- [ ] T019 [P] [US1] Implement sync run persistence adapter in `src/tci/infrastructure/persistence/repository_sync_run_repository.py`
-- [ ] T020 [P] [US1] Implement code snapshot persistence adapter in `src/tci/infrastructure/persistence/code_snapshot_repository.py`
-- [ ] T021 [P] [US1] Implement repository connection request and response schemas with GitHub Cloud-only validation errors, latest success/failure summary, nullable `lastProcessedEvent`, traceability, and additional-ref guidance fields in `src/tci/api/schemas/repository_connection.py`
-- [ ] T022 [US1] Implement connection creation and verification services with GitHub Cloud-only validation, planning input reference binding, and `reauth_required` transition handling in `src/tci/domain/services/create_repository_connection.py` and `src/tci/domain/services/verify_repository_connection.py`
-- [ ] T023 [US1] Implement default ref update and additional-ref guidance service that preserves prior snapshots and events and supports `ref_missing` recovery in `src/tci/domain/services/update_default_ref.py`
-- [ ] T024 [US1] Implement manual snapshot trigger service with `AUTH_FAILED` and `MIRROR_SYNC_FAILED` failure handling for FR-013 in `src/tci/domain/services/create_initial_snapshot.py`
-- [ ] T025 [US1] Implement default-ref snapshot builder that stamps sync and provenance references in `src/tci/domain/services/build_code_snapshot.py`
-- [ ] T026 [US1] Implement repository connection API routes in `src/tci/api/routes/repository_connections.py`
-- [ ] T027 [US1] Implement repository snapshot detail query service and API routes with traceability block in `src/tci/domain/services/get_code_snapshot_detail.py` and `src/tci/api/routes/repository_snapshots.py`
-- [ ] T028 [US1] Implement repository connection detail query service with MVP summary projections (`lastSuccessfulSnapshotAt`, `lastFailedSyncAt`, nullable `lastProcessedEvent`, `latestSnapshot`), planning-input, and additional-ref guidance projections in `src/tci/domain/services/get_repository_connection_detail.py`
+- [x] T017 [P] [US1] Implement repository connection persistence adapter in `src/tci/infrastructure/persistence/repository_connection_repository.py`
+- [x] T018 [P] [US1] Implement credential revision persistence adapter in `src/tci/infrastructure/persistence/credential_revision_repository.py`
+- [x] T019 [P] [US1] Implement sync run persistence adapter in `src/tci/infrastructure/persistence/repository_sync_run_repository.py`
+- [x] T020 [P] [US1] Implement code snapshot persistence adapter in `src/tci/infrastructure/persistence/code_snapshot_repository.py`
+- [x] T021 [P] [US1] Implement repository connection request and response schemas with GitHub Cloud-only validation errors, latest success/failure summary, nullable `lastProcessedEvent`, traceability, and additional-ref guidance fields in `src/tci/api/schemas/repository_connection.py`
+- [x] T022 [US1] Implement connection creation and verification services with GitHub Cloud-only validation, planning input reference binding, and `reauth_required` transition handling in `src/tci/domain/services/create_repository_connection.py` and `src/tci/domain/services/verify_repository_connection.py`
+- [x] T023 [US1] Implement default ref update and additional-ref guidance service that preserves prior snapshots and events and supports `ref_missing` recovery in `src/tci/domain/services/update_default_ref.py`
+- [x] T024 [US1] Implement manual snapshot trigger service with `AUTH_FAILED` and `MIRROR_SYNC_FAILED` failure handling for FR-013 in `src/tci/domain/services/create_initial_snapshot.py`
+- [x] T025 [US1] Implement default-ref snapshot builder that stamps sync and provenance references in `src/tci/domain/services/build_code_snapshot.py`
+- [x] T026 [US1] Implement repository connection API routes in `src/tci/api/routes/repository_connections.py`
+- [x] T027 [US1] Implement repository snapshot detail query service and API routes with traceability block in `src/tci/domain/services/get_code_snapshot_detail.py` and `src/tci/api/routes/repository_snapshots.py`
+- [x] T028 [US1] Implement repository connection detail query service with MVP summary projections (`lastSuccessfulSnapshotAt`, `lastFailedSyncAt`, nullable `lastProcessedEvent`, `latestSnapshot`), planning-input, and additional-ref guidance projections in `src/tci/domain/services/get_repository_connection_detail.py`
 - [ ] T029 [P] [US1] Implement operator connection list/create route and template in `src/tci/web/routes/repository_connections.py` and `src/tci/web/templates/connections/index.html`
 - [ ] T030 [US1] Implement operator connection detail route and template with latest success/failure summary cards, nullable `lastProcessedEvent` placeholder, additional-ref guidance, and traceability panel in `src/tci/web/routes/repository_connection_detail.py` and `src/tci/web/templates/connections/detail.html`
 - [ ] T031 [US1] Capture User Story 1 verification evidence, including `SC-001` timed first-snapshot validation, unsupported-provider rejection proof, and trace links in `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`

@@ -10,9 +10,11 @@ from sqlalchemy.orm import Session
 from tci.api.routes.repository_connections import (
     router as repository_connections_router,
 )
+from tci.api.routes.repository_snapshots import router as repository_snapshots_router
 from tci.domain.services.build_traceability_reference import (
     build_snapshot_traceability_reference,
 )
+from tci.infrastructure.persistence.code_snapshot_repository import CodeSnapshotRepository
 from tci.infrastructure.git.git_mirror_manager import GitMirrorManager, _subprocess_git_runner
 from tci.infrastructure.git.git_readonly_validator import GitReadonlyValidator
 from tci.infrastructure.git.git_ref_resolver import GitRefResolver
@@ -24,6 +26,9 @@ from tci.infrastructure.persistence.planning_input_reference_repository import (
 )
 from tci.infrastructure.persistence.repository_connection_repository import (
     RepositoryConnectionRepository,
+)
+from tci.infrastructure.persistence.repository_sync_run_repository import (
+    RepositorySyncRunRepository,
 )
 from tci.infrastructure.persistence.session import build_session_factory
 from tci.infrastructure.snapshots.snapshot_archive_store import SnapshotArchiveStore
@@ -50,6 +55,10 @@ class AppDependencies:
     credential_revision_repository_factory: Callable[
         [Session], CredentialRevisionRepository
     ]
+    repository_sync_run_repository_factory: Callable[
+        [Session], RepositorySyncRunRepository
+    ]
+    code_snapshot_repository_factory: Callable[[Session], CodeSnapshotRepository]
 
 
 def build_app_dependencies(settings: Settings) -> AppDependencies:
@@ -67,6 +76,8 @@ def build_app_dependencies(settings: Settings) -> AppDependencies:
         session_factory=build_session_factory(settings),
         repository_connection_repository_factory=RepositoryConnectionRepository,
         credential_revision_repository_factory=CredentialRevisionRepository,
+        repository_sync_run_repository_factory=RepositorySyncRunRepository,
+        code_snapshot_repository_factory=CodeSnapshotRepository,
     )
 
 
@@ -92,4 +103,5 @@ def create_app(
     app.state.settings = resolved_settings
     app.state.dependencies = resolved_dependencies
     app.include_router(repository_connections_router)
+    app.include_router(repository_snapshots_router)
     return app

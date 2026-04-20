@@ -21,6 +21,7 @@ def _build_test_settings(project_root: Path):
         template_root=project_root / "src" / "tci" / "web" / "templates",
         database_url=None,
         redis_url=None,
+        credential_encryption_key=None,
     )
 
 
@@ -132,6 +133,70 @@ def test_snapshot_archive_store_rejects_root_manifest_filename(
                     included_by=SnapshotInclusionReason.DEFAULT_POLICY,
                     extension=".json",
                     language_hint="json",
+                ),
+            ),
+        )
+
+
+def test_snapshot_archive_store_allows_root_manifest_with_reserved_blob_path(
+    tmp_path: Path,
+) -> None:
+    from tci.infrastructure.persistence.models import SnapshotInclusionReason
+    from tci.infrastructure.snapshots.snapshot_archive_store import (
+        SnapshotArchiveEntryDraft,
+        SnapshotArchiveStore,
+    )
+
+    settings = _build_test_settings(tmp_path)
+    store = SnapshotArchiveStore(settings=settings)
+    snapshot_id = uuid.uuid4()
+
+    archive = store.store(
+        snapshot_id=snapshot_id,
+        entries=(
+            SnapshotArchiveEntryDraft(
+                path="manifest.json",
+                content=b'{"name":"repo-manifest"}',
+                included_by=SnapshotInclusionReason.DEFAULT_POLICY,
+                extension=".json",
+                language_hint="json",
+                archive_blob_path="__tci_snapshot_reserved__/root-manifest.json",
+            ),
+        ),
+    )
+
+    assert archive.files[0].path == "manifest.json"
+    assert (
+        archive.absolute_path / "__tci_snapshot_reserved__" / "root-manifest.json"
+    ).read_bytes() == b'{"name":"repo-manifest"}'
+
+
+def test_snapshot_archive_store_rejects_duplicate_archive_blob_paths(
+    tmp_path: Path,
+) -> None:
+    from tci.infrastructure.persistence.models import SnapshotInclusionReason
+    from tci.infrastructure.snapshots.snapshot_archive_store import (
+        SnapshotArchiveEntryDraft,
+        SnapshotArchiveStore,
+    )
+
+    settings = _build_test_settings(tmp_path)
+    store = SnapshotArchiveStore(settings=settings)
+
+    with pytest.raises(ValueError, match="아카이브 저장 경로"):
+        store.store(
+            snapshot_id=uuid.uuid4(),
+            entries=(
+                SnapshotArchiveEntryDraft(
+                    path="manifest.json",
+                    content=b'{"name":"repo-manifest"}',
+                    included_by=SnapshotInclusionReason.DEFAULT_POLICY,
+                    archive_blob_path="__tci_snapshot_reserved__/root-manifest.json",
+                ),
+                SnapshotArchiveEntryDraft(
+                    path="__tci_snapshot_reserved__/root-manifest.json",
+                    content=b"collision",
+                    included_by=SnapshotInclusionReason.DEFAULT_POLICY,
                 ),
             ),
         )

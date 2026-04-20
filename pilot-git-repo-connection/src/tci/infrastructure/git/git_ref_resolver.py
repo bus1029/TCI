@@ -102,6 +102,8 @@ def _select_commit_sha(
 
 def _looks_like_auth_failure(stderr: str) -> bool:
     lowered = stderr.lower()
+    if "fatal: repository" in lowered and "not found" in lowered:
+        return True
     return any(
         token in lowered
         for token in (

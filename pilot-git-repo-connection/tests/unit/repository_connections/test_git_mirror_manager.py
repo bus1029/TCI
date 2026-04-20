@@ -58,6 +58,7 @@ def _build_test_settings(project_root: Path):
         template_root=project_root / "src" / "tci" / "web" / "templates",
         database_url=None,
         redis_url=None,
+        credential_encryption_key=None,
     )
 
 
@@ -227,6 +228,87 @@ def test_git_mirror_manager_updates_origin_when_remote_url_changes(
     ).stdout.strip()
     assert configured_origin == str(remote_two_path)
     assert mirrored_sha == expected_sha
+
+
+def test_git_mirror_manager_restores_origin_after_temporary_authenticated_fetch_failure(
+    tmp_path: Path,
+) -> None:
+    from tci.infrastructure.git.git_mirror_manager import GitMirrorManager, GitMirrorSyncError
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult
+
+    connection_id = uuid.uuid4()
+    settings = _build_test_settings(tmp_path)
+    target_path = settings.git_mirror_root / f"{connection_id}.git"
+    target_path.mkdir(parents=True)
+    commands: list[tuple[str, ...]] = []
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        commands.append(tuple(command))
+        if command[-1] == "--is-bare-repository":
+            return GitCommandResult(returncode=0, stdout="true\n", stderr="")
+        if command[-3:] == ("config", "--get", "remote.origin.url"):
+            return GitCommandResult(
+                returncode=0,
+                stdout="https://github.com/acme/sample-repo.git\n",
+                stderr="",
+            )
+        if command[-4:-1] == ("remote", "set-url", "origin"):
+            return GitCommandResult(returncode=0, stdout="", stderr="")
+        if command[-3:] == ("fetch", "--prune", "origin"):
+            return GitCommandResult(
+                returncode=128,
+                stdout="",
+                stderr="fatal: Authentication failed for 'https://github.com/acme/sample-repo.git/'\n",
+            )
+        raise AssertionError(f"unexpected command: {command}")
+
+    manager = GitMirrorManager(settings=settings, runner=runner)
+
+    with pytest.raises(GitMirrorSyncError):
+        manager.ensure_synced_mirror(
+            connection_id=connection_id,
+            remote_url="https://x-access-token:secret@github.com/acme/sample-repo.git",
+            restore_remote_url="https://github.com/acme/sample-repo.git",
+        )
+
+    assert commands[-1] == (
+        "git",
+        f"--git-dir={target_path}",
+        "remote",
+        "set-url",
+        "origin",
+        "https://github.com/acme/sample-repo.git",
+    )
+
+
+def test_git_mirror_manager_restores_origin_after_new_temporary_authenticated_clone(
+    tmp_path: Path,
+) -> None:
+    from tci.infrastructure.git.git_mirror_manager import GitMirrorManager
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult
+
+    connection_id = uuid.uuid4()
+    settings = _build_test_settings(tmp_path)
+    commands: list[tuple[str, ...]] = []
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        commands.append(tuple(command))
+        if command[:3] == ("git", "clone", "--mirror"):
+            Path(command[-1]).mkdir(parents=True)
+            return GitCommandResult(returncode=0, stdout="", stderr="")
+        if command[-4:-1] == ("remote", "set-url", "origin"):
+            return GitCommandResult(returncode=0, stdout="", stderr="")
+        raise AssertionError(f"unexpected command: {command}")
+
+    manager = GitMirrorManager(settings=settings, runner=runner)
+
+    manager.ensure_synced_mirror(
+        connection_id=connection_id,
+        remote_url="https://x-access-token:secret@github.com/acme/sample-repo.git",
+        restore_remote_url="https://github.com/acme/sample-repo.git",
+    )
+
+    assert commands[-1][-1] == "https://github.com/acme/sample-repo.git"
 
 
 def test_git_mirror_manager_rejects_non_bare_existing_target_path(
