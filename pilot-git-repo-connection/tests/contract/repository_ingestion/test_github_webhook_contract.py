@@ -30,6 +30,7 @@ def test_receive_github_webhook_accepts_verified_push_and_returns_accepted_paylo
         connection_id=uuid.UUID(connection_id),
         secret="webhook-secret",
     )
+    store.resolved_ref_commits["main"] = "b" * 40
     payload = build_github_push_payload(after_sha="b" * 40)
     headers = build_github_webhook_headers(
         secret="webhook-secret",
@@ -243,6 +244,7 @@ def test_connection_detail_and_event_list_expose_webhook_health_and_last_process
         connection_id=uuid.UUID(connection_id),
         secret="webhook-secret",
     )
+    store.resolved_ref_commits["main"] = "d" * 40
     payload = build_github_push_payload(after_sha="d" * 40)
     headers = build_github_webhook_headers(
         secret="webhook-secret",

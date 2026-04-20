@@ -52,3 +52,12 @@ class RepositoryEventCursorRepository:
         self._session.flush()
         self._session.refresh(cursor)
         return cursor
+
+    def delete_if_latest_event(
+        self, *, connection_id: uuid.UUID, target_key: str, latest_event_id: uuid.UUID
+    ) -> None:
+        cursor = self.get(connection_id=connection_id, target_key=target_key)
+        if cursor is None or cursor.latest_event_id != latest_event_id:
+            return
+        self._session.delete(cursor)
+        self._session.flush()

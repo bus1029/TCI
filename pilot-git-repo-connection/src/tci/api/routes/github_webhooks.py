@@ -10,6 +10,7 @@ from tci.api.routes.repository_connections import _problem_response
 from tci.domain.services.process_github_event import (
     ProcessGitHubEventCommand,
     process_github_event,
+    record_webhook_enqueue_failure,
 )
 from tci.domain.services.repository_connection_support import RepositoryConnectionProblem
 from tci.infrastructure.queue.repository_ingestion_tasks import (
@@ -47,23 +48,6 @@ async def receive_github_webhook_route(connection_id: uuid.UUID, request: Reques
         )
 
     try:
-        enqueue_sync = None
-        if request.app.state.settings.redis_url:
-            celery_app = create_celery_app(request.app.state.settings)
-
-            def enqueue_sync(*, connection_id: uuid.UUID, event_id: uuid.UUID, sync_run_id: uuid.UUID) -> None:
-                try:
-                    celery_app.send_task(
-                        RUN_WEBHOOK_SYNC_TASK_NAME,
-                        kwargs={
-                            "connection_id": str(connection_id),
-                            "event_id": str(event_id),
-                            "sync_run_id": str(sync_run_id),
-                        },
-                    )
-                except Exception as error:
-                    raise RuntimeError("웹훅 동기화 작업 큐에 연결할 수 없습니다.") from error
-
         result = process_github_event(
             ProcessGitHubEventCommand(
                 connection_id=connection_id,
@@ -74,8 +58,42 @@ async def receive_github_webhook_route(connection_id: uuid.UUID, request: Reques
                 payload=payload,
             ),
             dependencies=request.app.state.dependencies,
-            enqueue_sync=enqueue_sync,
         )
+        if result.sync_run_id is not None:
+            if not request.app.state.settings.redis_url:
+                record_webhook_enqueue_failure(
+                    connection_id=connection_id,
+                    event_id=result.event_id,
+                    sync_run_id=result.sync_run_id,
+                    dependencies=request.app.state.dependencies,
+                    failure_message="웹훅 동기화 작업 큐가 설정되지 않았습니다.",
+                )
+                return JSONResponse(
+                    status_code=503,
+                    content={"detail": "웹훅 동기화 작업 큐가 설정되지 않았습니다."},
+                )
+
+            try:
+                # DB 상태를 먼저 확정한 뒤에만 큐로 넘겨야 worker가 일관된 레코드를 읽을 수 있다.
+                create_celery_app(request.app.state.settings).send_task(
+                    RUN_WEBHOOK_SYNC_TASK_NAME,
+                    kwargs={
+                        "connection_id": str(connection_id),
+                        "event_id": str(result.event_id),
+                        "sync_run_id": str(result.sync_run_id),
+                    },
+                )
+            except Exception:
+                record_webhook_enqueue_failure(
+                    connection_id=connection_id,
+                    event_id=result.event_id,
+                    sync_run_id=result.sync_run_id,
+                    dependencies=request.app.state.dependencies,
+                )
+                return JSONResponse(
+                    status_code=503,
+                    content={"detail": "웹훅 동기화 작업 큐에 연결할 수 없습니다."},
+                )
     except LookupError:
         return JSONResponse(status_code=404, content={"detail": "저장소 연결을 찾을 수 없습니다."})
     except RepositoryConnectionProblem as error:

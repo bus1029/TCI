@@ -108,11 +108,14 @@ class RepositoryEventRepository:
         processed_at: datetime,
         sync_run_id: uuid.UUID | None = None,
         snapshot_id: uuid.UUID | None = None,
+        clear_sync_run_id: bool = False,
     ) -> RepositoryEvent:
         event = self._require(event_id=event_id)
         event.processing_decision = processing_decision
         event.processing_status = processing_status
         event.processed_at = processed_at
+        if clear_sync_run_id:
+            event.sync_run_id = None
         if sync_run_id is not None:
             event.sync_run_id = sync_run_id
         if snapshot_id is not None:

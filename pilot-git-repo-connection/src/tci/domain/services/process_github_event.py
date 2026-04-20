@@ -18,6 +18,7 @@ from tci.infrastructure.persistence.models import (
     ProcessingDecision,
     ProviderEventType,
     SignatureStatus,
+    SyncFailureCode,
     SyncTriggerType,
     WebhookHealthState,
     WebhookRejectionReason,
@@ -73,6 +74,7 @@ class GitHubDecisionInput:
     delivery_already_seen: bool
     latest_cursor_head_sha: str | None
     resolved_current_head_sha: str | None
+    retryable_delivery: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,7 +130,7 @@ def evaluate_github_secret_verification(
 def decide_github_event_processing(
     decision_input: GitHubDecisionInput,
 ) -> GitHubDecisionOutcome:
-    if decision_input.delivery_already_seen:
+    if decision_input.delivery_already_seen and not decision_input.retryable_delivery:
         return GitHubDecisionOutcome(
             processing_decision="duplicate_delivery",
             should_queue_sync=False,
@@ -157,8 +159,7 @@ def decide_github_event_processing(
             should_queue_sync=False,
         )
     if (
-        decision_input.latest_cursor_head_sha is not None
-        and decision_input.resolved_current_head_sha is not None
+        decision_input.resolved_current_head_sha is not None
         and decision_input.target_head_sha != decision_input.resolved_current_head_sha
     ):
         return GitHubDecisionOutcome(
@@ -175,7 +176,7 @@ def _looks_like_github_signature(signature_header: str | None) -> bool:
     return bool(digest) and all(character in "0123456789abcdef" for character in digest)
 
 
-def process_github_event(command: ProcessGitHubEventCommand, *, dependencies, enqueue_sync=None):
+def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
     if dependencies.session_factory is None:
         raise RuntimeError("GitHub 이벤트를 처리하려면 데이터베이스 세션이 필요합니다.")
 
@@ -233,6 +234,7 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies, en
             connection_id=command.connection_id,
             provider_delivery_id=command.provider_delivery_id,
         )
+        retryable_delivery = _is_retryable_delivery(existing_delivery)
         latest_cursor = event_cursor_repository.get(
             connection_id=command.connection_id,
             target_key=parsed_event.target_key,
@@ -255,6 +257,7 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies, en
                     None if latest_cursor is None else latest_cursor.latest_head_sha
                 ),
                 resolved_current_head_sha=resolved_current_head_sha,
+                retryable_delivery=retryable_delivery,
             )
         )
         processing_decision = ProcessingDecision(decision.processing_decision)
@@ -295,12 +298,11 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies, en
                 processing_decision=processing_decision,
                 processing_status=processing_status,
                 processed_at=now,
+                clear_sync_run_id=retryable_delivery and not decision.should_queue_sync,
             )
 
         sync_run = None
         if decision.should_queue_sync and parsed_event.trigger_type is not None:
-            if enqueue_sync is None:
-                raise RuntimeError("웹훅 동기화 작업 큐가 설정되지 않았습니다.")
             sync_run = sync_run_repository.create_pending(
                 RepositorySyncRunDraft(
                     id=uuid.uuid4(),
@@ -328,11 +330,6 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies, en
                     updated_at=now,
                 )
             )
-            enqueue_sync(
-                connection_id=command.connection_id,
-                event_id=event.id,
-                sync_run_id=sync_run.id,
-            )
 
         connection_repository.record_processed_event(
             connection_id=command.connection_id,
@@ -345,6 +342,119 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies, en
             provider_delivery_id=command.provider_delivery_id,
             sync_run_id=None if sync_run is None else sync_run.id,
         )
+
+
+def record_webhook_enqueue_failure(
+    *,
+    connection_id: uuid.UUID,
+    event_id: uuid.UUID,
+    sync_run_id: uuid.UUID,
+    dependencies,
+    failure_message: str = "웹훅 동기화 작업 큐에 연결할 수 없습니다.",
+) -> None:
+    if dependencies.session_factory is None:
+        raise RuntimeError("웹훅 큐 실패 상태를 기록하려면 데이터베이스 세션이 필요합니다.")
+
+    failed_at = datetime.now(tz=UTC)
+    with dependencies.session_factory() as session:
+        connection_repository = dependencies.repository_connection_repository_factory(session)
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
+        event_repository = dependencies.repository_event_repository_factory(session)
+        event_cursor_repository = dependencies.repository_event_cursor_repository_factory(
+            session
+        )
+        connection = connection_repository.get_any(connection_id=connection_id)
+        if connection is None:
+            raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        event = event_repository.get(event_id=event_id)
+        if event is None:
+            raise LookupError("저장소 이벤트를 찾을 수 없습니다.")
+
+        sync_run_repository.mark_failed(
+            connection_id=connection_id,
+            sync_run_id=sync_run_id,
+            failure_code=SyncFailureCode.QUEUE_DISPATCH_FAILED,
+            failure_message=failure_message,
+            completed_at=failed_at,
+        )
+        event_repository.update_processing(
+            event_id=event_id,
+            processing_decision=ProcessingDecision.QUEUED,
+            processing_status=EventProcessingStatus.FAILED,
+            processed_at=failed_at,
+        )
+        _restore_event_cursor_after_failure(
+            connection_id=connection_id,
+            failed_event=event,
+            event_repository=event_repository,
+            event_cursor_repository=event_cursor_repository,
+            restored_at=failed_at,
+        )
+        connection_repository.record_sync_failure(
+            workspace_id=connection.workspace_id,
+            connection_id=connection_id,
+            failed_at=failed_at,
+        )
+        connection_repository.record_processed_event(
+            connection_id=connection_id,
+            event_id=event_id,
+            processed_at=failed_at,
+            health_state=WebhookHealthState.HEALTHY,
+        )
+
+
+def _is_retryable_delivery(existing_delivery) -> bool:
+    if existing_delivery is None:
+        return False
+    return (
+        getattr(existing_delivery.processing_decision, "value", existing_delivery.processing_decision)
+        == ProcessingDecision.QUEUED.value
+        and getattr(existing_delivery.processing_status, "value", existing_delivery.processing_status)
+        == EventProcessingStatus.FAILED.value
+    )
+
+
+def _restore_event_cursor_after_failure(
+    *,
+    connection_id: uuid.UUID,
+    failed_event,
+    event_repository,
+    event_cursor_repository,
+    restored_at: datetime,
+) -> None:
+    fallback_event = next(
+        (
+            candidate
+            for candidate in event_repository.list_for_connection(
+                connection_id=connection_id
+            )
+            if candidate.id != failed_event.id
+            and candidate.target_key == failed_event.target_key
+            and candidate.target_head_sha is not None
+            and getattr(candidate.processing_decision, "value", candidate.processing_decision)
+            == ProcessingDecision.QUEUED.value
+            and getattr(candidate.processing_status, "value", candidate.processing_status)
+            != EventProcessingStatus.FAILED.value
+        ),
+        None,
+    )
+    if fallback_event is None:
+        event_cursor_repository.delete_if_latest_event(
+            connection_id=connection_id,
+            target_key=failed_event.target_key,
+            latest_event_id=failed_event.id,
+        )
+        return
+    event_cursor_repository.upsert(
+        RepositoryEventCursorDraft(
+            id=uuid.uuid4(),
+            connection_id=connection_id,
+            target_key=fallback_event.target_key,
+            latest_head_sha=fallback_event.target_head_sha,
+            latest_event_id=fallback_event.id,
+            updated_at=restored_at,
+        )
+    )
 
 
 def _record_rejected_event(
