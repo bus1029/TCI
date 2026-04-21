@@ -66,9 +66,10 @@ def now_utc() -> datetime:
 class TestWebhookSecretRevision:
     id: uuid.UUID
     connection_id: uuid.UUID
-    secret: str
+    secret: str | None
     status: str
     created_at: datetime
+    encrypted_secret: str | None = None
     grace_until: datetime | None = None
 
 
@@ -95,6 +96,12 @@ class TestRepositoryEvent:
     processing_decision: str
     processing_status: str
     received_at: datetime
+    domain_event_type: str | None = None
+    target_kind: str | None = None
+    target_ref_name: str | None = None
+    occurred_at: datetime | None = None
+    payload_hash: str | None = None
+    verified_secret_revision_id: uuid.UUID | None = None
     verified_secret_revision_status: str | None = None
     rejection_reason: str | None = None
     sync_run_id: uuid.UUID | None = None
@@ -253,6 +260,23 @@ class FakeRepositoryConnectionRepository:
         )
         connection.active_credential_revision_id = credential_revision_id
         connection.active_credential_revision = self._store.credentials[credential_revision_id]
+        connection.updated_at = now_utc()
+        return connection
+
+    def set_active_webhook_secret_revision(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        connection_id: uuid.UUID,
+        webhook_secret_revision_id: uuid.UUID,
+    ) -> RepositoryConnection:
+        connection = self.get(workspace_id=workspace_id, connection_id=connection_id)
+        if connection is None:
+            raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        connection.active_webhook_secret_revision_id = webhook_secret_revision_id
+        connection.webhook_health_state = WebhookHealthState.HEALTHY
+        connection.last_webhook_rejection_reason = None
+        connection.last_webhook_rejected_at = None
         connection.updated_at = now_utc()
         return connection
 
@@ -496,30 +520,90 @@ class FakeWebhookSecretRepository:
     def __init__(self, store: InMemoryRepositoryStore) -> None:
         self._store = store
 
+    def create(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        encrypted_secret: str,
+        status: str | object,
+        grace_until: datetime | None = None,
+        created_at: datetime | None = None,
+    ) -> TestWebhookSecretRevision:
+        revision = TestWebhookSecretRevision(
+            id=uuid.uuid4(),
+            connection_id=connection_id,
+            secret=None,
+            encrypted_secret=encrypted_secret,
+            status=getattr(status, "value", status),
+            created_at=created_at or now_utc(),
+            grace_until=grace_until,
+        )
+        self._store.webhook_secret_revisions[revision.id] = revision
+        return revision
+
     def list_verification_candidates(
         self, *, connection_id: uuid.UUID, as_of: datetime
     ) -> list[TestWebhookSecretRevision]:
-        return [
+        candidates = [
             revision
             for revision in self._store.webhook_secret_revisions.values()
             if revision.connection_id == connection_id
             and (
-                revision.status == "active"
+                getattr(revision.status, "value", revision.status) == "active"
                 or (
-                    revision.status == "previous_grace"
+                    getattr(revision.status, "value", revision.status) == "previous_grace"
                     and revision.grace_until is not None
                     and revision.grace_until >= as_of
                 )
             )
         ]
+        return sorted(candidates, key=lambda revision: (revision.created_at, revision.id), reverse=True)
 
     def get_active_for_connection(
         self, *, connection_id: uuid.UUID
     ) -> TestWebhookSecretRevision | None:
         for revision in self._store.webhook_secret_revisions.values():
-            if revision.connection_id == connection_id and revision.status == "active":
+            if (
+                revision.connection_id == connection_id
+                and getattr(revision.status, "value", revision.status) == "active"
+            ):
                 return revision
         return None
+
+    def get_latest_previous_grace_for_connection(
+        self, *, connection_id: uuid.UUID
+    ) -> TestWebhookSecretRevision | None:
+        revisions = [
+            revision
+            for revision in self._store.webhook_secret_revisions.values()
+            if revision.connection_id == connection_id
+            and getattr(revision.status, "value", revision.status) == "previous_grace"
+        ]
+        if not revisions:
+            return None
+        return max(revisions, key=lambda revision: (revision.created_at, revision.id))
+
+    def mark_previous_grace(
+        self, *, revision_id: uuid.UUID, grace_until: datetime
+    ) -> TestWebhookSecretRevision:
+        revision = self._store.webhook_secret_revisions[revision_id]
+        revision.status = "previous_grace"
+        revision.grace_until = grace_until
+        return revision
+
+    def revoke_previous_grace_for_connection(
+        self, *, connection_id: uuid.UUID
+    ) -> list[TestWebhookSecretRevision]:
+        revisions = [
+            revision
+            for revision in self._store.webhook_secret_revisions.values()
+            if revision.connection_id == connection_id
+            and getattr(revision.status, "value", revision.status) == "previous_grace"
+        ]
+        for revision in revisions:
+            revision.status = "revoked"
+            revision.grace_until = None
+        return revisions
 
 
 class FakeRepositoryEventRepository:
@@ -533,12 +617,18 @@ class FakeRepositoryEventRepository:
             provider_delivery_id=draft.provider_delivery_id,
             provider_event_type=draft.provider_event_type.value,
             provider_action=draft.provider_action,
+            domain_event_type=draft.domain_event_type.value,
+            target_kind=draft.target_kind.value,
             target_key=draft.target_key,
+            target_ref_name=draft.target_ref_name,
             target_head_sha=draft.target_head_sha,
+            occurred_at=draft.occurred_at,
             signature_status=draft.signature_status.value,
             processing_decision=draft.processing_decision.value,
             processing_status=draft.processing_status.value,
             received_at=draft.received_at,
+            payload_hash=draft.payload_hash,
+            verified_secret_revision_id=draft.verified_secret_revision_id,
             verified_secret_revision_status=(
                 None
                 if draft.verified_secret_revision_status is None
@@ -1131,6 +1221,7 @@ def seed_active_webhook_secret(
         id=uuid.uuid4(),
         connection_id=connection_id,
         secret=secret,
+        encrypted_secret=None,
         status="active",
         created_at=now_utc(),
     )
@@ -1155,6 +1246,7 @@ def seed_rotated_webhook_secret_with_grace(
         id=uuid.uuid4(),
         connection_id=connection_id,
         secret=previous_secret,
+        encrypted_secret=None,
         status="previous_grace",
         created_at=now_utc(),
         grace_until=grace_until or now_utc(),
@@ -1163,6 +1255,7 @@ def seed_rotated_webhook_secret_with_grace(
         id=uuid.uuid4(),
         connection_id=connection_id,
         secret=active_secret,
+        encrypted_secret=None,
         status="active",
         created_at=now_utc(),
     )

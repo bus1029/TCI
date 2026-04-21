@@ -64,7 +64,7 @@
 
 ### User Story 3
 
-- 상태: 부분 검증 완료
+- 상태: 검증 완료
 - 범위
   - GitHub webhook 수신
   - Push/PR 최신화
@@ -79,25 +79,29 @@
     - `tests/contract/repository_ingestion/test_github_webhook_contract.py::test_receive_github_webhook_rejects_repository_mismatch`
     - `tests/contract/repository_ingestion/test_github_webhook_contract.py::test_receive_github_webhook_handles_rejected_redelivery_idempotently`
     - `tests/contract/repository_ingestion/test_github_webhook_contract.py::test_connection_detail_and_event_list_expose_webhook_health_and_last_processed_event`
+    - `tests/contract/repository_ingestion/test_repository_connection_contract.py::test_get_connection_detail_exposes_webhook_rotation_projection`
   - Unit
     - `tests/unit/repository_connections/test_process_github_event.py::test_evaluate_github_secret_verification_classifies_missing_mismatch_and_invalid`
     - `tests/unit/repository_connections/test_process_github_event.py::test_process_github_event_accepts_previous_grace_secret_and_marks_revision_status`
     - `tests/unit/repository_connections/test_process_github_event.py::test_process_github_event_records_ignored_pr_action_without_queueing_sync`
     - `tests/unit/repository_connections/test_process_github_event.py::test_process_github_event_marks_duplicate_delivery_duplicate_head_and_stale_head`
     - `tests/unit/repository_connections/test_webhook_sync_task.py::test_run_webhook_sync_task_marks_event_failed_when_snapshot_build_fails`
+    - `tests/unit/repository_connections/test_rotate_webhook_secret.py::test_rotate_webhook_secret_replaces_active_secret_and_starts_grace_window`
   - Integration
     - `tests/integration/repository_connections/test_github_webhook_refresh.py::test_push_webhook_records_commits_but_queues_single_default_ref_sync`
     - `tests/integration/repository_connections/test_github_webhook_refresh.py::test_webhook_refresh_dedupes_redelivery_without_creating_extra_sync`
     - `tests/integration/repository_connections/test_github_webhook_refresh.py::test_webhook_refresh_skips_stale_head_sha_without_creating_snapshot`
     - `tests/integration/repository_connections/test_github_webhook_refresh.py::test_pull_request_webhook_uses_source_branch_for_allowed_actions_only`
     - `tests/integration/repository_connections/test_github_webhook_refresh.py::test_push_webhook_for_non_default_branch_is_record_only`
+    - `tests/integration/repository_connections/test_operator_event_pages.py::test_connection_detail_page_renders_webhook_health_and_event_timeline_link`
+    - `tests/integration/repository_connections/test_operator_event_pages.py::test_repository_events_page_renders_event_timeline_items`
   - 실행 결과
     - `python -c "import pytest, sys; sys.exit(pytest.main(['tests/contract/repository_ingestion/test_github_webhook_contract.py','tests/unit/repository_connections/test_process_github_event.py','tests/unit/repository_connections/test_webhook_sync_task.py','tests/integration/repository_connections/test_github_webhook_refresh.py','-q']))"` -> `16 passed`
     - `python -c "import pytest, sys; sys.exit(pytest.main(['tests/contract/repository_ingestion','tests/integration/repository_connections','tests/unit/repository_connections','-q']))"` -> `147 passed, 1 skipped`
-  - 아직 남은 검증
-    - webhook secret rotation 서비스와 grace continuity 통합 검증
-    - 운영 화면 event timeline 검증
+    - `python -c "import pytest, sys; sys.exit(pytest.main(['tests/contract/repository_ingestion/test_repository_connection_contract.py','tests/contract/repository_ingestion/test_github_webhook_contract.py','tests/integration/repository_connections/test_operator_connection_pages.py','tests/integration/repository_connections/test_operator_event_pages.py','tests/unit/repository_connections/test_rotate_webhook_secret.py','-q']))"` -> `32 passed`
+  - 아직 남은 교차 검증
     - 상태 반영 지연 `SC-002` 실측
+    - grace 만료 이후 이전 secret 거부 회귀와 quickstart 전체 플로우 재검증
 
 ## FR-014 추적성 근거
 
@@ -161,8 +165,10 @@
 - 목표: webhook secret 회전 grace 기간 동안 유효 이벤트 중단 없이 처리
 - 근거:
   - `tests/unit/repository_connections/test_process_github_event.py::test_process_github_event_accepts_previous_grace_secret_and_marks_revision_status`
-  - 현재는 판정 로직 단위 검증만 완료된 상태다
-  - rotation 서비스와 grace continuity의 통합 검증은 아직 미실행이며 `T052`, `T060`, `T063`과 함께 마무리해야 한다
+  - `tests/unit/repository_connections/test_rotate_webhook_secret.py::test_rotate_webhook_secret_replaces_active_secret_and_starts_grace_window`
+  - `tests/contract/repository_ingestion/test_repository_connection_contract.py::test_get_connection_detail_exposes_webhook_rotation_projection`
+  - `tests/integration/repository_connections/test_operator_event_pages.py::test_connection_detail_page_renders_webhook_health_and_event_timeline_link`
+  - 이전 secret 허용 경로와 회전 가시성은 검증했으며, grace 만료 후 거부 회귀는 `T060`과 `T063`에서 추가 확인이 필요하다
 
 ## 테스트 증거 인덱스
 
@@ -174,6 +180,7 @@
 - Integration
   - `tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
   - `tests/integration/repository_connections/test_operator_connection_pages.py`
+  - `tests/integration/repository_connections/test_operator_event_pages.py`
   - `tests/integration/repository_connections/test_scoped_snapshot.py`
   - `tests/integration/repository_connections/test_operator_scope_pages.py`
   - `tests/integration/repository_connections/test_github_webhook_refresh.py`
@@ -190,3 +197,4 @@
 - 2026-04-20: `US1` 운영 화면 구현 완료, `T029`~`T031` 검증 근거 반영
 - 2026-04-20: `US2` 범위 규칙 저장, 필터 엔진, scoped snapshot, 운영 화면, `T032`~`T042` 검증 근거 반영
 - 2026-04-20: `US3` webhook intake, event 처리, query API, worker, migration, `T043`~`T044`, `T046`~`T051`, `T053`~`T057` 범위의 부분 검증 근거 반영
+- 2026-04-20: `US3` webhook secret rotation service, connection detail rotation projection, 운영 event timeline 화면, `T045`, `T052`, `T055`, `T058`, `T059` 근거 반영

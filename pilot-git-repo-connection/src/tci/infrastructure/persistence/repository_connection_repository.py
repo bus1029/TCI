@@ -121,6 +121,25 @@ class RepositoryConnectionRepository:
         self._session.refresh(connection)
         return connection
 
+    def set_active_webhook_secret_revision(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        connection_id: uuid.UUID,
+        webhook_secret_revision_id: uuid.UUID,
+    ) -> RepositoryConnection:
+        connection = self._require(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        )
+        connection.active_webhook_secret_revision_id = webhook_secret_revision_id
+        connection.webhook_health_state = WebhookHealthState.HEALTHY
+        connection.last_webhook_rejection_reason = None
+        connection.last_webhook_rejected_at = None
+        self._session.flush()
+        self._session.refresh(connection)
+        return connection
+
     def update_default_ref(
         self,
         *,

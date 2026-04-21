@@ -52,6 +52,29 @@ def _load_core_revision_module():
     return module
 
 
+def _load_revision_module(filename: str, module_name: str):
+    revision_path = Path(__file__).resolve().parents[3] / "alembic" / "versions" / filename
+    spec = spec_from_file_location(module_name, revision_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"{filename} Alembic revision 모듈을 불러올 수 없습니다.")
+
+    module = module_from_spec(spec)
+    alembic_stub = ModuleType("alembic")
+    alembic_stub.op = object()
+    previous_alembic = sys.modules.get("alembic")
+    sys.modules["alembic"] = alembic_stub
+
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if previous_alembic is None:
+            sys.modules.pop("alembic", None)
+        else:
+            sys.modules["alembic"] = previous_alembic
+
+    return module
+
+
 def _enum_values(column: Any) -> list[str]:
     return list(cast(Any, column.type).enums)
 
@@ -183,6 +206,29 @@ def test_core_revision_enums_match_orm_metadata() -> None:
     assert revision_module.SCOPE_RULE_WARNING_STATE.enums == _enum_values(
         scope_rule_table.c["warning_state"]
     )
+
+
+def test_verified_secret_revision_followup_migration_keeps_002_stable() -> None:
+    versions_dir = Path(__file__).resolve().parents[3] / "alembic" / "versions"
+    revision_002_path = versions_dir / "002_repository_ingestion_webhooks.py"
+    revision_003_path = versions_dir / "003_repository_event_verified_secret_revision.py"
+
+    assert revision_003_path.exists()
+    assert "verified_secret_revision_id" not in revision_002_path.read_text(encoding="utf-8")
+    assert "verified_secret_revision_id" in revision_003_path.read_text(encoding="utf-8")
+
+    revision_003 = _load_revision_module(
+        "003_repository_event_verified_secret_revision.py",
+        "repository_event_verified_secret_revision",
+    )
+    assert revision_003.down_revision == "002_repository_ingestion_webhooks"
+
+
+def test_repository_event_metadata_enforces_secret_revision_same_connection() -> None:
+    event_table = Base.metadata.tables["repository_events"]
+    fk_names = {constraint.name for constraint in event_table.foreign_key_constraints}
+
+    assert "fk_repository_event_verified_webhook_secret_revision_owner" in fk_names
 
 
 def test_phase2_explicit_constraint_names_fit_postgresql_limit() -> None:

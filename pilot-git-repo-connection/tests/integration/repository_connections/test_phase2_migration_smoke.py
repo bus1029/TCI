@@ -29,22 +29,24 @@ def test_phase2_core_migration_round_trip() -> None:
     env = os.environ.copy()
     env["TCI_DATABASE_URL"] = database_url
 
-    upgrade = subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", "head"],
-        cwd=PROJECT_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert upgrade.returncode == 0, upgrade.stderr
+    def run_alembic(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-m", "alembic", "-c", "alembic.ini", *args],
+            cwd=PROJECT_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
-    downgrade = subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", "alembic.ini", "downgrade", "base"],
-        cwd=PROJECT_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert downgrade.returncode == 0, downgrade.stderr
+    upgrade_002 = run_alembic("upgrade", "002_repository_ingestion_webhooks")
+    assert upgrade_002.returncode == 0, upgrade_002.stderr
+
+    upgrade_head = run_alembic("upgrade", "head")
+    assert upgrade_head.returncode == 0, upgrade_head.stderr
+
+    downgrade_002 = run_alembic("downgrade", "002_repository_ingestion_webhooks")
+    assert downgrade_002.returncode == 0, downgrade_002.stderr
+
+    downgrade_base = run_alembic("downgrade", "base")
+    assert downgrade_base.returncode == 0, downgrade_base.stderr

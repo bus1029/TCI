@@ -548,6 +548,11 @@ class RepositoryEvent(Base):
             "provider_delivery_id",
             name="uq_repository_events_connection_delivery",
         ),
+        ForeignKeyConstraint(
+            ["connection_id", "verified_secret_revision_id"],
+            ["webhook_secret_revisions.connection_id", "webhook_secret_revisions.id"],
+            name="fk_repository_event_verified_webhook_secret_revision_owner",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
@@ -584,6 +589,7 @@ class RepositoryEvent(Base):
             WebhookSecretRevisionStatus, name="verified_webhook_secret_revision_status"
         )
     )
+    verified_secret_revision_id: Mapped[uuid.UUID | None] = mapped_column(Uuid())
     rejection_reason: Mapped[WebhookRejectionReason | None] = mapped_column(
         sql_enum(WebhookRejectionReason, name="repository_event_rejection_reason")
     )

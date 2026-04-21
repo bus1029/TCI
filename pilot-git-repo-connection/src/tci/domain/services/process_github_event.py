@@ -45,14 +45,16 @@ ALLOWED_PULL_REQUEST_ACTIONS = frozenset(
 @dataclass(frozen=True, slots=True)
 class SecretVerificationInput:
     has_any_secret: bool
-    matched_secret_status: str | None
     signature_header: str | None
     signature_is_valid: bool
+    matched_secret_revision_id: uuid.UUID | None = None
+    matched_secret_status: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class SecretVerificationOutcome:
     signature_status: str
+    verified_secret_revision_id: uuid.UUID | None
     verified_secret_revision_status: str | None
 
     @property
@@ -106,6 +108,7 @@ def evaluate_github_secret_verification(
     if not verification_input.has_any_secret:
         return SecretVerificationOutcome(
             signature_status="secret_missing",
+            verified_secret_revision_id=None,
             verified_secret_revision_status=None,
         )
     if (
@@ -114,15 +117,18 @@ def evaluate_github_secret_verification(
     ):
         return SecretVerificationOutcome(
             signature_status="verified",
+            verified_secret_revision_id=verification_input.matched_secret_revision_id,
             verified_secret_revision_status=verification_input.matched_secret_status,
         )
     if not _looks_like_github_signature(verification_input.signature_header):
         return SecretVerificationOutcome(
             signature_status="signature_invalid",
+            verified_secret_revision_id=None,
             verified_secret_revision_status=None,
         )
     return SecretVerificationOutcome(
         signature_status="secret_mismatch",
+        verified_secret_revision_id=None,
         verified_secret_revision_status=None,
     )
 
@@ -208,7 +214,8 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
         verification_outcome = evaluate_github_secret_verification(
             SecretVerificationInput(
                 has_any_secret=bool(verification_candidates),
-                    matched_secret_status=signature_verification.matched_revision_status,
+                matched_secret_revision_id=signature_verification.matched_revision_id,
+                matched_secret_status=signature_verification.matched_revision_status,
                 signature_header=command.signature_header,
                 signature_is_valid=signature_verification.signature_is_valid,
             )
@@ -283,6 +290,7 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
                     received_at=now,
                     processed_at=now,
                     signature_status=SignatureStatus.VERIFIED,
+                    verified_secret_revision_id=verification_outcome.verified_secret_revision_id,
                     verified_secret_revision_status=WebhookSecretRevisionStatus(
                         verification_outcome.verified_secret_revision_status
                     ),
@@ -293,6 +301,27 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
                 )
             )
         else:
+            if retryable_delivery:
+                existing_delivery.provider_event_type = parsed_event.provider_event_type
+                existing_delivery.provider_action = parsed_event.provider_action
+                existing_delivery.domain_event_type = parsed_event.domain_event_type
+                existing_delivery.target_kind = parsed_event.target_kind
+                existing_delivery.target_key = parsed_event.target_key
+                existing_delivery.target_ref_name = parsed_event.target_ref_name
+                existing_delivery.target_head_sha = parsed_event.target_head_sha
+                existing_delivery.occurred_at = parsed_event.occurred_at
+                existing_delivery.received_at = now
+                existing_delivery.signature_status = SignatureStatus.VERIFIED
+                existing_delivery.verified_secret_revision_id = (
+                    verification_outcome.verified_secret_revision_id
+                )
+                existing_delivery.verified_secret_revision_status = (
+                    WebhookSecretRevisionStatus(
+                        verification_outcome.verified_secret_revision_status
+                    )
+                )
+                existing_delivery.rejection_reason = None
+                existing_delivery.payload_hash = hashlib.sha256(command.raw_body).hexdigest()
             event = event_repository.update_processing(
                 event_id=existing_delivery.id,
                 processing_decision=processing_decision,
@@ -406,6 +435,11 @@ def record_webhook_enqueue_failure(
 def _is_retryable_delivery(existing_delivery) -> bool:
     if existing_delivery is None:
         return False
+    if (
+        getattr(existing_delivery.processing_status, "value", existing_delivery.processing_status)
+        == EventProcessingStatus.REJECTED.value
+    ):
+        return True
     return (
         getattr(existing_delivery.processing_decision, "value", existing_delivery.processing_decision)
         == ProcessingDecision.QUEUED.value
@@ -476,6 +510,7 @@ def _record_rejected_event(
         connection_id=connection_id,
         provider_delivery_id=command.provider_delivery_id,
     )
+    should_update_connection_health = True
     if existing_event is None:
         event_repository.create(
             RepositoryEventDraft(
@@ -493,6 +528,7 @@ def _record_rejected_event(
                 received_at=processed_at,
                 processed_at=processed_at,
                 signature_status=SignatureStatus(verification_outcome.signature_status),
+                verified_secret_revision_id=None,
                 verified_secret_revision_status=None,
                 rejection_reason=rejection_reason,
                 processing_decision=ProcessingDecision.REJECTED,
@@ -501,19 +537,28 @@ def _record_rejected_event(
             )
         )
     else:
-        existing_event.signature_status = SignatureStatus(
-            verification_outcome.signature_status
+        if (
+            getattr(existing_event.signature_status, "value", existing_event.signature_status)
+            != SignatureStatus.VERIFIED.value
+        ):
+            existing_event.signature_status = SignatureStatus(
+                verification_outcome.signature_status
+            )
+            existing_event.verified_secret_revision_id = None
+            existing_event.verified_secret_revision_status = None
+            existing_event.rejection_reason = rejection_reason
+            existing_event.processing_decision = ProcessingDecision.REJECTED
+            existing_event.processing_status = EventProcessingStatus.REJECTED
+            existing_event.processed_at = processed_at
+        else:
+            should_update_connection_health = False
+    if should_update_connection_health:
+        connection_repository.record_webhook_rejection(
+            connection_id=connection_id,
+            health_state=health_state,
+            rejection_reason=rejection_reason,
+            rejected_at=processed_at,
         )
-        existing_event.rejection_reason = rejection_reason
-        existing_event.processing_decision = ProcessingDecision.REJECTED
-        existing_event.processing_status = EventProcessingStatus.REJECTED
-        existing_event.processed_at = processed_at
-    connection_repository.record_webhook_rejection(
-        connection_id=connection_id,
-        health_state=health_state,
-        rejection_reason=rejection_reason,
-        rejected_at=processed_at,
-    )
 
 
 def _problem_for_signature_status(signature_status: str) -> RepositoryConnectionProblem:
@@ -567,11 +612,11 @@ def _resolve_current_head_sha(*, connection, parsed_event, dependencies) -> str 
 
 
 def _build_verification_candidate(*, candidate, dependencies):
-    if hasattr(candidate, "secret"):
+    if getattr(candidate, "secret", None) is not None:
         return candidate
     encrypted_secret = getattr(candidate, "encrypted_secret", "")
     return SimpleNamespace(
-        revision_id=getattr(candidate, "revision_id", None),
+        revision_id=getattr(candidate, "revision_id", None) or getattr(candidate, "id", None),
         status=getattr(candidate, "status", None),
         secret=decrypt_secret_from_storage(
             encrypted_secret,

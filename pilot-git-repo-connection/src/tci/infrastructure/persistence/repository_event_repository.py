@@ -37,6 +37,7 @@ class RepositoryEventDraft:
     processed_at: datetime | None
     signature_status: SignatureStatus
     verified_secret_revision_status: WebhookSecretRevisionStatus | None
+    verified_secret_revision_id: uuid.UUID | None
     rejection_reason: WebhookRejectionReason | None
     processing_decision: ProcessingDecision
     processing_status: EventProcessingStatus
@@ -66,6 +67,7 @@ class RepositoryEventRepository:
             processed_at=draft.processed_at,
             signature_status=draft.signature_status,
             verified_secret_revision_status=draft.verified_secret_revision_status,
+            verified_secret_revision_id=draft.verified_secret_revision_id,
             rejection_reason=draft.rejection_reason,
             processing_decision=draft.processing_decision,
             processing_status=draft.processing_status,

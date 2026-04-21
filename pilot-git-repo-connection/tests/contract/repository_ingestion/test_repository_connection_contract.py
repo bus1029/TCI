@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import uuid
 from types import SimpleNamespace
 
 from tci.infrastructure.persistence.models import RepositoryConnectionStatus
 from tests.support.repository_connection_testkit import (
+    build_github_push_payload,
+    build_github_webhook_headers,
     create_connection_payload,
     create_test_client,
+    seed_rotated_webhook_secret_with_grace,
     seed_planning_input_reference,
+    serialize_github_webhook_payload,
 )
 
 
@@ -106,6 +111,60 @@ def test_get_connection_detail_returns_null_last_processed_event_and_traceabilit
                 },
             ],
         },
+    }
+
+
+def test_get_connection_detail_exposes_webhook_rotation_projection(tmp_path, monkeypatch) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = create_response.json()["id"]
+    grace_until = datetime.now(tz=UTC) + timedelta(hours=24)
+    seed_rotated_webhook_secret_with_grace(
+        store,
+        connection_id=uuid.UUID(connection_id),
+        active_secret="current-secret",
+        previous_secret="previous-secret",
+        grace_until=grace_until,
+    )
+    store.resolved_ref_commits["main"] = "a" * 40
+    payload = build_github_push_payload(after_sha="a" * 40)
+    headers = build_github_webhook_headers(
+        secret="previous-secret",
+        payload=payload,
+        delivery_id="delivery-rotation-001",
+        event_name="push",
+    )
+    headers["content-type"] = "application/json"
+
+    object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
+    monkeypatch.setattr(
+        "tci.api.routes.github_webhooks.create_celery_app",
+        lambda settings: SimpleNamespace(send_task=lambda name, kwargs: None),
+    )
+
+    webhook_response = client.post(
+        f"/api/webhooks/github/{connection_id}",
+        content=serialize_github_webhook_payload(payload),
+        headers=headers,
+    )
+    assert webhook_response.status_code == 202
+
+    detail_response = client.get(f"/api/repository-connections/{connection_id}")
+
+    assert detail_response.status_code == 200
+    assert detail_response.json()["webhookHealth"] == {
+        "status": "healthy",
+        "lastRejectedReason": None,
+        "lastRejectedAt": None,
+        "rotationState": "grace_active",
+        "graceUntil": grace_until.isoformat(),
+        "previousSecretDeliveriesDuringGrace": 1,
+        "lastPreviousSecretAcceptedAt": detail_response.json()["lastProcessedEventAt"],
     }
 
 
