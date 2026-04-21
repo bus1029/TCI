@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import uuid
 
+from tci.domain.services.rotate_webhook_secret import (
+    build_webhook_secret_rotation_projection,
+)
+
 
 def get_repository_connection_detail(
     *, workspace_id: uuid.UUID, connection_id: uuid.UUID, dependencies
@@ -14,6 +18,7 @@ def get_repository_connection_detail(
             session
         )
         event_repository = dependencies.repository_event_repository_factory(session)
+        webhook_secret_repository = dependencies.webhook_secret_repository_factory(session)
         snapshot_repository = dependencies.code_snapshot_repository_factory(session)
         sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
         connection = connection_repository.get(
@@ -34,7 +39,16 @@ def get_repository_connection_detail(
             if getattr(connection, "last_processed_event_id", None) is None
             else event_repository.get(event_id=connection.last_processed_event_id)
         )
-        connection.last_previous_secret_accepted_at = None
-        connection.previous_secret_deliveries_during_grace = 0
-        connection.webhook_secret_grace_until = None
+        rotation_projection = build_webhook_secret_rotation_projection(
+            connection_id=connection_id,
+            webhook_secret_repository=webhook_secret_repository,
+            event_repository=event_repository,
+        )
+        connection.last_previous_secret_accepted_at = (
+            rotation_projection.last_previous_secret_accepted_at
+        )
+        connection.previous_secret_deliveries_during_grace = (
+            rotation_projection.previous_secret_deliveries_during_grace
+        )
+        connection.webhook_secret_grace_until = rotation_projection.grace_until
         return connection

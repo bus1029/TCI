@@ -40,9 +40,36 @@
       <section>
         <h2>최근 처리 이벤트</h2>
         {% if connection.lastProcessedEvent %}
-        <p>{{ connection.lastProcessedEvent }}</p>
+        <p>이벤트 유형: {{ connection.lastProcessedEvent.providerEventType }}</p>
+        <p>대상: {{ connection.lastProcessedEvent.targetKey }}</p>
+        <p>처리 결정: {{ connection.lastProcessedEvent.processingDecision }}</p>
+        <p>처리 시각: {{ connection.lastProcessedEvent.processedAt or "없음" }}</p>
         {% else %}
         <p>아직 처리된 이벤트가 없습니다.</p>
+        {% endif %}
+        <p>
+          <a href="/connections/{{ connection.id }}/events?workspaceId={{ workspace_id }}"
+            >이벤트 타임라인 보기</a
+          >
+        </p>
+      </section>
+
+      <section>
+        <h2>Webhook 상태</h2>
+        {% if connection.webhookHealth %}
+        <p>상태: {{ connection.webhookHealth.status }}</p>
+        <p>회전 상태: {{ connection.webhookHealth.rotationState }}</p>
+        <p>grace 종료: {{ connection.webhookHealth.graceUntil or "없음" }}</p>
+        <p>
+          grace 중 이전 secret delivery:
+          {{ connection.webhookHealth.previousSecretDeliveriesDuringGrace }}
+        </p>
+        <p>
+          마지막 이전 secret 허용 시각:
+          {{ connection.webhookHealth.lastPreviousSecretAcceptedAt or "없음" }}
+        </p>
+        {% else %}
+        <p>등록된 webhook secret 정보가 없습니다.</p>
         {% endif %}
       </section>
 

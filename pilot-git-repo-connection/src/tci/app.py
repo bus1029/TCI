@@ -55,6 +55,7 @@ from tci.web.routes.repository_connections import (
 from tci.api.routes.repository_events import router as repository_events_router
 from tci.api.routes.github_webhooks import router as github_webhooks_router
 from tci.web.routes.repository_scope import router as repository_scope_web_router
+from tci.web.routes.repository_events import router as repository_events_web_router
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,4 +145,5 @@ def create_app(
     app.include_router(repository_connections_web_router)
     app.include_router(repository_connection_detail_web_router)
     app.include_router(repository_scope_web_router)
+    app.include_router(repository_events_web_router)
     return app

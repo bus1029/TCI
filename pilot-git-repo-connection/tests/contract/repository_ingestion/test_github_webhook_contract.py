@@ -228,6 +228,142 @@ def test_receive_github_webhook_handles_rejected_redelivery_idempotently(tmp_pat
     }
 
 
+def test_receive_github_webhook_bad_replay_preserves_existing_verified_secret_audit_fields(
+    tmp_path, monkeypatch
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = create_response.json()["id"]
+    connection_uuid = uuid.UUID(connection_id)
+    seed_active_webhook_secret(
+        store,
+        connection_id=connection_uuid,
+        secret="actual-secret",
+    )
+    store.resolved_ref_commits["main"] = "1" * 40
+    payload = build_github_push_payload(after_sha="1" * 40)
+    accepted_headers = build_github_webhook_headers(
+        secret="actual-secret",
+        payload=payload,
+        delivery_id="delivery-replayed-invalid",
+        event_name="push",
+    )
+    accepted_headers["content-type"] = "application/json"
+
+    object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
+    monkeypatch.setattr(
+        "tci.api.routes.github_webhooks.create_celery_app",
+        lambda settings: SimpleNamespace(send_task=lambda name, kwargs: None),
+    )
+
+    accepted_response = client.post(
+        f"/api/webhooks/github/{connection_id}",
+        content=serialize_github_webhook_payload(payload),
+        headers=accepted_headers,
+    )
+    assert accepted_response.status_code == 202
+
+    rejected_headers = build_github_webhook_headers(
+        secret="wrong-secret",
+        payload=payload,
+        delivery_id="delivery-replayed-invalid",
+        event_name="push",
+    )
+    rejected_headers["content-type"] = "application/json"
+
+    rejected_response = client.post(
+        f"/api/webhooks/github/{connection_id}",
+        content=serialize_github_webhook_payload(payload),
+        headers=rejected_headers,
+    )
+
+    assert rejected_response.status_code == 401
+    recorded_event = next(
+        event
+        for event in store.repository_events.values()
+        if event.provider_delivery_id == "delivery-replayed-invalid"
+    )
+    assert recorded_event.signature_status == "verified"
+    assert recorded_event.processing_status == "queued"
+    assert recorded_event.processing_decision == "queued"
+    assert recorded_event.verified_secret_revision_id is not None
+    assert recorded_event.verified_secret_revision_status == "active"
+    detail_response = client.get(f"/api/repository-connections/{connection_id}")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["webhookHealth"]["status"] == "healthy"
+
+
+def test_receive_github_webhook_corrected_redelivery_recovers_rejected_delivery(
+    tmp_path, monkeypatch
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = create_response.json()["id"]
+    connection_uuid = uuid.UUID(connection_id)
+    seed_active_webhook_secret(
+        store,
+        connection_id=connection_uuid,
+        secret="actual-secret",
+    )
+    store.resolved_ref_commits["main"] = "2" * 40
+    payload = build_github_push_payload(after_sha="2" * 40)
+
+    object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
+    monkeypatch.setattr(
+        "tci.api.routes.github_webhooks.create_celery_app",
+        lambda settings: SimpleNamespace(send_task=lambda name, kwargs: None),
+    )
+
+    rejected_headers = build_github_webhook_headers(
+        secret="wrong-secret",
+        payload=payload,
+        delivery_id="delivery-corrected-redelivery",
+        event_name="push",
+    )
+    rejected_headers["content-type"] = "application/json"
+    rejected_response = client.post(
+        f"/api/webhooks/github/{connection_id}",
+        content=serialize_github_webhook_payload(payload),
+        headers=rejected_headers,
+    )
+    assert rejected_response.status_code == 401
+
+    accepted_headers = build_github_webhook_headers(
+        secret="actual-secret",
+        payload=payload,
+        delivery_id="delivery-corrected-redelivery",
+        event_name="push",
+    )
+    accepted_headers["content-type"] = "application/json"
+    accepted_response = client.post(
+        f"/api/webhooks/github/{connection_id}",
+        content=serialize_github_webhook_payload(payload),
+        headers=accepted_headers,
+    )
+
+    assert accepted_response.status_code == 202
+    recorded_event = next(
+        event
+        for event in store.repository_events.values()
+        if event.provider_delivery_id == "delivery-corrected-redelivery"
+    )
+    assert recorded_event.signature_status == "verified"
+    assert recorded_event.processing_status == "queued"
+    assert recorded_event.processing_decision == "queued"
+    assert recorded_event.verified_secret_revision_id is not None
+    assert recorded_event.verified_secret_revision_status == "active"
+
+
 def test_connection_detail_and_event_list_expose_webhook_health_and_last_processed_event(
     tmp_path, monkeypatch
 ) -> None:

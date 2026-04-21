@@ -17,7 +17,7 @@
 
 ### 1. 저장소 연결 생성 및 검증
 
-1. `POST /api/repository-connections`로 GitHub Cloud 저장소 URL, transport, 기본 ref, credential, webhook secret을 등록한다.
+1. `POST /api/repository-connections`로 GitHub Cloud 저장소 URL, transport, 기본 ref, credential을 등록한다.
 2. 응답이 `pending_verification` 또는 즉시 `active`인지 확인한다.
 3. `POST /api/repository-connections/{id}/verify`를 호출해 `git ls-remote` 기반 연결 검증이 수행되는지 확인한다.
 4. 잘못된 credential로 같은 요청을 보냈을 때 `reauth_required`와 오류 코드가 반환되는지 확인한다.
@@ -45,7 +45,7 @@
 2. webhook 엔드포인트가 `202 Accepted`를 즉시 반환하는지 확인한다.
 3. 같은 delivery를 재전송했을 때 `duplicate_delivery`로 기록되고 추가 스냅샷이 생성되지 않는지 확인한다.
 4. 더 오래된 SHA를 가리키는 이벤트를 재전송했을 때 `stale_head`로 종료되는지 확인한다.
-5. Celery task 상태와 event timeline 조회 결과가 같은 처리 결론을 보여주는지 확인한다.
+5. Celery task 상태, connection detail의 `lastProcessedEvent`, event timeline 조회 결과가 같은 처리 결론을 보여주는지 확인한다.
 
 ### 5. Pull Request 이벤트 처리
 
@@ -61,16 +61,18 @@
 2. `RepositoryEvent.signature_status = secret_mismatch`, `rejection_reason = secret_mismatch`, `processing_status = rejected`가 기록되는지 확인한다.
 3. 연결 상세 조회에서 `webhookHealth.status = secret_mismatch_detected`와 마지막 거부 시각이 보이는지 확인한다.
 4. payload를 변조해 HMAC이 깨진 요청을 보내고 `signature_status = signature_invalid`, `rejection_reason = signature_invalid`가 기록되는지 확인한다.
-5. secret이 없는 연결에 webhook을 보내면 `webhook_unconfigured` 상태와 `rejection_reason = secret_missing` 이벤트가 기록되는지 확인한다.
+5. secret이 없는 연결에 webhook을 보내면 `webhookHealth.status = missing_secret`와 `rejectionReason = secret_missing` 이벤트가 기록되는지 확인한다.
 
 ### 7. 운영 상태 전이 회귀
 
 1. 기본 ref를 삭제하거나 이름을 바꾼 뒤 재검증을 실행한다.
 2. 연결 상태가 `ref_missing`으로 전환되고 새 ref를 선택하기 전까지 신규 sync run이 차단되는지 확인한다.
-3. webhook secret을 회전한 뒤 connection detail에서 `webhookSecretRotationState`, `graceUntil`, `previousSecretDeliveriesDuringGrace`가 보이는지 확인한다.
+3. webhook secret을 회전한 뒤 connection detail에서 `webhookHealth.rotationState`, `webhookHealth.graceUntil`, `webhookHealth.previousSecretDeliveriesDuringGrace`가 보이는지 확인한다.
 4. grace window 동안 이전 secret delivery는 허용되고 해당 이벤트에 `verifiedSecretRevisionStatus = previous_grace`가 남는지 확인한다.
 5. grace 종료 후에는 같은 이전 secret delivery가 `secret_mismatch`로 거부되는지 확인한다.
-6. event timeline 조회에서 connection detail의 `lastProcessedEvent`와 동일한 마지막 처리 이벤트를 상세 필드로 역추적할 수 있는지 확인한다.
+6. 이미 정상 처리된 delivery 뒤에 잘못된 replay를 보내도 connection detail의 마지막 정상 이벤트 요약과 webhook health가 오염되지 않는지 확인한다.
+7. webhook 미설정 연결의 `/connections/{id}/events` 운영자 화면에서 webhook 상태가 `healthy`가 아니라 `미설정`으로 보이는지 확인한다.
+8. event timeline 조회에서 connection detail의 `lastProcessedEvent`와 동일한 마지막 처리 이벤트를 상세 필드로 역추적할 수 있는지 확인한다.
 
 ## 필요한 테스트 세트
 
@@ -83,13 +85,13 @@
   - 연결 생성/검증 및 상태 전이
   - mirror fetch 후 snapshot archive 생성
   - webhook 서명 검증 및 delivery dedupe
-  - ref_missing, secret rotation grace, webhook health projection
+  - ref_missing, secret rotation grace, grace-expiry rejection, bad replay health preservation, webhook health projection
 - Contract
   - OpenAPI 요청/응답 스키마 검증
   - GitHub webhook header/body 계약 검증
 - End-to-End
   - 연결 생성 -> 규칙 저장 -> 초기 스냅샷 -> Push -> PR synchronize -> secret rotation grace -> traceability 조회 전체 흐름
-  - 운영자 HTML 화면에서 connection detail, scope warning, event timeline, snapshot detail이 API 응답과 일치하는지 확인
+  - 운영자 HTML 화면에서 connection detail, scope warning, event timeline, snapshot detail이 API 응답과 일치하고 edge-state fallback이 올바른지 확인
 
 ## 완료 기준
 
