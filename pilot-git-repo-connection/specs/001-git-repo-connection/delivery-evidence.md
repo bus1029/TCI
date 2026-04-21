@@ -99,9 +99,33 @@
     - `python -c "import pytest, sys; sys.exit(pytest.main(['tests/contract/repository_ingestion/test_github_webhook_contract.py','tests/unit/repository_connections/test_process_github_event.py','tests/unit/repository_connections/test_webhook_sync_task.py','tests/integration/repository_connections/test_github_webhook_refresh.py','-q']))"` -> `16 passed`
     - `python -c "import pytest, sys; sys.exit(pytest.main(['tests/contract/repository_ingestion','tests/integration/repository_connections','tests/unit/repository_connections','-q']))"` -> `147 passed, 1 skipped`
     - `python -c "import pytest, sys; sys.exit(pytest.main(['tests/contract/repository_ingestion/test_repository_connection_contract.py','tests/contract/repository_ingestion/test_github_webhook_contract.py','tests/integration/repository_connections/test_operator_connection_pages.py','tests/integration/repository_connections/test_operator_event_pages.py','tests/unit/repository_connections/test_rotate_webhook_secret.py','-q']))"` -> `32 passed`
-  - 아직 남은 교차 검증
-    - 상태 반영 지연 `SC-002` 실측
-    - grace 만료 이후 이전 secret 거부 회귀와 quickstart 전체 플로우 재검증
+
+### Polish & Cross-Cutting
+
+- 상태: 검증 완료
+- 범위
+  - `reauth_required` / `ref_missing` / 추가 ref 안내 회귀
+  - grace 만료 후 이전 secret 거부
+  - bad replay 이후 operator 상태 보존
+  - webhook 상태 반영 지연 실측
+  - quickstart API/queue 통합 플로우 재검증
+- 근거
+  - Integration
+    - `tests/integration/repository_connections/test_edge_state_regression.py::test_reauth_required_connection_preserves_operator_guidance`
+    - `tests/integration/repository_connections/test_edge_state_regression.py::test_ref_missing_connection_preserves_operator_guidance`
+    - `tests/integration/repository_connections/test_edge_state_regression.py::test_previous_secret_delivery_is_rejected_after_grace_expiry`
+    - `tests/integration/repository_connections/test_edge_state_regression.py::test_bad_replay_does_not_overwrite_last_processed_event_or_health`
+    - `tests/integration/repository_connections/test_webhook_status_latency.py::test_webhook_status_projection_latency_stays_within_sla`
+    - `tests/integration/repository_connections/test_quickstart_validation.py::test_quickstart_validation_covers_release_scope_flow`
+  - 실행 결과
+    - `python -m pytest pilot-git-repo-connection/tests/integration/repository_connections/test_edge_state_regression.py pilot-git-repo-connection/tests/integration/repository_connections/test_webhook_status_latency.py pilot-git-repo-connection/tests/integration/repository_connections/test_quickstart_validation.py -q` -> `6 passed`
+    - `python tests/support/measure_webhook_status_latency.py` -> `SC002_SAMPLE_COUNT=5`, `SC002_COMPLETED_SAMPLE_COUNT=5`, `SC002_MAX_SECONDS=0.007271`, `SC002_P95_SECONDS=0.007271`
+    - `python tests/support/run_quickstart_validation.py` -> `SC001_FIRST_SNAPSHOT_SECONDS=0.015385`, `MANUAL_SNAPSHOT_ID=...`, `WEBHOOK_SNAPSHOT_ID=...`, `PUSH_EVENT_PROCESSING_STATUS=completed`, `PR_EVENT_PROCESSING_STATUS=completed`, `GRACE_ACCEPTED=True`, `EXPIRED_REJECTION_CODE=WEBHOOK_SECRET_MISMATCH`
+  - 범위 주의
+    - quickstart harness는 public API route와 queue task 경로를 검증한다.
+    - 운영자 HTML surface parity는 기존 `test_operator_connection_pages.py`, `test_operator_event_pages.py`, `test_operator_scope_pages.py`가 별도로 담당한다.
+  - 환경 차단
+    - 실제 PostgreSQL destructive migration smoke는 `TCI_TEST_DATABASE_URL`, `TCI_ALLOW_DESTRUCTIVE_MIGRATION_TESTS=1` 미설정으로 아직 미실행
 
 ## FR-014 추적성 근거
 
@@ -132,7 +156,8 @@
 - 근거:
   - 재현 스크립트: `python tests/support/measure_us1_first_snapshot.py`
   - 로컬 인메모리 검증에서 연결 생성 -> 초기 스냅샷 생성 -> 스냅샷 상세 조회까지 `0.0111초`
-  - 현재 측정은 worker/Redis를 생략한 `US1` 기준선 검증이며, full quickstart 회귀는 `T062`에서 다시 확인 예정
+  - quickstart 통합 helper(`python tests/support/run_quickstart_validation.py`) 기준 연결 생성 -> scope 저장 -> API-triggered manual snapshot -> snapshot 상세 조회까지 `0.015385초`
+  - 현재 측정은 로컬 통합 하네스 기준선이며, 둘 다 `SC-001`의 10분 한계를 충분히 하회한다
 
 ### SC-002
 
@@ -141,7 +166,10 @@
   - 상태 반영 경로 자체는 `US3` contract/integration 검증으로 확보했다
   - `tests/contract/repository_ingestion/test_github_webhook_contract.py::test_connection_detail_and_event_list_expose_webhook_health_and_last_processed_event`
   - `tests/integration/repository_connections/test_github_webhook_refresh.py::test_push_webhook_records_commits_but_queues_single_default_ref_sync`
-  - 실제 지연 시간 측정과 95% 기준 검증은 아직 미실행이며 `T061`에서 별도 확인이 필요하다
+  - `tests/integration/repository_connections/test_webhook_status_latency.py::test_webhook_status_projection_latency_stays_within_sla`
+  - 재현 스크립트: `python tests/support/measure_webhook_status_latency.py`
+  - helper 실측 결과: `5` samples, `completed=5`, `p95=0.007271초`, `max=0.007271초`
+  - 현재 수치는 public webhook route -> queue task -> completed projection까지 포함한 로컬 통합 하네스 기준이며 `SC-002`의 1분 SLA 한계를 충분히 하회한다
 
 ### SC-003
 
@@ -168,7 +196,9 @@
   - `tests/unit/repository_connections/test_rotate_webhook_secret.py::test_rotate_webhook_secret_replaces_active_secret_and_starts_grace_window`
   - `tests/contract/repository_ingestion/test_repository_connection_contract.py::test_get_connection_detail_exposes_webhook_rotation_projection`
   - `tests/integration/repository_connections/test_operator_event_pages.py::test_connection_detail_page_renders_webhook_health_and_event_timeline_link`
-  - 이전 secret 허용 경로와 회전 가시성은 검증했으며, grace 만료 후 거부 회귀는 `T060`과 `T063`에서 추가 확인이 필요하다
+  - `tests/integration/repository_connections/test_edge_state_regression.py::test_previous_secret_delivery_is_rejected_after_grace_expiry`
+  - `tests/integration/repository_connections/test_quickstart_validation.py::test_quickstart_validation_covers_release_scope_flow`
+  - quickstart helper 실측 결과(`python tests/support/run_quickstart_validation.py`): grace 기간의 이전 secret delivery는 수용되고, grace 만료 후 동일 secret은 `WEBHOOK_SECRET_MISMATCH`로 거부된다
 
 ## 테스트 증거 인덱스
 
@@ -184,12 +214,16 @@
   - `tests/integration/repository_connections/test_scoped_snapshot.py`
   - `tests/integration/repository_connections/test_operator_scope_pages.py`
   - `tests/integration/repository_connections/test_github_webhook_refresh.py`
+  - `tests/integration/repository_connections/test_edge_state_regression.py`
+  - `tests/integration/repository_connections/test_webhook_status_latency.py`
+  - `tests/integration/repository_connections/test_quickstart_validation.py`
 - Contract
   - `tests/contract/repository_ingestion/test_repository_connection_contract.py`
   - `tests/contract/repository_ingestion/test_repository_scope_contract.py`
   - `tests/contract/repository_ingestion/test_github_webhook_contract.py`
 - End-to-End
-  - 아직 미실행 (`US1` 범위는 contract/integration 검증으로 종료)
+  - 별도 browser E2E는 아직 미실행
+  - quickstart release-flow는 `tests/integration/repository_connections/test_quickstart_validation.py`의 API/queue integration harness로 검증
 
 ## 변경 이력
 
