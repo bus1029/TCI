@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Header, Request
 from fastapi.responses import JSONResponse
 import uuid
 
@@ -22,8 +22,13 @@ def save_scope_rules_route(
     connection_id: uuid.UUID,
     payload: SaveScopeRulesRequest,
     request: Request,
+    workspace_header: str | None = Header(
+        default=None,
+        alias="X-TCI-Workspace-Id",
+        description="워크스페이스 UUID",
+    ),
 ):
-    workspace_id = _extract_workspace_id(request)
+    workspace_id = _extract_workspace_id(workspace_header)
     if isinstance(workspace_id, JSONResponse):
         return workspace_id
 

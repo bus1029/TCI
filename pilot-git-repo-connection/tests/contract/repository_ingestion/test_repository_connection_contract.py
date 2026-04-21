@@ -54,6 +54,31 @@ def test_repository_connection_routes_require_workspace_header(tmp_path) -> None
     }
 
 
+def test_openapi_documents_workspace_header_for_repository_connection_routes(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, _store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    openapi_response = client.get("/openapi.json")
+
+    assert openapi_response.status_code == 200
+    create_parameters = openapi_response.json()["paths"]["/api/repository-connections"]["post"][
+        "parameters"
+    ]
+    assert create_parameters == [
+        {
+            "name": "X-TCI-Workspace-Id",
+            "in": "header",
+            "required": False,
+            "schema": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "description": "워크스페이스 UUID",
+                "title": "X-Tci-Workspace-Id",
+            },
+            "description": "워크스페이스 UUID",
+        }
+    ]
+
+
 def test_get_connection_detail_returns_null_last_processed_event_and_traceability(
     tmp_path,
 ) -> None:
