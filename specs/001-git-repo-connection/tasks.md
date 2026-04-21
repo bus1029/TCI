@@ -145,10 +145,10 @@
 
 **Purpose**: 다중 스토리에 걸친 운영 안정성, SLA 검증, 회귀 검증, 추적 문서를 마무리한다.
 
-- [ ] T060 [P] Add regression tests for FR-002a `reauth_required`, FR-003b `ref_missing`, FR-015a additional-ref guidance fallback, FR-016a/SC-005 webhook secret grace-expiry rejection, and bad-replay/operator edge-state preservation in `tests/integration/repository_connections/test_edge_state_regression.py`
-- [ ] T061 [P] Add webhook processing status latency validation for FR-008, FR-012, and `SC-002` in `tests/integration/repository_connections/test_webhook_status_latency.py`
-- [ ] T062 [P] Add full quickstart validation harness for FR-001 through FR-017b that repeats `SC-001` first-snapshot-under-10-min validation alongside release-scope flow coverage in `tests/integration/repository_connections/test_quickstart_validation.py`
-- [ ] T063 Refresh FR-001 through FR-017b and SC-001 through SC-005 trace coverage and story completion evidence in `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`
+- [x] T060 [P] Add regression tests for FR-002a `reauth_required`, FR-003b `ref_missing`, FR-015a additional-ref guidance fallback, FR-016a/SC-005 webhook secret grace-expiry rejection, and bad-replay/operator edge-state preservation in `tests/integration/repository_connections/test_edge_state_regression.py`
+- [x] T061 [P] Add webhook processing status latency validation for FR-008, FR-012, and `SC-002` in `tests/integration/repository_connections/test_webhook_status_latency.py`
+- [x] T062 [P] Add full quickstart validation harness for FR-001 through FR-017b that repeats `SC-001` first-snapshot-under-10-min validation alongside release-scope flow coverage in `tests/integration/repository_connections/test_quickstart_validation.py`
+- [x] T063 Refresh FR-001 through FR-017b and SC-001 through SC-005 trace coverage and story completion evidence in `pilot-git-repo-connection/specs/001-git-repo-connection/delivery-evidence.md`
 
 ---
 
