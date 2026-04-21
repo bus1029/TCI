@@ -221,7 +221,45 @@ def test_verified_secret_revision_followup_migration_keeps_002_stable() -> None:
         "003_repository_event_verified_secret_revision.py",
         "repository_event_verified_secret_revision",
     )
-    assert revision_003.down_revision == "002_repository_ingestion_webhooks"
+    assert revision_003.down_revision == "002_ingestion_webhooks"
+
+
+def test_webhook_revision_enums_do_not_recreate_types_during_table_creation() -> None:
+    revision_002 = _load_revision_module(
+        "002_repository_ingestion_webhooks.py",
+        "repository_ingestion_webhooks",
+    )
+
+    for enum_type in (
+        revision_002.WEBHOOK_SECRET_REVISION_STATUS,
+        revision_002.WEBHOOK_HEALTH_STATE,
+        revision_002.WEBHOOK_REJECTION_REASON,
+        revision_002.PROVIDER_EVENT_TYPE,
+        revision_002.DOMAIN_EVENT_TYPE,
+        revision_002.EVENT_TARGET_KIND,
+        revision_002.SIGNATURE_STATUS,
+        revision_002.PROCESSING_DECISION,
+        revision_002.EVENT_PROCESSING_STATUS,
+        revision_002.VERIFIED_WEBHOOK_SECRET_REVISION_STATUS,
+        revision_002.REPOSITORY_EVENT_REJECTION_REASON,
+    ):
+        assert getattr(enum_type, "create_type", None) is False
+
+
+def test_phase2_revision_ids_fit_alembic_version_column_limit() -> None:
+    revision_001 = _load_core_revision_module()
+    revision_002 = _load_revision_module(
+        "002_repository_ingestion_webhooks.py",
+        "repository_ingestion_webhooks_revision_ids",
+    )
+    revision_003 = _load_revision_module(
+        "003_repository_event_verified_secret_revision.py",
+        "repository_event_verified_secret_revision_ids",
+    )
+
+    assert len(revision_001.revision) <= 32
+    assert len(revision_002.revision) <= 32
+    assert len(revision_003.revision) <= 32
 
 
 def test_repository_event_metadata_enforces_secret_revision_same_connection() -> None:

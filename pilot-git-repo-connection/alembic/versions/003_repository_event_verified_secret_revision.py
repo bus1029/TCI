@@ -1,7 +1,7 @@
 """repository event verified secret revision
 
-Revision ID: 003_repository_event_verified_secret_revision
-Revises: 002_repository_ingestion_webhooks
+Revision ID: 003_event_secret_revision
+Revises: 002_ingestion_webhooks
 Create Date: 2026-04-21 00:00:00.000000
 """
 
@@ -11,8 +11,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "003_repository_event_verified_secret_revision"
-down_revision = "002_repository_ingestion_webhooks"
+revision = "003_event_secret_revision"
+down_revision = "002_ingestion_webhooks"
 branch_labels = None
 depends_on = None
 
