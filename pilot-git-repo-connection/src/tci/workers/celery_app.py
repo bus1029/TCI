@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 from celery import Celery
+from celery.local import Proxy
 
 from tci.infrastructure.queue.repository_ingestion_tasks import (
     REPOSITORY_INGESTION_QUEUE_NAME,
@@ -34,3 +35,8 @@ def create_celery_app(settings: Settings) -> Celery:
 @lru_cache(maxsize=1)
 def get_celery_app() -> Celery:
     return create_celery_app(get_settings())
+
+
+# Expose a CLI-friendly, lazily resolved Celery app so `celery -A ...` works
+# without forcing settings validation at module import time.
+celery_app: Celery = Proxy(get_celery_app)

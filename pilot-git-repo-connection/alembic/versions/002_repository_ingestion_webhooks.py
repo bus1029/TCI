@@ -1,6 +1,6 @@
 """repository ingestion webhooks
 
-Revision ID: 002_repository_ingestion_webhooks
+Revision ID: 002_ingestion_webhooks
 Revises: 001_repository_ingestion_core
 Create Date: 2026-04-20 00:00:00.000000
 """
@@ -9,41 +9,46 @@ from __future__ import annotations
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
-revision = "002_repository_ingestion_webhooks"
+revision = "002_ingestion_webhooks"
 down_revision = "001_repository_ingestion_core"
 branch_labels = None
 depends_on = None
 
 
-WEBHOOK_SECRET_REVISION_STATUS = sa.Enum(
+WEBHOOK_SECRET_REVISION_STATUS = postgresql.ENUM(
     "active",
     "previous_grace",
     "revoked",
     name="webhook_secret_revision_status",
+    create_type=False,
 )
-WEBHOOK_HEALTH_STATE = sa.Enum(
+WEBHOOK_HEALTH_STATE = postgresql.ENUM(
     "healthy",
     "missing_secret",
     "secret_mismatch_detected",
     "signature_invalid_recently",
     name="webhook_health_state",
+    create_type=False,
 )
-WEBHOOK_REJECTION_REASON = sa.Enum(
+WEBHOOK_REJECTION_REASON = postgresql.ENUM(
     "secret_missing",
     "secret_mismatch",
     "signature_invalid",
     name="webhook_rejection_reason",
+    create_type=False,
 )
-PROVIDER_EVENT_TYPE = sa.Enum(
+PROVIDER_EVENT_TYPE = postgresql.ENUM(
     "push",
     "pull_request",
     "ping",
     "unknown",
     name="provider_event_type",
+    create_type=False,
 )
-DOMAIN_EVENT_TYPE = sa.Enum(
+DOMAIN_EVENT_TYPE = postgresql.ENUM(
     "commit_recorded",
     "push_received",
     "pr_received",
@@ -51,21 +56,24 @@ DOMAIN_EVENT_TYPE = sa.Enum(
     "secret_missing",
     "secret_mismatch",
     name="domain_event_type",
+    create_type=False,
 )
-EVENT_TARGET_KIND = sa.Enum(
+EVENT_TARGET_KIND = postgresql.ENUM(
     "default_ref",
     "pull_request_source",
     "none",
     name="event_target_kind",
+    create_type=False,
 )
-SIGNATURE_STATUS = sa.Enum(
+SIGNATURE_STATUS = postgresql.ENUM(
     "verified",
     "secret_missing",
     "secret_mismatch",
     "signature_invalid",
     name="signature_status",
+    create_type=False,
 )
-PROCESSING_DECISION = sa.Enum(
+PROCESSING_DECISION = postgresql.ENUM(
     "record_only",
     "queued",
     "duplicate_delivery",
@@ -73,8 +81,9 @@ PROCESSING_DECISION = sa.Enum(
     "stale_head",
     "rejected",
     name="processing_decision",
+    create_type=False,
 )
-EVENT_PROCESSING_STATUS = sa.Enum(
+EVENT_PROCESSING_STATUS = postgresql.ENUM(
     "received",
     "validated",
     "queued",
@@ -82,18 +91,21 @@ EVENT_PROCESSING_STATUS = sa.Enum(
     "failed",
     "rejected",
     name="event_processing_status",
+    create_type=False,
 )
-VERIFIED_WEBHOOK_SECRET_REVISION_STATUS = sa.Enum(
+VERIFIED_WEBHOOK_SECRET_REVISION_STATUS = postgresql.ENUM(
     "active",
     "previous_grace",
     "revoked",
     name="verified_webhook_secret_revision_status",
+    create_type=False,
 )
-REPOSITORY_EVENT_REJECTION_REASON = sa.Enum(
+REPOSITORY_EVENT_REJECTION_REASON = postgresql.ENUM(
     "secret_missing",
     "secret_mismatch",
     "signature_invalid",
     name="repository_event_rejection_reason",
+    create_type=False,
 )
 
 

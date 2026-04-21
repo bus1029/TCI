@@ -80,3 +80,23 @@ def test_get_celery_app_uses_current_settings_after_cache_clear(
 
     assert first_app.conf.broker_url == "redis://localhost:6379/0"
     assert second_app.conf.broker_url == "redis://localhost:6379/1"
+
+
+def test_celery_cli_proxy_resolves_to_cached_app(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("TCI_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("TCI_REDIS_URL", "redis://localhost:6379/0")
+
+    from celery.app.utils import find_app
+    from tci.settings import get_settings
+    from tci.workers.celery_app import celery_app, get_celery_app
+
+    get_settings.cache_clear()
+    get_celery_app.cache_clear()
+
+    assert celery_app.conf.broker_url == "redis://localhost:6379/0"
+    assert celery_app.user_options is get_celery_app().user_options
+    discovered_app = find_app("tci.workers.celery_app:celery_app")
+    assert discovered_app.conf.broker_url == "redis://localhost:6379/0"

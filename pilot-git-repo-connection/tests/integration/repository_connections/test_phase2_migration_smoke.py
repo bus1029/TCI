@@ -39,13 +39,13 @@ def test_phase2_core_migration_round_trip() -> None:
             check=False,
         )
 
-    upgrade_002 = run_alembic("upgrade", "002_repository_ingestion_webhooks")
+    upgrade_002 = run_alembic("upgrade", "002_ingestion_webhooks")
     assert upgrade_002.returncode == 0, upgrade_002.stderr
 
     upgrade_head = run_alembic("upgrade", "head")
     assert upgrade_head.returncode == 0, upgrade_head.stderr
 
-    downgrade_002 = run_alembic("downgrade", "002_repository_ingestion_webhooks")
+    downgrade_002 = run_alembic("downgrade", "002_ingestion_webhooks")
     assert downgrade_002.returncode == 0, downgrade_002.stderr
 
     downgrade_base = run_alembic("downgrade", "base")
