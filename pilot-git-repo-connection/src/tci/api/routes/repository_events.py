@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Header, Request
 from fastapi.responses import JSONResponse
 
 from tci.api.schemas.repository_connection import serialize_repository_event
@@ -18,8 +18,16 @@ router = APIRouter(
 
 
 @router.get("")
-def list_repository_events_route(connection_id: uuid.UUID, request: Request):
-    workspace_id = _extract_workspace_id(request)
+def list_repository_events_route(
+    connection_id: uuid.UUID,
+    request: Request,
+    workspace_header: str | None = Header(
+        default=None,
+        alias="X-TCI-Workspace-Id",
+        description="워크스페이스 UUID",
+    ),
+):
+    workspace_id = _extract_workspace_id(workspace_header)
     if isinstance(workspace_id, JSONResponse):
         return workspace_id
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Header, Request
 from fastapi.responses import JSONResponse
 import uuid
 
@@ -35,9 +35,15 @@ router = APIRouter(prefix="/api/repository-connections", tags=["RepositoryConnec
 
 @router.post("")
 def create_repository_connection_route(
-    payload: CreateRepositoryConnectionRequest, request: Request
+    payload: CreateRepositoryConnectionRequest,
+    request: Request,
+    workspace_header: str | None = Header(
+        default=None,
+        alias="X-TCI-Workspace-Id",
+        description="워크스페이스 UUID",
+    ),
 ):
-    workspace_id = _extract_workspace_id(request)
+    workspace_id = _extract_workspace_id(workspace_header)
     if isinstance(workspace_id, JSONResponse):
         return workspace_id
 
@@ -64,8 +70,16 @@ def create_repository_connection_route(
 
 
 @router.get("/{connection_id}")
-def get_repository_connection_route(connection_id: uuid.UUID, request: Request):
-    workspace_id = _extract_workspace_id(request)
+def get_repository_connection_route(
+    connection_id: uuid.UUID,
+    request: Request,
+    workspace_header: str | None = Header(
+        default=None,
+        alias="X-TCI-Workspace-Id",
+        description="워크스페이스 UUID",
+    ),
+):
+    workspace_id = _extract_workspace_id(workspace_header)
     if isinstance(workspace_id, JSONResponse):
         return workspace_id
 
@@ -86,8 +100,13 @@ def update_repository_connection_route(
     connection_id: uuid.UUID,
     payload: UpdateRepositoryConnectionRequest,
     request: Request,
+    workspace_header: str | None = Header(
+        default=None,
+        alias="X-TCI-Workspace-Id",
+        description="워크스페이스 UUID",
+    ),
 ):
-    workspace_id = _extract_workspace_id(request)
+    workspace_id = _extract_workspace_id(workspace_header)
     if isinstance(workspace_id, JSONResponse):
         return workspace_id
 
@@ -118,8 +137,16 @@ def update_repository_connection_route(
 
 
 @router.post("/{connection_id}/verify")
-def verify_repository_connection_route(connection_id: uuid.UUID, request: Request):
-    workspace_id = _extract_workspace_id(request)
+def verify_repository_connection_route(
+    connection_id: uuid.UUID,
+    request: Request,
+    workspace_header: str | None = Header(
+        default=None,
+        alias="X-TCI-Workspace-Id",
+        description="워크스페이스 UUID",
+    ),
+):
+    workspace_id = _extract_workspace_id(workspace_header)
     if isinstance(workspace_id, JSONResponse):
         return workspace_id
 
@@ -170,8 +197,7 @@ def _problem_response(error: RepositoryConnectionProblem) -> JSONResponse:
     )
 
 
-def _extract_workspace_id(request: Request) -> uuid.UUID | JSONResponse:
-    raw_workspace_id = request.headers.get("X-TCI-Workspace-Id")
+def _extract_workspace_id(raw_workspace_id: str | None) -> uuid.UUID | JSONResponse:
     if not raw_workspace_id:
         return JSONResponse(
             status_code=400,
