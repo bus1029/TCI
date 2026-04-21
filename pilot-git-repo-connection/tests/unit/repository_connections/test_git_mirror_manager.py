@@ -10,22 +10,52 @@ import pytest
 
 from tci.api.problem_details import ProblemCode
 
+_GIT_TEST_HOME: Path | None = None
+_GIT_TEST_XDG_HOME: Path | None = None
+_GIT_TEST_GLOBAL_CONFIG: Path | None = None
 
-def _run_git(command: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
-    env = {
-        **os.environ,
+
+@pytest.fixture(scope="module", autouse=True)
+def _configure_git_test_home(tmp_path_factory: pytest.TempPathFactory) -> None:
+    global _GIT_TEST_HOME, _GIT_TEST_XDG_HOME, _GIT_TEST_GLOBAL_CONFIG
+
+    _GIT_TEST_HOME = tmp_path_factory.mktemp("git-home")
+    _GIT_TEST_XDG_HOME = _GIT_TEST_HOME / ".config"
+    _GIT_TEST_XDG_HOME.mkdir(parents=True, exist_ok=True)
+    _GIT_TEST_GLOBAL_CONFIG = _GIT_TEST_HOME / ".gitconfig"
+    _GIT_TEST_GLOBAL_CONFIG.write_text("", encoding="utf-8")
+
+
+def _git_test_env() -> dict[str, str]:
+    if _GIT_TEST_HOME is None or _GIT_TEST_XDG_HOME is None or _GIT_TEST_GLOBAL_CONFIG is None:
+        raise RuntimeError("Git test environment must be configured before subprocess calls.")
+
+    base_env = {
+        key: value for key, value in os.environ.items() if not key.startswith("GIT_")
+    }
+    return {
+        **base_env,
         "GIT_AUTHOR_NAME": "TCI Test",
         "GIT_AUTHOR_EMAIL": "tci@example.com",
         "GIT_COMMITTER_NAME": "TCI Test",
         "GIT_COMMITTER_EMAIL": "tci@example.com",
+        # Isolate subprocess git calls from the user's broken/global config.
+        "HOME": str(_GIT_TEST_HOME),
+        "XDG_CONFIG_HOME": str(_GIT_TEST_XDG_HOME),
+        "GIT_CONFIG_GLOBAL": str(_GIT_TEST_GLOBAL_CONFIG),
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
     }
+
+
+def _run_git(command: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
         cwd=cwd,
         capture_output=True,
         text=True,
         check=True,
-        env=env,
+        env=_git_test_env(),
     )
 
 
@@ -37,6 +67,7 @@ def _subprocess_git_runner(command: Sequence[str]):
         capture_output=True,
         text=True,
         check=False,
+        env=_git_test_env(),
     )
     return GitCommandResult(
         returncode=completed.returncode,
