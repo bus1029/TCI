@@ -134,6 +134,22 @@ def serialize_sync_run_accepted(*, sync_run_id: uuid.UUID) -> dict[str, str]:
     }
 
 
+def serialize_webhook_secret_issued(
+    *,
+    connection_id: uuid.UUID,
+    webhook_secret: str,
+    webhook_secret_revision_id: uuid.UUID,
+    grace_until: datetime | None,
+) -> dict[str, str | None]:
+    return {
+        "status": "secret_issued",
+        "connectionId": str(connection_id),
+        "webhookSecret": webhook_secret,
+        "webhookSecretRevisionId": str(webhook_secret_revision_id),
+        "graceUntil": _format_datetime(grace_until),
+    }
+
+
 def serialize_code_snapshot_detail(detail) -> dict[str, object]:
     snapshot = detail.snapshot
     planning_input_reference = detail.planning_input_reference

@@ -37,7 +37,7 @@ def test_rotate_webhook_secret_replaces_active_secret_and_starts_grace_window(tm
     )
     rotated_at = datetime.now(tz=UTC)
 
-    rotated_revision = rotate_webhook_secret(
+    rotation_result = rotate_webhook_secret(
         RotateWebhookSecretCommand(
             workspace_id=workspace_id,
             connection_id=connection_id,
@@ -48,10 +48,41 @@ def test_rotate_webhook_secret_replaces_active_secret_and_starts_grace_window(tm
     )
 
     connection = store.connections[connection_id]
-    assert connection.active_webhook_secret_revision_id == rotated_revision.id
+    rotated_revision = store.webhook_secret_revisions[rotation_result.webhook_secret_revision_id]
+    assert connection.active_webhook_secret_revision_id == rotation_result.webhook_secret_revision_id
     assert getattr(rotated_revision.status, "value", rotated_revision.status) == "active"
     assert previous_revision.status == "previous_grace"
     assert previous_revision.grace_until == rotated_at + timedelta(hours=24)
+    assert rotation_result.grace_until == rotated_at + timedelta(hours=24)
+    assert store.webhook_rotation_lock_calls == 1
+
+
+def test_rotate_webhook_secret_returns_null_grace_until_for_first_issue(tmp_path) -> None:
+    from tci.domain.services.rotate_webhook_secret import (
+        RotateWebhookSecretCommand,
+        rotate_webhook_secret,
+    )
+
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+
+    rotation_result = rotate_webhook_secret(
+        RotateWebhookSecretCommand(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+            plaintext_secret="first-secret",
+        ),
+        dependencies=client.app.state.dependencies,
+    )
+
+    assert rotation_result.grace_until is None
+    assert store.webhook_rotation_lock_calls == 1
 
 
 def test_rotation_projection_counts_only_current_previous_secret_revision(

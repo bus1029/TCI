@@ -343,6 +343,96 @@ def test_webhook_refresh_enqueues_sync_only_after_session_commit(
     assert committed["done"] is True
 
 
+def test_issued_webhook_secret_is_accepted_for_subsequent_github_delivery(
+    tmp_path, monkeypatch
+) -> None:
+    import tci.api.routes.repository_connections as repository_connections_routes
+
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    monkeypatch.setattr(
+        repository_connections_routes,
+        "generate_webhook_secret",
+        lambda: "issued-secret-for-webhook",
+    )
+    issue_response = client.post(f"/api/repository-connections/{connection_id}/webhook-secret")
+    store.resolved_ref_commits["main"] = "2" * 40
+
+    headers = build_github_webhook_headers(
+        secret=issue_response.json()["webhookSecret"],
+        payload=build_github_push_payload(after_sha="2" * 40),
+        delivery_id="delivery-issued-secret-001",
+        event_name="push",
+    )
+    headers["content-type"] = "application/json"
+
+    object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
+    monkeypatch.setattr(
+        "tci.api.routes.github_webhooks.create_celery_app",
+        lambda settings: SimpleNamespace(send_task=lambda name, kwargs: None),
+    )
+
+    response = client.post(
+        f"/api/webhooks/github/{connection_id}",
+        content=serialize_github_webhook_payload(
+            build_github_push_payload(after_sha="2" * 40)
+        ),
+        headers=headers,
+    )
+
+    assert issue_response.status_code == 201
+    assert response.status_code == 202
+
+
+def test_reissued_webhook_secret_rotates_active_secret_and_preserves_previous_grace(
+    tmp_path, monkeypatch
+) -> None:
+    import tci.api.routes.repository_connections as repository_connections_routes
+
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    issued = iter(["first-issued-secret", "second-issued-secret"])
+    monkeypatch.setattr(
+        repository_connections_routes,
+        "generate_webhook_secret",
+        lambda: next(issued),
+    )
+
+    first_issue_response = client.post(
+        f"/api/repository-connections/{connection_id}/webhook-secret"
+    )
+    second_issue_response = client.post(
+        f"/api/repository-connections/{connection_id}/webhook-secret"
+    )
+    detail_response = client.get(f"/api/repository-connections/{connection_id}")
+
+    first_revision_id = uuid.UUID(first_issue_response.json()["webhookSecretRevisionId"])
+    second_revision_id = uuid.UUID(second_issue_response.json()["webhookSecretRevisionId"])
+    first_revision = store.webhook_secret_revisions[first_revision_id]
+    second_revision = store.webhook_secret_revisions[second_revision_id]
+
+    assert first_issue_response.status_code == 201
+    assert second_issue_response.status_code == 201
+    assert first_issue_response.json()["webhookSecret"] == "first-issued-secret"
+    assert second_issue_response.json()["webhookSecret"] == "second-issued-secret"
+    assert second_issue_response.json()["graceUntil"] is not None
+    assert getattr(first_revision.status, "value", first_revision.status) == "previous_grace"
+    assert getattr(second_revision.status, "value", second_revision.status) == "active"
+    assert detail_response.json()["webhookHealth"]["rotationState"] == "grace_active"
+
+
 def test_webhook_refresh_marks_event_and_sync_run_failed_when_enqueue_fails_after_commit(
     tmp_path, monkeypatch
 ) -> None:
