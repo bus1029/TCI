@@ -130,6 +130,7 @@ class InMemoryRepositoryStore:
     )
     sync_runs: dict[uuid.UUID, RepositorySyncRun] = field(default_factory=dict)
     snapshots: dict[uuid.UUID, CodeSnapshot] = field(default_factory=dict)
+    webhook_rotation_lock_calls: int = 0
     resolver_requires_bound_credential: bool = False
     auth_failure_ref_names: set[str] = field(default_factory=set)
     missing_ref_names: set[str] = field(default_factory=set)
@@ -209,6 +210,12 @@ class FakeRepositoryConnectionRepository:
         if connection is None or connection.workspace_id != workspace_id:
             return None
         return connection
+
+    def get_for_update(
+        self, *, workspace_id: uuid.UUID, connection_id: uuid.UUID
+    ) -> RepositoryConnection | None:
+        self._store.webhook_rotation_lock_calls += 1
+        return self.get(workspace_id=workspace_id, connection_id=connection_id)
 
     def get_any(self, *, connection_id: uuid.UUID) -> RepositoryConnection | None:
         return self._store.connections.get(connection_id)

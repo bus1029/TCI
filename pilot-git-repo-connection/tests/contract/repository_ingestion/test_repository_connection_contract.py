@@ -77,6 +77,48 @@ def test_openapi_documents_workspace_header_for_repository_connection_routes(tmp
             "description": "워크스페이스 UUID",
         }
     ]
+    webhook_secret_parameters = openapi_response.json()["paths"][
+        "/api/repository-connections/{connection_id}/webhook-secret"
+    ]["post"]["parameters"]
+    assert webhook_secret_parameters == [
+        {
+            "name": "connection_id",
+            "in": "path",
+            "required": True,
+            "schema": {"type": "string", "format": "uuid", "title": "Connection Id"},
+        },
+        {
+            "name": "X-TCI-Workspace-Id",
+            "in": "header",
+            "required": False,
+            "schema": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "description": "워크스페이스 UUID",
+                "title": "X-Tci-Workspace-Id",
+            },
+            "description": "워크스페이스 UUID",
+        },
+    ]
+
+
+def test_webhook_secret_route_requires_workspace_header(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = create_response.json()["id"]
+    client.headers.pop("X-TCI-Workspace-Id")
+
+    response = client.post(f"/api/repository-connections/{connection_id}/webhook-secret")
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "X-TCI-Workspace-Id 헤더가 필요합니다.",
+    }
 
 
 def test_get_connection_detail_returns_null_last_processed_event_and_traceability(
@@ -191,6 +233,87 @@ def test_get_connection_detail_exposes_webhook_rotation_projection(tmp_path, mon
         "previousSecretDeliveriesDuringGrace": 1,
         "lastPreviousSecretAcceptedAt": detail_response.json()["lastProcessedEventAt"],
     }
+
+
+def test_issue_webhook_secret_returns_one_time_plaintext_without_leaking_it_in_detail(
+    tmp_path, monkeypatch
+) -> None:
+    import tci.api.routes.repository_connections as repository_connections_routes
+
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = create_response.json()["id"]
+    monkeypatch.setattr(
+        repository_connections_routes,
+        "generate_webhook_secret",
+        lambda: "issued-secret-once",
+    )
+
+    issue_response = client.post(
+        f"/api/repository-connections/{connection_id}/webhook-secret"
+    )
+    detail_response = client.get(f"/api/repository-connections/{connection_id}")
+
+    assert issue_response.status_code == 201
+    assert issue_response.json() == {
+        "status": "secret_issued",
+        "connectionId": connection_id,
+        "webhookSecret": "issued-secret-once",
+        "webhookSecretRevisionId": issue_response.json()["webhookSecretRevisionId"],
+        "graceUntil": None,
+    }
+    assert uuid.UUID(issue_response.json()["webhookSecretRevisionId"])
+    detail_payload = detail_response.json()
+    assert "issued-secret-once" not in str(detail_payload)
+    assert detail_payload["webhookHealth"]["rotationState"] == "not_rotating"
+
+
+def test_issue_webhook_secret_returns_structured_error_when_encryption_is_unavailable(
+    tmp_path, monkeypatch
+) -> None:
+    import tci.api.routes.repository_connections as repository_connections_routes
+
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = create_response.json()["id"]
+    monkeypatch.setattr(
+        repository_connections_routes,
+        "generate_webhook_secret",
+        lambda: "secret-that-cannot-be-encrypted",
+    )
+    object.__setattr__(client.app.state.settings, "credential_encryption_key", None)
+
+    response = client.post(f"/api/repository-connections/{connection_id}/webhook-secret")
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "CONNECTION_AUTH_FAILED",
+        "message": "저장소 자격 증명을 사용할 수 없습니다.",
+    }
+
+
+def test_issue_webhook_secret_returns_not_found_before_encryption_failure_for_missing_connection(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+    object.__setattr__(client.app.state.settings, "credential_encryption_key", None)
+
+    response = client.post(f"/api/repository-connections/{uuid.uuid4()}/webhook-secret")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "저장소 연결을 찾을 수 없습니다."}
 
 
 def test_patch_connection_updates_default_ref(tmp_path) -> None:

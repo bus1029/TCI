@@ -78,6 +78,19 @@ class RepositoryConnectionRepository:
         )
         return self._session.scalar(statement)
 
+    def get_for_update(
+        self, *, workspace_id: uuid.UUID, connection_id: uuid.UUID
+    ) -> RepositoryConnection | None:
+        statement = (
+            select(RepositoryConnection)
+            .where(
+                RepositoryConnection.id == connection_id,
+                RepositoryConnection.workspace_id == workspace_id,
+            )
+            .with_for_update()
+        )
+        return self._session.scalar(statement)
+
     def get_any(self, *, connection_id: uuid.UUID) -> RepositoryConnection | None:
         statement = (
             select(RepositoryConnection)

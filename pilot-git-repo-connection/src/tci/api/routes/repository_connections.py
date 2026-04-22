@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import JSONResponse
 import uuid
@@ -11,6 +12,7 @@ from tci.api.schemas.repository_connection import (
     serialize_repository_connection,
     serialize_repository_connection_detail,
     serialize_verification_accepted,
+    serialize_webhook_secret_issued,
 )
 from tci.infrastructure.queue.repository_ingestion_tasks import (
     VERIFY_REPOSITORY_CONNECTION_TASK_NAME,
@@ -24,6 +26,10 @@ from tci.domain.services.get_repository_connection_detail import (
     get_repository_connection_detail,
 )
 from tci.domain.services.repository_connection_support import RepositoryConnectionProblem
+from tci.domain.services.rotate_webhook_secret import (
+    RotateWebhookSecretCommand,
+    rotate_webhook_secret,
+)
 from tci.domain.services.update_default_ref import (
     UpdateDefaultRefCommand,
     update_default_ref,
@@ -31,6 +37,10 @@ from tci.domain.services.update_default_ref import (
 
 
 router = APIRouter(prefix="/api/repository-connections", tags=["RepositoryConnections"])
+
+
+def generate_webhook_secret() -> str:
+    return secrets.token_urlsafe(48)
 
 
 @router.post("")
@@ -183,6 +193,46 @@ def verify_repository_connection_route(
     return JSONResponse(
         status_code=202,
         content=serialize_verification_accepted(connection_id=connection_id),
+    )
+
+
+@router.post("/{connection_id}/webhook-secret")
+def issue_repository_webhook_secret_route(
+    connection_id: uuid.UUID,
+    request: Request,
+    workspace_header: str | None = Header(
+        default=None,
+        alias="X-TCI-Workspace-Id",
+        description="워크스페이스 UUID",
+    ),
+):
+    workspace_id = _extract_workspace_id(workspace_header)
+    if isinstance(workspace_id, JSONResponse):
+        return workspace_id
+
+    plaintext_secret = generate_webhook_secret()
+    try:
+        rotation_result = rotate_webhook_secret(
+            RotateWebhookSecretCommand(
+                workspace_id=workspace_id,
+                connection_id=connection_id,
+                plaintext_secret=plaintext_secret,
+            ),
+            dependencies=request.app.state.dependencies,
+        )
+    except LookupError:
+        return JSONResponse(status_code=404, content={"detail": "저장소 연결을 찾을 수 없습니다."})
+    except RepositoryConnectionProblem as error:
+        return _problem_response(error)
+
+    return JSONResponse(
+        status_code=201,
+        content=serialize_webhook_secret_issued(
+            connection_id=connection_id,
+            webhook_secret=plaintext_secret,
+            webhook_secret_revision_id=rotation_result.webhook_secret_revision_id,
+            grace_until=rotation_result.grace_until,
+        ),
     )
 
 

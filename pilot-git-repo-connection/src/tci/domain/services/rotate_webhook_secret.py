@@ -20,6 +20,12 @@ class RotateWebhookSecretCommand:
 
 
 @dataclass(frozen=True, slots=True)
+class RotateWebhookSecretResult:
+    webhook_secret_revision_id: uuid.UUID
+    grace_until: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
 class WebhookSecretRotationProjection:
     grace_until: datetime | None
     previous_secret_deliveries_during_grace: int
@@ -32,20 +38,20 @@ def rotate_webhook_secret(command: RotateWebhookSecretCommand, *, dependencies):
 
     rotated_at = command.rotated_at or datetime.now(tz=UTC)
     grace_until = rotated_at + WEBHOOK_SECRET_GRACE_PERIOD
-    encrypted_secret = encrypt_secret_for_storage(
-        command.plaintext_secret,
-        settings=dependencies.settings,
-    )
 
     with dependencies.session_factory() as session:
         connection_repository = dependencies.repository_connection_repository_factory(session)
         webhook_secret_repository = dependencies.webhook_secret_repository_factory(session)
-        connection = connection_repository.get(
+        connection = connection_repository.get_for_update(
             workspace_id=command.workspace_id,
             connection_id=command.connection_id,
         )
         if connection is None:
             raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        encrypted_secret = encrypt_secret_for_storage(
+            command.plaintext_secret,
+            settings=dependencies.settings,
+        )
 
         webhook_secret_repository.revoke_previous_grace_for_connection(
             connection_id=command.connection_id
@@ -70,7 +76,14 @@ def rotate_webhook_secret(command: RotateWebhookSecretCommand, *, dependencies):
             connection_id=command.connection_id,
             webhook_secret_revision_id=rotated_revision.id,
         )
-        return rotated_revision
+        return RotateWebhookSecretResult(
+            webhook_secret_revision_id=rotated_revision.id,
+            grace_until=(
+                None
+                if active_revision is None
+                else grace_until
+            ),
+        )
 
 
 def build_webhook_secret_rotation_projection(
