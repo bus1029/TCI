@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import uuid
 
 from celery import Celery
+from celery.utils.log import get_task_logger
 from kombu import Queue
 
 from tci.infrastructure.persistence.repository_event_cursor_repository import (
@@ -30,6 +31,8 @@ REPOSITORY_INGESTION_TASK_ROUTES = {
     },
     RUN_WEBHOOK_SYNC_TASK_NAME: {"queue": REPOSITORY_INGESTION_QUEUE_NAME},
 }
+
+logger = get_task_logger(__name__)
 
 
 def build_repository_ingestion_queues() -> tuple[Queue, ...]:
@@ -101,18 +104,129 @@ def _run_manual_snapshot_sync_task(
     if not workspace_id or not connection_id or not sync_run_id:
         return result
 
-    dependencies = _build_snapshot_dependencies()
-    build_command_type, build_service = _load_build_snapshot_service()
-    build_service(
-        build_command_type(
-            workspace_id=uuid.UUID(workspace_id),
-            connection_id=uuid.UUID(connection_id),
-            sync_run_id=uuid.UUID(sync_run_id),
-        ),
-        dependencies=dependencies,
+    logger.info(
+        "starting manual snapshot sync workspace_id=%s connection_id=%s sync_run_id=%s",
+        workspace_id,
+        connection_id,
+        sync_run_id,
     )
+    connection_uuid: uuid.UUID | None = None
+    sync_run_uuid: uuid.UUID | None = None
+    workspace_uuid: uuid.UUID | None = None
+    dependencies = None
+    try:
+        workspace_uuid = uuid.UUID(workspace_id)
+        connection_uuid = uuid.UUID(connection_id)
+        sync_run_uuid = uuid.UUID(sync_run_id)
+        dependencies = _build_snapshot_dependencies()
+        build_command_type, build_service = _load_build_snapshot_service()
+        build_service(
+            build_command_type(
+                workspace_id=workspace_uuid,
+                connection_id=connection_uuid,
+                sync_run_id=sync_run_uuid,
+            ),
+            dependencies=dependencies,
+        )
+    except Exception as error:
+        _mark_manual_snapshot_sync_failed(
+            dependencies=dependencies,
+            workspace_id=workspace_uuid,
+            connection_id=connection_uuid,
+            sync_run_id=sync_run_uuid,
+            error=error,
+        )
+        logger.exception(
+            "manual snapshot sync failed workspace_id=%s connection_id=%s sync_run_id=%s error=%s",
+            workspace_id,
+            connection_id,
+            sync_run_id,
+            error,
+        )
+        raise
     result["status"] = "completed"
     return result
+
+
+def _mark_manual_snapshot_sync_failed(
+    *,
+    dependencies,
+    workspace_id: uuid.UUID | None,
+    connection_id: uuid.UUID | None,
+    sync_run_id: uuid.UUID | None,
+    error: Exception,
+) -> None:
+    if (
+        workspace_id is None
+        or connection_id is None
+        or sync_run_id is None
+    ):
+        return
+
+    if dependencies is None:
+        try:
+            dependencies = _build_manual_snapshot_failure_dependencies()
+        except Exception:
+            logger.exception(
+                "manual snapshot failure fallback init failed "
+                "workspace_id=%s connection_id=%s sync_run_id=%s",
+                workspace_id,
+                connection_id,
+                sync_run_id,
+            )
+            return
+
+    if getattr(dependencies, "session_factory", None) is None:
+        return
+
+    failure_message = str(error) or "수동 스냅샷 동기화 준비 중 예기치 못한 오류가 발생했습니다."
+    failed_at = datetime.now(tz=UTC)
+    try:
+        with dependencies.session_factory() as session:
+            sync_run_repository = dependencies.repository_sync_run_repository_factory(
+                session
+            )
+            connection_repository = dependencies.repository_connection_repository_factory(
+                session
+            )
+            sync_run = sync_run_repository.get(
+                connection_id=connection_id,
+                sync_run_id=sync_run_id,
+            )
+            if sync_run is None or sync_run.status is not None and sync_run.status.value == "failed":
+                return
+            sync_run_repository.mark_failed(
+                connection_id=connection_id,
+                sync_run_id=sync_run_id,
+                failure_code=_manual_snapshot_failure_code(error),
+                failure_message=failure_message,
+                completed_at=failed_at,
+            )
+            connection_repository.record_sync_failure(
+                workspace_id=workspace_id,
+                connection_id=connection_id,
+                failed_at=failed_at,
+                status=None,
+            )
+    except Exception:
+        logger.warning(
+            "best-effort manual snapshot failure bookkeeping failed "
+            "workspace_id=%s connection_id=%s sync_run_id=%s",
+            workspace_id,
+            connection_id,
+            sync_run_id,
+        )
+
+
+def _manual_snapshot_failure_code(error: Exception):
+    from tci.infrastructure.persistence.models import SyncFailureCode
+
+    problem_code = getattr(error, "problem_code", None)
+    if problem_code is not None and getattr(problem_code, "value", None) == "DEFAULT_REF_NOT_FOUND":
+        return SyncFailureCode.REF_NOT_FOUND
+    if problem_code is not None and getattr(problem_code, "value", None) == "CONNECTION_AUTH_FAILED":
+        return SyncFailureCode.AUTH_FAILED
+    return SyncFailureCode.SNAPSHOT_WRITE_FAILED
 
 
 def _run_webhook_sync_task(
@@ -262,6 +376,26 @@ def _build_snapshot_dependencies():
     from tci.settings import get_settings
 
     return build_app_dependencies(get_settings())
+
+
+def _build_manual_snapshot_failure_dependencies():
+    from types import SimpleNamespace
+
+    from tci.infrastructure.persistence.repository_connection_repository import (
+        RepositoryConnectionRepository,
+    )
+    from tci.infrastructure.persistence.repository_sync_run_repository import (
+        RepositorySyncRunRepository,
+    )
+    from tci.infrastructure.persistence.session import build_session_factory
+    from tci.settings import get_settings
+
+    settings = get_settings()
+    return SimpleNamespace(
+        session_factory=build_session_factory(settings),
+        repository_connection_repository_factory=RepositoryConnectionRepository,
+        repository_sync_run_repository_factory=RepositorySyncRunRepository,
+    )
 
 
 def _restore_event_cursor_after_failure(
