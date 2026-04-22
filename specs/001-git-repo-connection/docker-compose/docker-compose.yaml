@@ -1,0 +1,36 @@
+name: tci-git-repo-connection
+
+services:
+  postgres:
+    image: postgres:18.3
+    container_name: tci-postgres
+    restart: unless-stopped
+    shm_size: 256mb
+    environment:
+      POSTGRES_USER: tci
+      POSTGRES_PASSWORD: tci
+      POSTGRES_DB: tci
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ${TCI_DOCKER_DATA_ROOT}/postgresql:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tci -d tci"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8.6.2
+    container_name: tci-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - ${TCI_DOCKER_DATA_ROOT}/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
