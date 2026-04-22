@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+import logging
 import re
 
 from tci.api.problem_details import ProblemCode
-from tci.infrastructure.persistence.models import DefaultRefType
+from tci.infrastructure.persistence.models import DefaultRefType, RefType
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,13 +48,28 @@ class GitRefResolver:
         self,
         *,
         remote_url: str,
-        ref_type: DefaultRefType,
+        ref_type: DefaultRefType | RefType | str,
         ref_name: str,
     ) -> ResolvedGitRef:
-        refspecs = _build_refspecs(ref_type=ref_type, ref_name=ref_name)
+        normalized_ref_type = _normalize_ref_type(ref_type)
+        refspecs = _build_refspecs(ref_type=normalized_ref_type, ref_name=ref_name)
         result = self._runner(("git", "ls-remote", remote_url, *refspecs))
+        sanitized_remote_url = _sanitize_remote_url(remote_url)
+        sanitized_stdout = _sanitize_git_io(result.stdout)
+        sanitized_stderr = _sanitize_git_io(result.stderr)
 
         if result.returncode != 0:
+            logger.warning(
+                "git ls-remote failed remote_url=%s ref_type=%s ref_name=%s refspecs=%s "
+                "returncode=%s stdout=%r stderr=%r",
+                sanitized_remote_url,
+                normalized_ref_type.value,
+                ref_name,
+                list(refspecs),
+                result.returncode,
+                sanitized_stdout,
+                sanitized_stderr,
+            )
             if _looks_like_auth_failure(result.stderr):
                 raise GitConnectionAuthError()
             raise RuntimeError(
@@ -66,22 +84,33 @@ class GitRefResolver:
                 sha_by_ref[resolved_ref] = sha
 
         commit_sha = _select_commit_sha(
-            ref_type=ref_type,
+            ref_type=normalized_ref_type,
             ref_name=ref_name,
             sha_by_ref=sha_by_ref,
         )
         if commit_sha is not None:
             return ResolvedGitRef(
-                ref_type=ref_type,
+                ref_type=normalized_ref_type,
                 ref_name=ref_name,
                 commit_sha=commit_sha,
             )
 
+        logger.warning(
+            "git ref not found after ls-remote remote_url=%s ref_type=%s ref_name=%s "
+            "refspecs=%s returncode=%s stdout=%r stderr=%r",
+            sanitized_remote_url,
+            normalized_ref_type.value,
+            ref_name,
+            list(refspecs),
+            result.returncode,
+            sanitized_stdout,
+            sanitized_stderr,
+        )
         raise GitRefNotFoundError(ref_name)
 
 
 def _build_refspecs(*, ref_type: DefaultRefType, ref_name: str) -> tuple[str, ...]:
-    if ref_type is DefaultRefType.BRANCH:
+    if ref_type == DefaultRefType.BRANCH:
         return (f"refs/heads/{ref_name}",)
     tag_ref = f"refs/tags/{ref_name}"
     return (tag_ref, f"{tag_ref}^{{}}")
@@ -93,11 +122,19 @@ def _select_commit_sha(
     ref_name: str,
     sha_by_ref: dict[str, str],
 ) -> str | None:
-    if ref_type is DefaultRefType.BRANCH:
+    if ref_type == DefaultRefType.BRANCH:
         return sha_by_ref.get(f"refs/heads/{ref_name}")
 
     tag_ref = f"refs/tags/{ref_name}"
     return sha_by_ref.get(f"{tag_ref}^{{}}") or sha_by_ref.get(tag_ref)
+
+
+def _normalize_ref_type(ref_type: DefaultRefType | RefType | str) -> DefaultRefType:
+    raw_value = ref_type.value if isinstance(ref_type, (DefaultRefType, RefType)) else ref_type
+    try:
+        return DefaultRefType(raw_value)
+    except ValueError as error:
+        raise RuntimeError(f"지원하지 않는 ref 타입입니다: {raw_value}") from error
 
 
 def _looks_like_auth_failure(stderr: str) -> bool:
@@ -129,3 +166,14 @@ def _sanitize_git_error_detail(detail: str) -> str:
         sanitized,
         flags=re.IGNORECASE,
     )
+
+
+def _sanitize_remote_url(remote_url: str) -> str:
+    return _sanitize_git_error_detail(remote_url)
+
+
+def _sanitize_git_io(detail: str, *, limit: int = 500) -> str:
+    sanitized = _sanitize_git_error_detail(detail).strip()
+    if len(sanitized) <= limit:
+        return sanitized
+    return f"{sanitized[:limit]}...(truncated)"

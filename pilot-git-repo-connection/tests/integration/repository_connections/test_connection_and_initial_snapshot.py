@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 import uuid
 
 import pytest
 
+from tci.infrastructure.git.git_ref_resolver import GitCommandResult, GitRefResolver
 from tests.support.repository_connection_testkit import (
     create_connection_payload,
     create_test_client,
@@ -298,6 +300,66 @@ def test_snapshot_build_uses_requested_ref_captured_when_sync_run_was_created(
     )
 
     assert snapshot.requested_ref_name == "main"
+
+
+def test_snapshot_build_with_real_git_ref_resolver_treats_sync_run_branch_as_branch(
+    tmp_path,
+) -> None:
+    from tci.domain.services.build_code_snapshot import (
+        BuildCodeSnapshotCommand,
+        build_code_snapshot,
+    )
+    from tci.domain.services.create_initial_snapshot import (
+        CreateInitialSnapshotCommand,
+        create_initial_snapshot,
+    )
+
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    captured_commands: list[Sequence[str]] = []
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        captured_commands.append(command)
+        assert command[-1] == "refs/heads/main"
+        return GitCommandResult(
+            returncode=0,
+            stdout="c" * 40 + "\trefs/heads/main\n",
+            stderr="",
+        )
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    sync_run = create_initial_snapshot(
+        CreateInitialSnapshotCommand(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        ),
+        dependencies=client.app.state.dependencies,
+    )
+
+    object.__setattr__(
+        client.app.state.dependencies,
+        "git_ref_resolver",
+        GitRefResolver(runner=runner),
+    )
+    store.mirror_snapshot_entries = (("src/main.py", b"print('branch')\n"),)
+    snapshot = build_code_snapshot(
+        BuildCodeSnapshotCommand(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+            sync_run_id=sync_run.id,
+        ),
+        dependencies=client.app.state.dependencies,
+    )
+
+    assert snapshot.requested_ref_name == "main"
+    assert snapshot.resolved_commit_sha == "c" * 40
+    assert captured_commands
+    assert all("refs/tags/main" not in command for command in captured_commands)
 
 
 def test_snapshot_build_cleans_up_archive_when_manifest_write_fails(tmp_path) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Sequence
+import logging
 from pathlib import Path
 import subprocess
 import uuid
@@ -10,7 +11,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from tci.api.problem_details import ProblemCode
-from tci.infrastructure.persistence.models import DefaultRefType, PlanningInputSourceType
+from tci.infrastructure.persistence.models import (
+    DefaultRefType,
+    PlanningInputSourceType,
+    RefType,
+)
 
 _GIT_TEST_HOME: Path | None = None
 _GIT_TEST_XDG_HOME: Path | None = None
@@ -434,6 +439,61 @@ def test_git_ref_resolver_raises_default_ref_not_found() -> None:
     assert error_info.value.problem_code is ProblemCode.DEFAULT_REF_NOT_FOUND
 
 
+def test_git_ref_resolver_logs_missing_ref_details(caplog: pytest.LogCaptureFixture) -> None:
+    from tci.infrastructure.git.git_ref_resolver import (
+        GitCommandResult,
+        GitRefNotFoundError,
+        GitRefResolver,
+    )
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        return GitCommandResult(
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+    resolver = GitRefResolver(runner=runner)
+
+    with caplog.at_level(
+        logging.WARNING, logger="tci.infrastructure.git.git_ref_resolver"
+    ):
+        with pytest.raises(GitRefNotFoundError) as error_info:
+            resolver.resolve(
+                remote_url="https://github.com/example/repo.git",
+                ref_type=DefaultRefType.BRANCH,
+                ref_name="main",
+            )
+
+    assert error_info.value.problem_code is ProblemCode.DEFAULT_REF_NOT_FOUND
+    assert "git ref not found after ls-remote" in caplog.text
+    assert "refs/heads/main" in caplog.text
+    assert "stdout=''" in caplog.text
+
+
+def test_git_ref_resolver_normalizes_branch_ref_type_from_sync_run() -> None:
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult, GitRefResolver
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        assert command[-1] == "refs/heads/main"
+        return GitCommandResult(
+            returncode=0,
+            stdout="0123456789abcdef0123456789abcdef01234567\trefs/heads/main\n",
+            stderr="",
+        )
+
+    resolver = GitRefResolver(runner=runner)
+
+    resolved = resolver.resolve(
+        remote_url="https://github.com/example/repo.git",
+        ref_type=RefType.BRANCH,
+        ref_name="main",
+    )
+
+    assert resolved.ref_type is DefaultRefType.BRANCH
+    assert resolved.commit_sha == "0123456789abcdef0123456789abcdef01234567"
+
+
 def test_git_ref_resolver_maps_permission_denied_to_connection_auth_failed() -> None:
     from tci.infrastructure.git.git_ref_resolver import GitCommandResult, GitConnectionAuthError
     from tci.infrastructure.git.git_ref_resolver import GitRefResolver
@@ -458,6 +518,38 @@ def test_git_ref_resolver_maps_permission_denied_to_connection_auth_failed() -> 
         )
 
     assert error_info.value.problem_code is ProblemCode.CONNECTION_AUTH_FAILED
+
+
+def test_git_ref_resolver_logs_redacted_git_failure_details(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult, GitRefResolver
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        return GitCommandResult(
+            returncode=128,
+            stdout="",
+            stderr=(
+                "fatal: could not access "
+                "https://x-access-token:secret-token@github.com/acme/private-repo.git"
+            ),
+        )
+
+    resolver = GitRefResolver(runner=runner)
+
+    with caplog.at_level(
+        logging.WARNING, logger="tci.infrastructure.git.git_ref_resolver"
+    ):
+        with pytest.raises(RuntimeError):
+            resolver.resolve(
+                remote_url="https://x-access-token:secret-token@github.com/acme/private-repo.git",
+                ref_type=DefaultRefType.BRANCH,
+                ref_name="main",
+            )
+
+    assert "git ls-remote failed" in caplog.text
+    assert "[REDACTED]" in caplog.text
+    assert "secret-token" not in caplog.text
 
 
 def test_git_ref_resolver_maps_repository_not_found_to_connection_auth_failed() -> None:
