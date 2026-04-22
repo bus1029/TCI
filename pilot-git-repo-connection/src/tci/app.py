@@ -8,6 +8,9 @@ from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from tci.api.routes.planning_input_references import (
+    router as planning_input_references_router,
+)
 from tci.api.routes.repository_connections import (
     router as repository_connections_router,
 )
@@ -137,6 +140,7 @@ def create_app(
     app.state.templates = Jinja2Templates(
         directory=str(resolved_settings.template_root)
     )
+    app.include_router(planning_input_references_router)
     app.include_router(repository_connections_router)
     app.include_router(repository_events_router)
     app.include_router(github_webhooks_router)

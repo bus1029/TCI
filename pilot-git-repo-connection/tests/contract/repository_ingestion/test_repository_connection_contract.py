@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 import uuid
 from types import SimpleNamespace
+
+from sqlalchemy.exc import OperationalError
 
 from tci.infrastructure.persistence.models import RepositoryConnectionStatus
 from tests.support.repository_connection_testkit import (
     build_github_push_payload,
     build_github_webhook_headers,
     create_connection_payload,
+    create_planning_input_reference_payload,
     create_test_client,
     seed_rotated_webhook_secret_with_grace,
     seed_planning_input_reference,
@@ -51,6 +55,86 @@ def test_repository_connection_routes_require_workspace_header(tmp_path) -> None
     assert response.json() == {
         "code": "INVALID_INPUT",
         "message": "X-TCI-Workspace-Id 헤더가 필요합니다.",
+    }
+
+
+def test_create_planning_input_reference_route_requires_workspace_header(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, _store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    client.headers.pop("X-TCI-Workspace-Id")
+
+    response = client.post(
+        "/api/planning-input-references",
+        json=create_planning_input_reference_payload(workspace_id=workspace_id),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "X-TCI-Workspace-Id 헤더가 필요합니다.",
+    }
+
+
+def test_create_planning_input_reference_rejects_workspace_header_body_mismatch(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    header_workspace_id = uuid.uuid4()
+    client, _store = create_test_client(tmp_path=tmp_path, workspace_id=header_workspace_id)
+
+    response = client.post(
+        "/api/planning-input-references",
+        json=create_planning_input_reference_payload(workspace_id=workspace_id),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "workspaceId 본문 값과 X-TCI-Workspace-Id 헤더가 일치해야 합니다.",
+    }
+
+
+def test_create_planning_input_reference_returns_503_without_database_session(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, _store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    object.__setattr__(client.app.state.dependencies, "session_factory", None)
+
+    response = client.post(
+        "/api/planning-input-references",
+        json=create_planning_input_reference_payload(workspace_id=workspace_id),
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "planning input reference를 생성하려면 데이터베이스를 사용할 수 있어야 합니다."
+    }
+
+
+def test_create_planning_input_reference_returns_503_when_database_is_unreachable(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, _store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    @contextmanager
+    def unavailable_session_factory():
+        raise OperationalError("SELECT 1", {}, RuntimeError("database down"))
+        yield object()
+
+    object.__setattr__(
+        client.app.state.dependencies,
+        "session_factory",
+        unavailable_session_factory,
+    )
+
+    response = client.post(
+        "/api/planning-input-references",
+        json=create_planning_input_reference_payload(workspace_id=workspace_id),
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "planning input reference를 생성하려면 데이터베이스를 사용할 수 있어야 합니다."
     }
 
 
@@ -99,6 +183,25 @@ def test_openapi_documents_workspace_header_for_repository_connection_routes(tmp
             "description": "워크스페이스 UUID",
         },
     ]
+    planning_input_post = openapi_response.json()["paths"]["/api/planning-input-references"][
+        "post"
+    ]
+    assert planning_input_post["parameters"] == [
+        {
+            "name": "X-TCI-Workspace-Id",
+            "in": "header",
+            "required": True,
+            "schema": {
+                "type": "string",
+                "title": "X-Tci-Workspace-Id",
+                "description": "워크스페이스 UUID",
+            },
+            "description": "워크스페이스 UUID",
+        }
+    ]
+    assert planning_input_post["responses"]["201"]["content"]["application/json"]["schema"][
+        "$ref"
+    ] == "#/components/schemas/PlanningInputReferenceResponse"
 
 
 def test_webhook_secret_route_requires_workspace_header(tmp_path) -> None:
@@ -118,6 +221,71 @@ def test_webhook_secret_route_requires_workspace_header(tmp_path) -> None:
     assert response.json() == {
         "code": "INVALID_INPUT",
         "message": "X-TCI-Workspace-Id 헤더가 필요합니다.",
+    }
+
+
+def test_create_planning_input_reference_returns_traceable_reference_payload(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    response = client.post(
+        "/api/planning-input-references",
+        json=create_planning_input_reference_payload(
+            workspace_id=workspace_id,
+            source_title="GitHub 저장소 연결 테스트",
+            source_reference="manual://integration-docs",
+        ),
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert uuid.UUID(payload["id"])
+    assert payload["workspaceId"] == str(workspace_id)
+    assert payload["sourceType"] == "user_request"
+    assert payload["sourceTitle"] == "GitHub 저장소 연결 테스트"
+    assert payload["sourceReference"] == "manual://integration-docs"
+    assert payload["approvedSpecPath"] == "specs/001-git-repo-connection/spec.md"
+    assert payload["approvedPlanPath"] == "specs/001-git-repo-connection/plan.md"
+    assert payload["createdAt"] is not None
+    assert uuid.UUID(payload["id"]) in store.planning_input_references
+
+
+def test_create_planning_input_reference_rejects_invalid_feature_paths(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, _store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    response = client.post(
+        "/api/planning-input-references",
+        json=create_planning_input_reference_payload(
+            workspace_id=workspace_id,
+            approved_spec_path="specs/001-git-repo-connection/spec.md",
+            approved_plan_path="specs/002-other-feature/plan.md",
+        ),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "승인된 spec/plan 경로는 같은 기능 디렉터리를 가리켜야 합니다.",
+    }
+
+
+def test_create_planning_input_reference_rejects_unknown_source_type(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, _store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    response = client.post(
+        "/api/planning-input-references",
+        json=create_planning_input_reference_payload(
+            workspace_id=workspace_id,
+            source_type="unknown_source",
+        ),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "sourceType은 user_request, planning_brief, imported_note 중 하나여야 합니다.",
     }
 
 

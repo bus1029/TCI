@@ -26,6 +26,10 @@ from tci.infrastructure.git.git_ref_resolver import (
     GitRefNotFoundError,
     ResolvedGitRef,
 )
+from tci.infrastructure.persistence.code_snapshot_repository import CodeSnapshotRepository
+from tci.infrastructure.persistence.credential_revision_repository import (
+    CredentialRevisionRepository,
+)
 from tci.infrastructure.persistence.models import (
     CodeSnapshot,
     CodeSnapshotFile,
@@ -49,6 +53,26 @@ from tci.infrastructure.persistence.models import (
     SyncTriggerType,
     WebhookHealthState,
     WebhookRejectionReason,
+)
+from tci.infrastructure.persistence.repository_connection_repository import (
+    RepositoryConnectionRepository,
+)
+from tci.infrastructure.persistence.repository_event_cursor_repository import (
+    RepositoryEventCursorRepository,
+)
+from tci.infrastructure.persistence.repository_event_repository import (
+    RepositoryEventRepository,
+)
+from tci.infrastructure.persistence.planning_input_reference_repository import (
+    PlanningInputReferenceRepository,
+)
+from tci.infrastructure.persistence.repository_sync_run_repository import (
+    RepositorySyncRunRepository,
+)
+from tci.infrastructure.persistence.scope_rule_repository import ScopeRuleRepository
+from tci.infrastructure.persistence.session import build_session_factory
+from tci.infrastructure.persistence.webhook_secret_repository import (
+    WebhookSecretRepository,
 )
 from tci.infrastructure.snapshots.snapshot_archive_store import (
     SnapshotArchiveEntryDraft,
@@ -146,6 +170,24 @@ class InMemoryRepositoryStore:
 class FakePlanningInputReferenceRepository:
     def __init__(self, store: InMemoryRepositoryStore) -> None:
         self._store = store
+
+    def create(self, draft) -> PlanningInputReference:
+        PlanningInputReferenceRepository._validate_feature_paths(
+            spec_path=draft.approved_spec_path,
+            plan_path=draft.approved_plan_path,
+        )
+        reference = PlanningInputReference(
+            id=uuid.uuid4(),
+            workspace_id=draft.workspace_id,
+            source_type=draft.source_type,
+            source_title=draft.source_title,
+            source_reference=draft.source_reference,
+            approved_spec_path=draft.approved_spec_path,
+            approved_plan_path=draft.approved_plan_path,
+            created_at=now_utc(),
+        )
+        self._store.planning_input_references[reference.id] = reference
+        return reference
 
     def get(
         self, *, workspace_id: uuid.UUID, reference_id: uuid.UUID
@@ -1096,44 +1138,69 @@ def create_test_client(
     tmp_path: Path,
     workspace_id: uuid.UUID,
     store: InMemoryRepositoryStore | None = None,
+    use_real_repositories: bool = False,
+    database_url: str | None = None,
 ) -> tuple[TestClient, InMemoryRepositoryStore]:
     store = store or InMemoryRepositoryStore()
-    settings = _load_test_settings(tmp_path)
+    settings = _load_test_settings(tmp_path, database_url=database_url)
     fake_mirror_manager = FakeGitMirrorManager(project_root=settings.project_root)
     fake_mirror_manager.bind_store(store)
-    dependencies = AppDependencies(
-        settings=settings,
-        git_ref_resolver=FakeGitRefResolver(store=store),
-        git_readonly_validator=FakeGitReadonlyValidator(),
-        git_mirror_manager=fake_mirror_manager,
-        snapshot_archive_store=SnapshotArchiveStore(settings=settings),
-        snapshot_manifest_writer=SnapshotManifestWriter(),
-        planning_input_reference_repository_factory=lambda session: FakePlanningInputReferenceRepository(
-            store
-        ),
-        snapshot_traceability_builder=build_snapshot_traceability_reference,
-        session_factory=fake_session_factory,
-        repository_connection_repository_factory=lambda session: FakeRepositoryConnectionRepository(
-            store
-        ),
-        scope_rule_repository_factory=lambda session: FakeScopeRuleRepository(store),
-        credential_revision_repository_factory=lambda session: FakeCredentialRevisionRepository(
-            store
-        ),
-        webhook_secret_repository_factory=lambda session: FakeWebhookSecretRepository(
-            store
-        ),
-        repository_event_repository_factory=lambda session: FakeRepositoryEventRepository(
-            store
-        ),
-        repository_event_cursor_repository_factory=lambda session: FakeRepositoryEventCursorRepository(
-            store
-        ),
-        repository_sync_run_repository_factory=lambda session: FakeRepositorySyncRunRepository(
-            store
-        ),
-        code_snapshot_repository_factory=lambda session: FakeCodeSnapshotRepository(store),
-    )
+    if use_real_repositories:
+        if settings.database_url is None:
+            raise ValueError("실DB 테스트에는 database_url이 필요합니다.")
+        dependencies = AppDependencies(
+            settings=settings,
+            git_ref_resolver=FakeGitRefResolver(store=store),
+            git_readonly_validator=FakeGitReadonlyValidator(),
+            git_mirror_manager=fake_mirror_manager,
+            snapshot_archive_store=SnapshotArchiveStore(settings=settings),
+            snapshot_manifest_writer=SnapshotManifestWriter(),
+            planning_input_reference_repository_factory=PlanningInputReferenceRepository,
+            snapshot_traceability_builder=build_snapshot_traceability_reference,
+            session_factory=build_session_factory(settings),
+            repository_connection_repository_factory=RepositoryConnectionRepository,
+            scope_rule_repository_factory=ScopeRuleRepository,
+            credential_revision_repository_factory=CredentialRevisionRepository,
+            webhook_secret_repository_factory=WebhookSecretRepository,
+            repository_event_repository_factory=RepositoryEventRepository,
+            repository_event_cursor_repository_factory=RepositoryEventCursorRepository,
+            repository_sync_run_repository_factory=RepositorySyncRunRepository,
+            code_snapshot_repository_factory=CodeSnapshotRepository,
+        )
+    else:
+        dependencies = AppDependencies(
+            settings=settings,
+            git_ref_resolver=FakeGitRefResolver(store=store),
+            git_readonly_validator=FakeGitReadonlyValidator(),
+            git_mirror_manager=fake_mirror_manager,
+            snapshot_archive_store=SnapshotArchiveStore(settings=settings),
+            snapshot_manifest_writer=SnapshotManifestWriter(),
+            planning_input_reference_repository_factory=lambda session: FakePlanningInputReferenceRepository(
+                store
+            ),
+            snapshot_traceability_builder=build_snapshot_traceability_reference,
+            session_factory=fake_session_factory,
+            repository_connection_repository_factory=lambda session: FakeRepositoryConnectionRepository(
+                store
+            ),
+            scope_rule_repository_factory=lambda session: FakeScopeRuleRepository(store),
+            credential_revision_repository_factory=lambda session: FakeCredentialRevisionRepository(
+                store
+            ),
+            webhook_secret_repository_factory=lambda session: FakeWebhookSecretRepository(
+                store
+            ),
+            repository_event_repository_factory=lambda session: FakeRepositoryEventRepository(
+                store
+            ),
+            repository_event_cursor_repository_factory=lambda session: FakeRepositoryEventCursorRepository(
+                store
+            ),
+            repository_sync_run_repository_factory=lambda session: FakeRepositorySyncRunRepository(
+                store
+            ),
+            code_snapshot_repository_factory=lambda session: FakeCodeSnapshotRepository(store),
+        )
     app = create_app(settings=settings, dependencies=dependencies)
     client = TestClient(app)
     client.headers.update({"X-TCI-Workspace-Id": str(workspace_id)})
@@ -1158,6 +1225,25 @@ def create_connection_payload(
             "secret": "readonly-token-value",
             "fingerprint": "pat-01",
         },
+    }
+
+
+def create_planning_input_reference_payload(
+    *,
+    workspace_id: uuid.UUID,
+    source_type: str = "user_request",
+    source_title: str = "저장소 연결 준비",
+    source_reference: str = "manual://docs",
+    approved_spec_path: str = "specs/001-git-repo-connection/spec.md",
+    approved_plan_path: str = "specs/001-git-repo-connection/plan.md",
+) -> dict[str, str]:
+    return {
+        "workspaceId": str(workspace_id),
+        "sourceType": source_type,
+        "sourceTitle": source_title,
+        "sourceReference": source_reference,
+        "approvedSpecPath": approved_spec_path,
+        "approvedPlanPath": approved_plan_path,
     }
 
 
@@ -1300,7 +1386,7 @@ def serialize_github_webhook_payload(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
 
-def _load_test_settings(tmp_path: Path):
+def _load_test_settings(tmp_path: Path, *, database_url: str | None = None):
     import os
 
     from cryptography.fernet import Fernet
@@ -1308,10 +1394,15 @@ def _load_test_settings(tmp_path: Path):
     original_root = os.environ.get("TCI_PROJECT_ROOT")
     original_key = os.environ.get("TCI_CREDENTIAL_ENCRYPTION_KEY")
     original_template_root = os.environ.get("TCI_TEMPLATE_ROOT")
+    original_database_url = os.environ.get("TCI_DATABASE_URL")
     template_root = Path(__file__).resolve().parents[2] / "src" / "tci" / "web" / "templates"
     os.environ["TCI_PROJECT_ROOT"] = str(tmp_path)
     os.environ["TCI_CREDENTIAL_ENCRYPTION_KEY"] = Fernet.generate_key().decode("utf-8")
     os.environ["TCI_TEMPLATE_ROOT"] = str(template_root)
+    if database_url is None:
+        os.environ.pop("TCI_DATABASE_URL", None)
+    else:
+        os.environ["TCI_DATABASE_URL"] = database_url
     try:
         return load_settings()
     finally:
@@ -1327,3 +1418,7 @@ def _load_test_settings(tmp_path: Path):
             os.environ.pop("TCI_TEMPLATE_ROOT", None)
         else:
             os.environ["TCI_TEMPLATE_ROOT"] = original_template_root
+        if original_database_url is None:
+            os.environ.pop("TCI_DATABASE_URL", None)
+        else:
+            os.environ["TCI_DATABASE_URL"] = original_database_url
