@@ -2,16 +2,68 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
+import os
+from pathlib import Path
+import subprocess
+import sys
 import uuid
 
 import pytest
+from sqlalchemy.engine import make_url
 
+from tci.infrastructure.persistence.credential_revision_repository import (
+    CredentialRevisionRepository,
+)
+from tci.infrastructure.persistence.planning_input_reference_repository import (
+    PlanningInputReferenceRepository,
+)
+from tci.infrastructure.persistence.repository_connection_repository import (
+    RepositoryConnectionRepository,
+)
 from tci.infrastructure.git.git_ref_resolver import GitCommandResult, GitRefResolver
 from tests.support.repository_connection_testkit import (
     create_connection_payload,
+    create_planning_input_reference_payload,
     create_test_client,
     seed_planning_input_reference,
 )
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _upgrade_test_database_to_head(database_url: str) -> None:
+    if os.getenv("TCI_ALLOW_DESTRUCTIVE_MIGRATION_TESTS") != "1":
+        pytest.skip("명시적 승인 없이 실DB 마이그레이션 테스트를 실행하지 않습니다.")
+    if os.getenv("TCI_MIGRATION_TEST_DATABASE_URL_ACK") != database_url:
+        pytest.skip("실DB 마이그레이션 테스트는 전체 DSN 확인값이 필요합니다.")
+    expected_database_name = os.getenv("TCI_MIGRATION_TEST_DATABASE_NAME")
+    if not expected_database_name:
+        pytest.skip("실DB 마이그레이션 테스트는 전용 데이터베이스 이름 확인값이 필요합니다.")
+    database_name = make_url(database_url).database or ""
+    if database_name != expected_database_name:
+        pytest.skip("TCI_MIGRATION_TEST_DATABASE_URL이 승인된 전용 데이터베이스가 아닙니다.")
+
+    env = os.environ.copy()
+    env["TCI_DATABASE_URL"] = database_url
+    downgrade = subprocess.run(
+        [sys.executable, "-m", "alembic", "-c", "alembic.ini", "downgrade", "base"],
+        cwd=PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert downgrade.returncode == 0, downgrade.stderr
+    upgrade = subprocess.run(
+        [sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", "head"],
+        cwd=PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert upgrade.returncode == 0, upgrade.stderr
 
 
 def test_create_connection_with_readonly_credential_creates_active_connection(
@@ -34,6 +86,97 @@ def test_create_connection_with_readonly_credential_creates_active_connection(
     assert payload["defaultRefName"] == "main"
     assert payload["status"] == "active"
     assert payload["lastVerifiedAt"] is not None
+
+
+def test_planning_input_reference_create_bootstraps_connection_creation_from_api(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    reference_response = client.post(
+        "/api/planning-input-references",
+        json=create_planning_input_reference_payload(
+            workspace_id=workspace_id,
+            source_reference="chat://test",
+        ),
+    )
+    reference_id = uuid.UUID(reference_response.json()["id"])
+    connection_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference_id),
+    )
+
+    assert reference_response.status_code == 201
+    assert reference_id in store.planning_input_references
+    assert connection_response.status_code == 201
+    assert connection_response.json()["status"] == "active"
+
+
+@pytest.mark.integration
+def test_planning_input_reference_create_bootstraps_connection_creation_with_real_db(
+    tmp_path,
+) -> None:
+    database_url = os.getenv("TCI_MIGRATION_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TCI_MIGRATION_TEST_DATABASE_URL이 없어 실DB bootstrap 테스트를 건너뜁니다.")
+    _upgrade_test_database_to_head(database_url)
+
+    workspace_id = uuid.uuid4()
+    client, _store = create_test_client(
+        tmp_path=tmp_path,
+        workspace_id=workspace_id,
+        use_real_repositories=True,
+        database_url=database_url,
+    )
+
+    reference_response = client.post(
+        "/api/planning-input-references",
+        json=create_planning_input_reference_payload(
+            workspace_id=workspace_id,
+            source_reference="chat://test",
+        ),
+    )
+    assert reference_response.status_code == 201
+    reference_payload = reference_response.json()
+    reference_id = uuid.UUID(reference_payload["id"])
+    connection_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference_id),
+    )
+
+    assert reference_payload == {
+        "id": str(reference_id),
+        "workspaceId": str(workspace_id),
+        "sourceType": "user_request",
+        "sourceTitle": "저장소 연결 준비",
+        "sourceReference": "chat://test",
+        "approvedSpecPath": "specs/001-git-repo-connection/spec.md",
+        "approvedPlanPath": "specs/001-git-repo-connection/plan.md",
+        "createdAt": reference_payload["createdAt"],
+    }
+    assert reference_payload["createdAt"] is not None
+    assert connection_response.status_code == 201
+    connection_payload = connection_response.json()
+    connection_id = uuid.UUID(connection_payload["id"])
+    assert connection_payload["status"] == "active"
+
+    with client.app.state.dependencies.session_factory() as session:
+        planning_reference = PlanningInputReferenceRepository(session).get(
+            workspace_id=workspace_id,
+            reference_id=reference_id,
+        )
+        connection = RepositoryConnectionRepository(session).get(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        )
+        credential = CredentialRevisionRepository(session).get_active_for_connection(
+            connection_id=connection_id
+        )
+
+    assert planning_reference is not None
+    assert connection is not None
+    assert credential is not None
 
 
 def test_connection_detail_exposes_traceability_and_placeholder_summaries(tmp_path) -> None:
