@@ -1,0 +1,464 @@
+openapi: 3.1.0
+info:
+  title: TCI Repository Ingestion API
+  version: 0.2.0
+  description: >
+    GitHub Cloud 및 GitLab Self-Managed 코드 저장소 연결, 범위 규칙, 수동 스냅샷,
+    provider별 webhook 수신 계약.
+servers:
+  - url: https://tci.example.com
+tags:
+  - name: RepositoryConnections
+  - name: RepositorySnapshots
+  - name: RepositoryEvents
+  - name: GitHubWebhooks
+  - name: GitLabWebhooks
+paths:
+  /api/repository-connections:
+    post:
+      tags: [RepositoryConnections]
+      summary: 저장소 연결 생성
+      operationId: createRepositoryConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRepositoryConnectionRequest'
+      responses:
+        '201':
+          description: 생성 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryConnectionResponse'
+        '400':
+          description: 잘못된 입력
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+  /api/repository-connections/{connectionId}:
+    get:
+      tags: [RepositoryConnections]
+      summary: 저장소 연결 상세 조회
+      operationId: getRepositoryConnection
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+      responses:
+        '200':
+          description: 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryConnectionDetailResponse'
+    patch:
+      tags: [RepositoryConnections]
+      summary: 기본 ref 수정
+      operationId: updateRepositoryConnection
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRepositoryConnectionRequest'
+      responses:
+        '200':
+          description: 수정 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryConnectionResponse'
+  /api/repository-connections/{connectionId}/verify:
+    post:
+      tags: [RepositoryConnections]
+      summary: 저장소 연결 재검증
+      operationId: verifyRepositoryConnection
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+      responses:
+        '202':
+          description: 검증 작업 접수
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedStatusResponse'
+  /api/repository-connections/{connectionId}/scope-rules:
+    post:
+      tags: [RepositoryConnections]
+      summary: 수집 범위 규칙 저장
+      operationId: saveScopeRules
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveScopeRulesRequest'
+      responses:
+        '200':
+          description: 저장 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScopeRuleResponse'
+  /api/repository-connections/{connectionId}/snapshots:
+    post:
+      tags: [RepositorySnapshots]
+      summary: 수동 스냅샷 생성
+      operationId: createSnapshot
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSnapshotRequest'
+      responses:
+        '202':
+          description: 작업 접수
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedStatusResponse'
+  /api/repository-connections/{connectionId}/events:
+    get:
+      tags: [RepositoryEvents]
+      summary: 이벤트 목록 조회
+      operationId: listRepositoryEvents
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+      responses:
+        '200':
+          description: 조회 성공
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RepositoryEvent'
+  /api/webhooks/github/{connectionId}:
+    post:
+      tags: [GitHubWebhooks]
+      summary: GitHub Cloud webhook 수신
+      operationId: receiveGitHubWebhook
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+        - name: X-GitHub-Delivery
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: X-GitHub-Event
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: X-Hub-Signature-256
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAcceptedResponse'
+  /api/webhooks/gitlab/{connectionId}:
+    post:
+      tags: [GitLabWebhooks]
+      summary: GitLab self-managed webhook 수신
+      operationId: receiveGitLabWebhook
+      parameters:
+        - $ref: '#/components/parameters/ConnectionId'
+        - name: X-Gitlab-Event
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: X-Gitlab-Token
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+        - name: X-Gitlab-Webhook-UUID
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '202':
+          description: accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAcceptedResponse'
+components:
+  parameters:
+    ConnectionId:
+      name: connectionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    CreateRepositoryConnectionRequest:
+      type: object
+      required:
+        - planningInputReferenceId
+        - provider
+        - remoteUrl
+        - transport
+        - defaultRefType
+        - defaultRefName
+        - credential
+      properties:
+        planningInputReferenceId:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum: [github_cloud, gitlab_self_managed]
+        providerInstanceUrl:
+          type: string
+          format: uri
+          description: GitLab self-managed일 때 필수
+        remoteUrl:
+          type: string
+        transport:
+          type: string
+          enum: [ssh, https]
+        defaultRefType:
+          type: string
+          enum: [branch, tag]
+        defaultRefName:
+          type: string
+        credential:
+          $ref: '#/components/schemas/CredentialInput'
+    CredentialInput:
+      type: object
+      required: [type, secret]
+      properties:
+        type:
+          type: string
+          enum: [ssh_private_key, https_access_token]
+        secret:
+          type: string
+        fingerprint:
+          type: string
+    UpdateRepositoryConnectionRequest:
+      type: object
+      properties:
+        defaultRefType:
+          type: string
+          enum: [branch, tag]
+        defaultRefName:
+          type: string
+    SaveScopeRulesRequest:
+      type: object
+      properties:
+        includePaths:
+          type: array
+          items: { type: string }
+        excludePaths:
+          type: array
+          items: { type: string }
+        allowedFileTypes:
+          type: array
+          items: { type: string }
+        blockedFileTypes:
+          type: array
+          items: { type: string }
+    ScopeRuleResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        warningState:
+          type: string
+          enum: [ok, empty_result_risk, over_broad_include]
+        includePaths:
+          type: array
+          items: { type: string }
+        excludePaths:
+          type: array
+          items: { type: string }
+    CreateSnapshotRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          enum: [manual_initial, manual_refresh]
+    RepositoryConnectionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum: [github_cloud, gitlab_self_managed]
+        remoteUrl:
+          type: string
+        transport:
+          type: string
+          enum: [ssh, https]
+        defaultRefType:
+          type: string
+          enum: [branch, tag]
+        defaultRefName:
+          type: string
+        status:
+          type: string
+          enum: [active, reauth_required, ref_missing]
+        lastVerifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+    RepositoryConnectionDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/RepositoryConnectionResponse'
+        - type: object
+          properties:
+            lastSuccessfulSnapshotAt:
+              type: string
+              format: date-time
+              nullable: true
+            lastFailedSyncAt:
+              type: string
+              format: date-time
+              nullable: true
+            lastProcessedEvent:
+              $ref: '#/components/schemas/LastProcessedEvent'
+            webhookHealth:
+              $ref: '#/components/schemas/WebhookHealth'
+            traceability:
+              $ref: '#/components/schemas/TraceabilityBlock'
+    LastProcessedEvent:
+      type: object
+      nullable: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        providerEventType:
+          type: string
+        providerAction:
+          type: string
+          nullable: true
+        processingDecision:
+          type: string
+    WebhookHealth:
+      type: object
+      properties:
+        webhookStatus:
+          type: string
+          enum: [healthy, missing_secret, secret_mismatch_detected, signature_invalid_recently]
+        providerReachabilityStatus:
+          type: string
+          enum: [reachable, unreachable_recently, tls_failed_recently, dns_failed_recently]
+        graceUntil:
+          type: string
+          format: date-time
+          nullable: true
+        lastRejectionReason:
+          type: string
+          nullable: true
+    TraceabilityBlock:
+      type: object
+      properties:
+        planningInputReference:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            sourceReference:
+              type: string
+            approvedSpecPath:
+              type: string
+            approvedPlanPath:
+              type: string
+        activeScopeRuleVersionId:
+          type: string
+          format: uuid
+          nullable: true
+        latestEventId:
+          type: string
+          format: uuid
+          nullable: true
+        latestSnapshotId:
+          type: string
+          format: uuid
+          nullable: true
+    RepositoryEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        providerDeliveryId:
+          type: string
+        providerEventType:
+          type: string
+        providerAction:
+          type: string
+          nullable: true
+        targetKey:
+          type: string
+        targetHeadSha:
+          type: string
+          nullable: true
+        processingDecision:
+          type: string
+          enum: [record_only, queued, duplicate_delivery, duplicate_head, stale_head, rejected]
+        processingStatus:
+          type: string
+          enum: [received, validated, queued, completed, failed, rejected]
+    AcceptedStatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        connectionId:
+          type: string
+          format: uuid
+          nullable: true
+        syncRunId:
+          type: string
+          format: uuid
+          nullable: true
+    WebhookAcceptedResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+        deliveryId:
+          type: string
+        eventId:
+          type: string
+          format: uuid
+    ProblemResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
