@@ -10,6 +10,17 @@
 - canonical connection 상태는 `active`, `reauth_required`, `ref_missing`만 사용한다.
 - provider별 webhook 보안/헤더 차이는 health 및 event metadata로 분리한다.
 
+## Current Implementation Alignment
+
+- 2026-04-23 기준 이 문서는 아직 설계 기준선이다. 실제 DB/ORM 변경은 시작하지 않았고, Phase 1에서는 이를 검증할 test/evidence scaffold만 추가했다.
+- 다음 구현 시작점은 `tasks.md`의 `T005`, `T006`이며, 아래 항목이 첫 실제 코드 변경 대상이다.
+  - `RepositoryConnection.provider`
+  - `provider_instance_url`
+  - `provider_event_idempotency_source`
+  - `webhook_merge_request` trigger support
+  - health projection persistence fields
+- 따라서 이 문서의 엔터티/필드는 “Phase 2에서 구현해야 할 목표 모델”로 해석한다.
+
 ## Core Entities
 
 ### 1. PlanningInputReference

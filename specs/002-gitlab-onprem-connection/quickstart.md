@@ -4,6 +4,19 @@
 
 이 문서는 GitLab self-managed 연동이 기존 GitHub Cloud 기능을 깨지 않고 추가되었는지 빠르게 검증하는 실행 순서를 정의한다. 설계 검증, QA, task 분해, delivery evidence의 공통 기준으로 사용한다.
 
+## Current Readiness
+
+- 2026-04-23 기준 Phase 1 setup 완료
+- 현재 이 문서의 전체 시나리오는 아직 실행 가능한 제품 동작이 아니라, 이후 구현과 검증이 따라야 할 quickstart 기준선이다.
+- 현재 준비된 자동화 표면:
+  - `tests/contract/repository_ingestion/test_gitlab_connection_contract.py`
+  - `tests/contract/repository_ingestion/test_gitlab_webhook_contract.py`
+  - `tests/integration/repository_connections/test_gitlab_provider_flows.py`
+  - `tests/unit/repository_connections/test_gitlab_provider_parsing.py`
+  - `tests/unit/repository_connections/test_process_gitlab_event.py`
+  - `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+- 전체 quickstart 검증은 Phase 3 이후부터 실제 구현 상태에 맞춰 채워진다.
+
 ## 사전 조건
 
 1. `pilot-git-repo-connection/` 런타임이 실행 중이어야 한다.

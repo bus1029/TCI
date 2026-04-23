@@ -2,8 +2,15 @@
 
 **Feature Branch**: `[002-gitlab-onprem-connection]`  
 **Created**: 2026-04-23  
-**Status**: Draft  
+**Status**: In Progress
 **Input**: User description: "TCI의 데이터 수집 영역에서 Git 기반 형상 관리 시스템과 연동하여 코드베이스와 변경 이력을 수집하고 분석 가능한 코드 스냅샷을 생성한다. 기존 GitHub Cloud 연동 기능에 추가로 On-premise GitLab 연동 기능을 추가로 개발해야 하며, 기존 GitHub Cloud 연동 기능 관련 코드와의 호환성을 고려해야 한다. Git 기반 레포지토리 연결(SSH/HTTPS), 분석 대상 브랜치/태그 선택, 제외/포함 경로 및 파일 타입 설정, 코드 변경 이벤트 감지(Commit, Push, MR), Webhook 기반 실시간 이벤트 수신."
+
+## Implementation Status
+
+- 2026-04-23: explicit human approval 이후 Phase 1 setup 착수
+- 2026-04-23: `delivery-evidence.md`와 GitLab test scaffold 생성 완료
+- 현재 상태: Phase 2 foundational mixed-provider 작업 대기
+- 진행 증적: `specs/002-gitlab-onprem-connection/delivery-evidence.md`
 
 ## Design Input Traceability *(mandatory)*
 

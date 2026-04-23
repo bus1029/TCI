@@ -20,10 +20,17 @@
 
 **Purpose**: GitLab feature용 설계·검증 산출물과 테스트 골격을 준비한다.
 
-- [ ] T001 Create feature delivery evidence scaffold for FR-001 through FR-023 and SC-001 through SC-005 in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
-- [ ] T002 [P] Add GitLab contract and integration test skeleton files in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_connection_contract.py`, `pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_webhook_contract.py`, and `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_provider_flows.py`
-- [ ] T003 [P] Add GitLab/unit regression test skeleton files in `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_provider_parsing.py`, `pilot-git-repo-connection/tests/unit/repository_connections/test_process_gitlab_event.py`, and `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
-- [ ] T004 Capture feature-level trace references for plan/spec/research/data-model/contracts/quickstart in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
+- [x] T001 Create feature delivery evidence scaffold for FR-001 through FR-023 and SC-001 through SC-005 in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
+- [x] T002 [P] Add GitLab contract and integration test skeleton files in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_connection_contract.py`, `pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_webhook_contract.py`, and `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_provider_flows.py`
+- [x] T003 [P] Add GitLab/unit regression test skeleton files in `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_provider_parsing.py`, `pilot-git-repo-connection/tests/unit/repository_connections/test_process_gitlab_event.py`, and `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+- [x] T004 Capture feature-level trace references for plan/spec/research/data-model/contracts/quickstart in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
+
+**Phase 1 Execution Note**:
+
+- 2026-04-23 완료
+- 검증 명령:
+  - `python -m pytest pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_connection_contract.py pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_webhook_contract.py pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_provider_flows.py pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_provider_parsing.py pilot-git-repo-connection/tests/unit/repository_connections/test_process_gitlab_event.py pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
+  - 결과: `6 passed, 18 skipped`
 
 ---
 
