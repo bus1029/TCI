@@ -34,7 +34,7 @@
 
 ## 결정 3: GitLab webhook 보안은 `X-Gitlab-Token` 기반 exact-match 검증으로 처리한다
 
-**Decision**: GitLab self-managed webhook 수신은 raw body HMAC이 아니라 GitLab이 전송하는 `X-Gitlab-Token` 헤더와 저장된 active/previous secret revision의 exact-match 비교로 검증한다. GitHub는 기존 `X-Hub-Signature-256` HMAC 검증을 유지한다.
+**Decision**: GitLab self-managed webhook 수신은 raw body HMAC이 아니라 GitLab이 전송하는 `X-Gitlab-Token` 헤더와 저장된 활성 secret의 exact-match 비교로 검증한다. GitHub는 기존 `X-Hub-Signature-256` HMAC 검증을 유지한다.
 
 **Rationale**:
 - GitLab 공식 webhook 문서는 secret token을 요청 헤더로 전달하는 모델을 사용한다.

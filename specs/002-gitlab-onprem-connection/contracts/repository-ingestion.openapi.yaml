@@ -234,10 +234,6 @@ components:
         provider:
           type: string
           enum: [github_cloud, gitlab_self_managed]
-        providerInstanceUrl:
-          type: string
-          format: uri
-          description: GitLab self-managed일 때 필수
         remoteUrl:
           type: string
         transport:
@@ -373,10 +369,6 @@ components:
         providerReachabilityStatus:
           type: string
           enum: [reachable, unreachable_recently, tls_failed_recently, dns_failed_recently]
-        graceUntil:
-          type: string
-          format: date-time
-          nullable: true
         lastRejectionReason:
           type: string
           nullable: true

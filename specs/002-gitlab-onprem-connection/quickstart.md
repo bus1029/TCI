@@ -20,7 +20,7 @@
 
 ### 1. GitLab 연결 생성 및 검증
 
-1. `POST /api/repository-connections`로 `provider=gitlab_self_managed`, `providerInstanceUrl`, `remoteUrl`, `transport`, `defaultRefType`, `defaultRefName`, `credential`를 등록한다.
+1. `POST /api/repository-connections`로 `provider=gitlab_self_managed`, `remoteUrl`, `transport`, `defaultRefType`, `defaultRefName`, `credential`를 등록한다.
 2. `POST /api/repository-connections/{id}/verify`를 호출해 연결 검증이 성공하는지 확인한다.
 3. 상세 조회에서 `status=active`, `provider=gitlab_self_managed`, `lastProcessedEvent=null`인지 확인한다.
 4. 잘못된 token 또는 SSH key로 재검증하면 `reauth_required`로 전환되는지 확인한다.
@@ -52,8 +52,7 @@
 
 1. 올바른 `X-Gitlab-Token`으로 webhook을 보내면 검증 성공하는지 확인한다.
 2. 잘못된 token으로 보내면 canonical status는 유지되고 `webhookHealth.webhookStatus=secret_mismatch_detected`가 노출되는지 확인한다.
-3. secret rotation 중 previous token으로 온 delivery가 grace 동안 허용되는지 확인한다.
-4. grace 종료 후 previous token은 거부되는지 확인한다.
+3. 올바른 token으로 다시 보내면 `webhookHealth.webhookStatus=healthy`로 회복되는지 확인한다.
 
 ### 6. Provider compatibility regression
 
@@ -74,7 +73,7 @@
   - GitLab connection verify
   - GitLab push webhook -> sync run -> snapshot
   - GitLab MR open/update webhook -> source branch snapshot
-  - GitLab secret rotation grace
+  - `reauth_required` / `ref_missing` 상태에서 새 수집 차단
   - GitLab unreachable vs `reauth_required` 구분
   - GitHub regression flows
 - Contract

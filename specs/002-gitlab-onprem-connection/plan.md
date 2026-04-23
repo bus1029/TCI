@@ -1,6 +1,6 @@
 # Implementation Plan: 온프레미스 GitLab 코드 저장소 연동
 
-**Branch**: `[006-gitlab-onprem-connection]` | **Date**: 2026-04-23 | **Spec**: `/specs/002-gitlab-onprem-connection/spec.md`  
+**Branch**: `[002-gitlab-onprem-connection]` | **Date**: 2026-04-23 | **Spec**: `/specs/002-gitlab-onprem-connection/spec.md`  
 **Input**: Feature specification from `/specs/002-gitlab-onprem-connection/spec.md`
 
 ## Summary
@@ -49,7 +49,7 @@
 
 | Topic | Plan-Level Decision |
 |-------|---------------------|
-| GitLab webhook 보안 방식 | GitHub와 달리 `X-Gitlab-Token` exact-match 검증을 사용한다. active/previous secret revision을 grace 동안 모두 허용한다. |
+| GitLab webhook 보안 방식 | GitHub와 달리 `X-Gitlab-Token` exact-match 검증을 사용한다. 검증 대상은 단일 활성 secret이며 이전 secret 동시 허용은 이번 범위에 포함하지 않는다. |
 | GitLab delivery dedupe 키 | `Idempotency-Key` 우선, `X-Gitlab-Webhook-UUID` 보조, 둘 다 없으면 derived hash를 사용한다. |
 | GitLab MR update 세분화 | `action=update` 중 `oldrev` 존재 또는 `last_commit.id` 변경이 감지된 경우만 snapshot 후보로 인정한다. reviewer/label/title 변경만 있는 update는 `record_only`다. |
 | GitLab 서버 unreachable | canonical status는 유지하고 health projection에 `providerReachabilityStatus=unreachable_recently`로 기록한다. auth 실패일 때만 `reauth_required`로 전환한다. |
@@ -68,6 +68,7 @@ specs/002-gitlab-onprem-connection/
 ├── research.md
 ├── data-model.md
 ├── quickstart.md
+├── delivery-evidence.md
 ├── contracts/
 │   └── repository-ingestion.openapi.yaml
 └── tasks.md
@@ -145,7 +146,7 @@ pilot-git-repo-connection/
 ### Slice 1. Provider-Compatible Connection Lifecycle
 
 - `RepositoryProvider` enum과 remote parser를 확장한다.
-- `CreateRepositoryConnectionRequest`는 `providerInstanceUrl`을 GitLab 전용 선택 필드로 추가한다.
+- GitLab self-managed 식별은 기존 저장소 주소와 provider metadata를 사용하며, 별도 `providerInstanceUrl` 사용자 입력 필드는 추가하지 않는다.
 - GitHub/GitLab 모두 같은 canonical status와 detail response shape를 유지한다.
 - credential validator는 기존 `git ls-remote` 흐름을 재사용하되, GitLab remote URL parser와 read-only token scope validation을 추가한다.
 
@@ -192,10 +193,11 @@ pilot-git-repo-connection/
   - connection detail health projection shape
   - GitHub existing contract no-break regression
 - Integration
+  - GitLab standard operator path completes within 15 minutes for SC-001
   - GitLab verify success / auth failure / unreachable failure
+  - `reauth_required` / `ref_missing` 상태에서 manual snapshot과 webhook-driven snapshot 차단
   - GitLab push webhook -> sync run -> snapshot
   - GitLab MR open/update -> source branch snapshot
-  - GitLab webhook token rotation grace
   - GitHub push/PR regression
   - mixed-provider workspace listing/detail flows
 - End-to-End

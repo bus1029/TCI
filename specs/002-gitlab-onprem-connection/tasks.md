@@ -20,10 +20,10 @@
 
 **Purpose**: GitLab feature용 설계·검증 산출물과 테스트 골격을 준비한다.
 
-- [ ] T001 Create feature delivery evidence scaffold for FR-001 through FR-023 and SC-001 through SC-005 in `pilot-git-repo-connection/specs/002-gitlab-onprem-connection/delivery-evidence.md`
+- [ ] T001 Create feature delivery evidence scaffold for FR-001 through FR-023 and SC-001 through SC-005 in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
 - [ ] T002 [P] Add GitLab contract and integration test skeleton files in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_connection_contract.py`, `pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_webhook_contract.py`, and `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_provider_flows.py`
 - [ ] T003 [P] Add GitLab/unit regression test skeleton files in `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_provider_parsing.py`, `pilot-git-repo-connection/tests/unit/repository_connections/test_process_gitlab_event.py`, and `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
-- [ ] T004 Capture feature-level trace references for plan/spec/research/data-model/contracts/quickstart in `pilot-git-repo-connection/specs/002-gitlab-onprem-connection/delivery-evidence.md`
+- [ ] T004 Capture feature-level trace references for plan/spec/research/data-model/contracts/quickstart in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
 
 ---
 
@@ -48,26 +48,26 @@
 
 ## Phase 3: User Story 1 - 온프레미스 GitLab 저장소 연결과 초기 스냅샷 생성 (Priority: P1) 🎯 MVP
 
-**Goal**: 운영자가 GitLab self-managed 저장소를 읽기 전용으로 연결하고, 기본 ref를 검증한 뒤 첫 snapshot을 생성하며, 기존 GitHub 연결이 깨지지 않았음을 확인한다.
+**Goal**: 운영자가 GitLab self-managed 저장소를 읽기 전용으로 연결하고, 기본 ref를 검증한 뒤 첫 snapshot을 생성하며, 조치 필요 상태에서는 새 수집이 차단되고 기존 GitHub 연결이 깨지지 않았음을 확인한다.
 
-**Independent Test**: `provider=gitlab_self_managed` 연결 생성, verify 성공, 초기 snapshot 성공, detail traceability 조회 성공, 기존 GitHub connection 생성/verify/snapshot 회귀 성공
+**Independent Test**: `provider=gitlab_self_managed` 연결 생성, verify 성공, 초기 snapshot 성공, `reauth_required`/`ref_missing` 상태에서 manual snapshot 차단, detail traceability 조회 성공, 기존 GitHub connection 생성/verify/snapshot 회귀 성공
 
 ### Tests for User Story 1
 
 - [ ] T013 [P] [US1] Add contract tests for GitLab repository connection create/get/patch/verify flows and provider validation in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_connection_contract.py`
-- [ ] T014 [P] [US1] Add integration tests for GitLab connection verify, `reauth_required`, `ref_missing`, and initial snapshot creation in `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_connection_lifecycle.py`
+- [ ] T014 [P] [US1] Add integration tests for GitLab connection verify, `reauth_required`, `ref_missing`, blocked manual collection, and initial snapshot creation in `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_connection_lifecycle.py`
 - [ ] T015 [P] [US1] Add GitHub compatibility regression tests for connection create/verify/manual snapshot in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
 
 ### Implementation for User Story 1
 
 - [ ] T016 [P] [US1] Implement GitLab remote URL parser and namespace/project extraction in `pilot-git-repo-connection/src/tci/infrastructure/git/gitlab_remote_parser.py`
 - [ ] T017 [P] [US1] Implement GitLab credential scope validation and read-only token probing in `pilot-git-repo-connection/src/tci/infrastructure/git/gitlab_readonly_validator.py`
-- [ ] T018 [US1] Extend repository connection creation service for `providerInstanceUrl`, GitLab read-only credential validation, and mixed-provider error mapping in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
+- [ ] T018 [US1] Extend repository connection creation service for GitLab read-only credential validation, repository-address-based provider detection, and mixed-provider error mapping in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
 - [ ] T019 [US1] Extend repository connection verify and default-ref update services for GitLab `reauth_required`/`ref_missing` transitions in `pilot-git-repo-connection/src/tci/domain/services/verify_repository_connection.py` and `pilot-git-repo-connection/src/tci/domain/services/update_default_ref.py`
-- [ ] T020 [US1] Extend manual snapshot trigger and snapshot build services for GitLab provider provenance in `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py` and `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`
+- [ ] T020 [US1] Extend manual snapshot trigger and snapshot build services for GitLab provider provenance and `reauth_required`/`ref_missing` collection blocking in `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py` and `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`
 - [ ] T021 [US1] Implement GitLab-capable repository connection API handlers in `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
 - [ ] T022 [US1] Extend connection detail query service and operator detail template for mixed-provider summaries and traceability in `pilot-git-repo-connection/src/tci/domain/services/get_repository_connection_detail.py`, `pilot-git-repo-connection/src/tci/web/routes/repository_connection_detail.py`, and `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
-- [ ] T023 [US1] Capture User Story 1 verification evidence for GitLab MVP and GitHub regression in `pilot-git-repo-connection/specs/002-gitlab-onprem-connection/delivery-evidence.md`
+- [ ] T023 [US1] Capture User Story 1 verification evidence for GitLab MVP and GitHub regression in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
 
 **Checkpoint**: GitLab 연결과 초기 snapshot이 독립적으로 동작하고 GitHub 기존 흐름도 유지되어야 한다.
 
@@ -91,7 +91,7 @@
 - [ ] T028 [US2] Extend scope warning evaluation and scope rule persistence for GitLab connections in `pilot-git-repo-connection/src/tci/domain/services/evaluate_scope_rule_warning.py` and `pilot-git-repo-connection/src/tci/infrastructure/persistence/scope_rule_repository.py`
 - [ ] T029 [US2] Integrate scope version stamping and `NO_INCLUDED_FILES` handling for GitLab manual snapshot flows in `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py` and `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py`
 - [ ] T030 [US2] Extend scope rule API and operator scope page for mixed-provider messaging and warning states in `pilot-git-repo-connection/src/tci/api/routes/repository_scope.py`, `pilot-git-repo-connection/src/tci/web/routes/repository_scope.py`, and `pilot-git-repo-connection/src/tci/web/templates/connections/scope.html`
-- [ ] T031 [US2] Capture User Story 2 verification evidence for GitLab scope control in `pilot-git-repo-connection/specs/002-gitlab-onprem-connection/delivery-evidence.md`
+- [ ] T031 [US2] Capture User Story 2 verification evidence for GitLab scope control in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
 
 **Checkpoint**: GitLab에서도 scope rule과 snapshot 결과가 독립적으로 검증 가능해야 한다.
 
@@ -101,13 +101,13 @@
 
 **Goal**: 운영자가 GitLab Push/Merge Request webhook을 실시간 수신하고, commit 기록/queued/record-only/stale/deduped 처리를 확인하며, 동시에 GitHub webhook 회귀도 유지할 수 있게 한다.
 
-**Independent Test**: GitLab Push webhook accepted, GitLab MR `open`/code-moving `update` snapshot queued, reviewer-only `update` record-only, duplicate/stale delivery skip, token mismatch health 반영, GitHub webhook regression 성공
+**Independent Test**: GitLab Push webhook accepted, GitLab MR `open`/code-moving `update` snapshot queued, reviewer-only `update` record-only, duplicate/stale delivery skip, token mismatch health 반영, 조치 필요 상태에서 webhook-driven snapshot 차단, GitHub webhook regression 성공
 
 ### Tests for User Story 3
 
 - [ ] T032 [P] [US3] Add contract tests for GitLab webhook intake, accepted response, and connection detail health projection in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_webhook_contract.py`
 - [ ] T033 [P] [US3] Add unit tests for GitLab token verification, delivery-id extraction, and MR update gating in `pilot-git-repo-connection/tests/unit/repository_connections/test_process_gitlab_event.py`
-- [ ] T034 [P] [US3] Add integration tests for GitLab push webhook, merge request webhook, duplicate delivery, stale head, and token mismatch handling in `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_provider_flows.py`
+- [ ] T034 [P] [US3] Add integration tests for GitLab push webhook, merge request webhook, duplicate delivery, stale head, token mismatch handling, and state-based webhook snapshot blocking in `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_provider_flows.py`
 - [ ] T035 [P] [US3] Extend GitHub webhook regression tests to cover mixed-provider coexistence in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
 
 ### Implementation for User Story 3
@@ -116,10 +116,10 @@
 - [ ] T037 [P] [US3] Implement GitLab push and merge request payload parser in `pilot-git-repo-connection/src/tci/infrastructure/webhooks/gitlab_event_parser.py`
 - [ ] T038 [US3] Implement GitLab event processing service for commit recording, record-only/queued decisions, dedupe, stale-head handling, and health updates in `pilot-git-repo-connection/src/tci/domain/services/process_gitlab_event.py`
 - [ ] T039 [US3] Implement GitLab webhook intake route and Celery enqueue handoff in `pilot-git-repo-connection/src/tci/api/routes/gitlab_webhooks.py`
-- [ ] T040 [US3] Extend queue tasks and sync-run execution for GitLab push and merge request source-branch snapshots in `pilot-git-repo-connection/src/tci/infrastructure/queue/repository_ingestion_tasks.py`
+- [ ] T040 [US3] Extend queue tasks and sync-run execution for GitLab push and merge request source-branch snapshots with `reauth_required`/`ref_missing` blocking in `pilot-git-repo-connection/src/tci/infrastructure/queue/repository_ingestion_tasks.py`
 - [ ] T041 [US3] Extend event list/detail query services and operator event timeline for mixed-provider event projections in `pilot-git-repo-connection/src/tci/domain/services/list_repository_events.py`, `pilot-git-repo-connection/src/tci/api/routes/repository_events.py`, `pilot-git-repo-connection/src/tci/web/routes/repository_events.py`, and `pilot-git-repo-connection/src/tci/web/templates/connections/events.html`
-- [ ] T042 [US3] Extend webhook secret rotation and connection detail read model for GitLab previous-token grace and reachability health in `pilot-git-repo-connection/src/tci/domain/services/rotate_webhook_secret.py`, `pilot-git-repo-connection/src/tci/domain/services/get_repository_connection_detail.py`, and `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
-- [ ] T043 [US3] Capture User Story 3 verification evidence for GitLab realtime sync and GitHub compatibility in `pilot-git-repo-connection/specs/002-gitlab-onprem-connection/delivery-evidence.md`
+- [ ] T042 [US3] Extend connection detail read model and webhook health projection for GitLab single-secret validation failures and reachability health in `pilot-git-repo-connection/src/tci/domain/services/get_repository_connection_detail.py` and `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
+- [ ] T043 [US3] Capture User Story 3 verification evidence for GitLab realtime sync and GitHub compatibility in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
 
 **Checkpoint**: GitLab webhook 기반 최신화와 mixed-provider 호환 운영이 독립 검증 가능해야 한다.
 
@@ -129,9 +129,9 @@
 
 **Purpose**: mixed-provider 회귀, quickstart, evidence를 마무리한다.
 
-- [ ] T044 [P] Add end-to-end quickstart regression harness for GitLab primary flow and GitHub compatibility flow in `pilot-git-repo-connection/tests/support/run_gitlab_quickstart_validation.py` and `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_quickstart_validation.py`
+- [ ] T044 [P] Add end-to-end quickstart regression harness and operator-path duration validation for SC-001 across GitLab primary flow and GitHub compatibility flow in `pilot-git-repo-connection/tests/support/run_gitlab_quickstart_validation.py` and `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_quickstart_validation.py`
 - [ ] T045 [P] Add mixed-provider latency and status-refresh validation for SC-002 and SC-004 in `pilot-git-repo-connection/tests/support/measure_gitlab_webhook_status_latency.py` and `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_webhook_status_latency.py`
-- [ ] T046 Refresh final FR/SC trace coverage and story completion evidence in `pilot-git-repo-connection/specs/002-gitlab-onprem-connection/delivery-evidence.md`
+- [ ] T046 Refresh final FR/SC trace coverage and story completion evidence in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
 
 ---
 

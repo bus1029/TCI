@@ -28,7 +28,7 @@
 | `workspace_id` | UUID | 워크스페이스 범위 |
 | `planning_input_reference_id` | UUID | FK -> PlanningInputReference |
 | `provider` | enum | `github_cloud`, `gitlab_self_managed` |
-| `provider_instance_url` | string nullable | GitLab self-managed base URL. GitHub는 `null` |
+| `provider_instance_url` | string nullable | GitLab self-managed base URL metadata derived from `remote_url`. GitHub는 `null` |
 | `remote_url` | string | SSH 또는 HTTPS remote |
 | `transport` | enum | `ssh`, `https` |
 | `repository_namespace` | string | `owner` 또는 `group/subgroup` |
@@ -56,7 +56,7 @@
 **Validation Rules**:
 
 - `provider = github_cloud`면 `provider_instance_url`은 `null`, `webhook_auth_mode = hmac_sha256`
-- `provider = gitlab_self_managed`면 `provider_instance_url` 필수, `webhook_auth_mode = shared_token`
+- `provider = gitlab_self_managed`면 `provider_instance_url`이 저장되더라도 `remote_url`에서 파생된 값이어야 하며 별도 사용자 입력 필드는 아니다. `webhook_auth_mode = shared_token`
 - `status`는 `active`, `reauth_required`, `ref_missing`만 허용
 - `provider_project_path`는 `repository_namespace + "/" + repository_name`과 일치해야 한다
 - canonical status는 webhook mismatch나 서버 일시 장애로 변경되지 않는다
@@ -96,14 +96,13 @@
 | `id` | UUID | PK |
 | `connection_id` | UUID | FK -> RepositoryConnection |
 | `encrypted_secret` | bytes/text | GitHub HMAC secret 또는 GitLab token |
-| `status` | enum | `active`, `previous_grace`, `revoked` |
-| `grace_until` | timestamptz nullable | 교체 grace 종료 |
+| `status` | enum | `active`, `revoked` |
 | `created_at` | timestamptz | 생성 시각 |
 
 **Validation Rules**:
 
 - active revision은 연결당 1건만 허용
-- GitLab/GitHub 모두 current + previous_grace만 검증 대상으로 사용
+- webhook 검증은 활성 revision 1건만 대상으로 사용한다
 
 ### 5. CollectionScopeRuleVersion
 
@@ -137,7 +136,7 @@
 | `occurred_at` | timestamptz | payload 기준 시각 |
 | `received_at` | timestamptz | 수신 시각 |
 | `signature_status` | enum | `verified`, `secret_missing`, `secret_mismatch`, `signature_invalid` |
-| `verified_secret_revision_status` | enum nullable | `active`, `previous_grace` |
+| `verified_secret_revision_status` | enum nullable | `active` |
 | `rejection_reason` | enum nullable | 거부 사유 |
 | `processing_decision` | enum | `record_only`, `queued`, `duplicate_delivery`, `duplicate_head`, `stale_head`, `rejected` |
 | `processing_status` | enum | `received`, `validated`, `queued`, `completed`, `failed`, `rejected` |
@@ -215,8 +214,6 @@
 | `provider_reachability_status` | enum | `reachable`, `unreachable_recently`, `tls_failed_recently`, `dns_failed_recently` |
 | `last_rejection_reason` | enum nullable | 최근 webhook 거부 |
 | `last_reachability_failure_code` | enum nullable | 최근 연결 실패 유형 |
-| `grace_until` | timestamptz nullable | secret rotation grace |
-| `previous_secret_deliveries_during_grace` | integer | grace 동안 old secret으로 검증된 delivery 수 |
 | `last_processed_event_id` | UUID nullable | 마지막 이벤트 |
 | `last_successful_snapshot_at` | timestamptz nullable | 최근 성공 snapshot |
 | `last_failed_sync_at` | timestamptz nullable | 최근 실패 sync |
@@ -248,6 +245,6 @@ active + secret_mismatch_detected -> active + healthy
 
 ## Compatibility Notes
 
-- 기존 GitHub rows는 migration 후에도 유효해야 하므로 `provider_instance_url`은 nullable add-column으로 도입한다.
+- 기존 GitHub rows는 migration 후에도 유효해야 하므로 `provider_instance_url`은 nullable add-column 또는 derived persistence field로 도입한다.
 - 기존 GitHub webhook events는 `provider_event_type = pull_request`를 계속 유지하고, GitLab은 `merge_request`를 새 값으로 추가한다.
 - 기존 API summary fields(`lastProcessedEvent`, `lastSuccessfulSnapshotAt`, `lastFailedSyncAt`)는 shape 변경 없이 provider 값과 health 정보만 확장한다.

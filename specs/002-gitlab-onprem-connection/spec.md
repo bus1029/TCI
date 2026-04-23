@@ -1,6 +1,6 @@
 # Feature Specification: 온프레미스 GitLab 코드 저장소 연동
 
-**Feature Branch**: `[006-gitlab-onprem-connection]`  
+**Feature Branch**: `[002-gitlab-onprem-connection]`  
 **Created**: 2026-04-23  
 **Status**: Draft  
 **Input**: User description: "TCI의 데이터 수집 영역에서 Git 기반 형상 관리 시스템과 연동하여 코드베이스와 변경 이력을 수집하고 분석 가능한 코드 스냅샷을 생성한다. 기존 GitHub Cloud 연동 기능에 추가로 On-premise GitLab 연동 기능을 추가로 개발해야 하며, 기존 GitHub Cloud 연동 기능 관련 코드와의 호환성을 고려해야 한다. Git 기반 레포지토리 연결(SSH/HTTPS), 분석 대상 브랜치/태그 선택, 제외/포함 경로 및 파일 타입 설정, 코드 변경 이벤트 감지(Commit, Push, MR), Webhook 기반 실시간 이벤트 수신."
@@ -10,7 +10,7 @@
 - **Planning Source**: 2026-04-23 사용자 요청 "TCI 데이터 수집 영역의 온프레미스 GitLab 코드 저장소 연동", 기존 기준선 [specs/001-git-repo-connection/spec.md](../001-git-repo-connection/spec.md)
 - **Why now**: GitHub Cloud만으로는 온프레미스 환경 고객의 코드 수집 수요를 충족할 수 없으므로, 기존 운영 모델을 유지한 채 GitLab 배포 환경까지 수집 범위를 확장해야 한다.
 - **Scope baseline**: 온프레미스 GitLab 저장소 연결, SSH/HTTPS 접근, 분석 대상 브랜치 또는 태그 선택, 포함/제외 경로 및 파일 타입 규칙, Commit/Push/Merge Request 이벤트 감지, webhook 기반 실시간 이벤트 수신, 분석 가능한 코드 스냅샷 생성, 기존 GitHub Cloud 흐름과의 호환성 유지
-- **Out of scope**: Git 이외 형상 관리 시스템 지원, 저장소 쓰기 작업, CI/CD 파이프라인 실행, 코드 품질 평가 로직 자체, GitHub Cloud 기능 재설계, 다른 GitLab 배포 형태에 대한 신규 범위 확장
+- **Out of scope**: Git 이외 형상 관리 시스템 지원, 저장소 쓰기 작업, CI/CD 파이프라인 실행, 코드 품질 평가 로직 자체, GitHub Cloud 기능 재설계, 다른 GitLab 배포 형태에 대한 신규 범위 확장, 저장소 주소와 별도로 GitLab 인스턴스 URL 입력 필드 추가, webhook secret 이중 허용 또는 회전 유예 기간 운영
 
 ## Clarifications
 
@@ -21,6 +21,8 @@
 - Q: Commit 이벤트는 어떤 방식으로 처리할 것인가? → A: GitHub Cloud와 동일하게 Push/Merge Request payload에서 추출한 기록 전용 이벤트로 저장하고, 독립적인 스냅샷 트리거로는 사용하지 않는다.
 - Q: 어떤 Merge Request action만 스냅샷 최신화 트리거로 인정할 것인가? → A: `opened`, `reopened`, `updated/pushed` 계열만 스냅샷 최신화 후보로 인정하고, 그 외 action은 이력만 기록한다.
 - Q: 공식 연결 상태 모델은 어떻게 둘 것인가? → A: GitHub Cloud와 동일하게 공식 연결 상태는 `active`, `reauth_required`, `ref_missing`만 사용하고, webhook 이상은 별도 health로 분리한다.
+- Q: GitLab 연결 식별을 위해 저장소 주소 외 별도 인스턴스 URL 입력 필드를 추가할 것인가? → A: 아니다. 이번 범위에서는 저장소 주소와 기존 연결 메타데이터만 사용하고, 별도 사용자 입력 필드는 추가하지 않는다.
+- Q: webhook secret 회전 유예 기간이나 이전 secret 동시 허용을 이번 범위에 포함할 것인가? → A: 아니다. 이번 범위는 단일 활성 secret 검증과 health 신호 제공까지만 포함한다.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -36,7 +38,8 @@
 
 1. **Given** 수집 담당자가 접근 가능한 온프레미스 GitLab 저장소 주소와 SSH 또는 HTTPS 기반의 연결 단위 공유 읽기 전용 자격 증명을 제공한 상태에서, **When** 저장소 연결을 등록하면, **Then** 시스템은 연결 가능 여부를 검증하고 분석 가능한 저장소 연결을 생성해야 한다.
 2. **Given** 활성화된 온프레미스 GitLab 저장소 연결과 기본 분석 대상 브랜치 또는 태그가 설정된 상태에서, **When** 초기 수집을 실행하면, **Then** 시스템은 해당 ref 기준의 분석 가능한 코드 스냅샷을 생성하고 수집 결과를 보여줘야 한다.
-3. **Given** 기존 GitHub Cloud 저장소 연결이 이미 운영 중인 상태에서, **When** 새로운 온프레미스 GitLab 저장소 연결을 추가하더라도, **Then** 시스템은 기존 GitHub Cloud 연결의 수집 흐름과 이력을 그대로 유지해야 한다.
+3. **Given** 온프레미스 GitLab 저장소 연결이 `reauth_required` 또는 `ref_missing` 상태로 전환된 상태에서, **When** 사용자가 수동 수집 또는 후속 최신화를 시도하면, **Then** 시스템은 새 수집을 차단하고 수정이 필요한 원인을 명확히 보여줘야 한다.
+4. **Given** 기존 GitHub Cloud 저장소 연결이 이미 운영 중인 상태에서, **When** 새로운 온프레미스 GitLab 저장소 연결을 추가하더라도, **Then** 시스템은 기존 GitHub Cloud 연결의 수집 흐름과 이력을 그대로 유지해야 한다.
 
 ---
 
@@ -98,7 +101,7 @@
 - **FR-004a**: 시스템은 GitHub Cloud와 동일하게 공식 저장소 연결 상태로 `active`, `reauth_required`, `ref_missing`만 사용해야 한다.
 - **FR-005**: 시스템은 저장소 연결 1건당 분석 대상 브랜치 또는 태그 1개를 선택하고 이후 변경할 수 있게 해야 한다.
 - **FR-006**: 시스템은 분석 대상 ref가 변경되더라도 기존 스냅샷과 이벤트 이력을 보존하고, 변경 이후 새로 시작되는 수집부터 새 ref를 적용해야 한다.
-- **FR-007**: 시스템은 저장된 접근 정보가 더 이상 유효하지 않거나 선택된 ref를 조회할 수 없으면 연결을 조치 필요 상태로 전환하고, 사용자가 수정하기 전까지 새 수집을 차단해야 한다.
+- **FR-007**: 시스템은 저장된 접근 정보가 더 이상 유효하지 않거나 선택된 ref를 조회할 수 없으면 연결을 조치 필요 상태로 전환하고, 사용자가 수정하기 전까지 수동 실행과 webhook 기반 최신화를 포함한 모든 새 수집을 차단해야 한다.
 - **FR-007a**: 시스템은 접근 정보 무효 또는 만료 시 연결 상태를 `reauth_required`로 전환해야 한다.
 - **FR-007b**: 시스템은 기본 분석 대상 ref를 더 이상 조회할 수 없으면 연결 상태를 `ref_missing`으로 전환해야 한다.
 - **FR-008**: 시스템은 저장소 연결마다 포함 경로, 제외 경로, 파일 타입 조건을 설정하고 수정할 수 있게 해야 한다.
@@ -135,7 +138,7 @@
 
 ### Measurable Outcomes
 
-- **SC-001**: 권한이 유효한 운영자는 온프레미스 GitLab 저장소 주소 입력부터 첫 코드 스냅샷 생성 완료 확인까지 15분 이내에 끝낼 수 있다.
+- **SC-001**: 권한이 유효한 운영자는 표준 운영 경로(온프레미스 GitLab 저장소 주소 입력, 기본 분석 대상 ref 1개 선택, 연결 검증 통과, 첫 코드 스냅샷 완료 확인)를 15분 이내에 끝낼 수 있다.
 - **SC-002**: 유효한 Push 또는 Merge Request 이벤트의 95% 이상은 수신 후 1분 이내에 처리 상태가 확인 가능해야 한다.
 - **SC-003**: 성공적으로 생성된 코드 스냅샷의 100%는 어떤 provider, 어떤 저장소, 어떤 ref, 어떤 범위 규칙, 어떤 시점의 수집 결과인지 추적 가능해야 한다.
 - **SC-004**: 기존 승인된 GitHub Cloud 기준선 시나리오는 GitLab 지원 추가 후에도 모두 추가 수동 우회 없이 성공해야 한다.
