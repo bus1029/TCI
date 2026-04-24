@@ -69,6 +69,7 @@ class Settings:
     database_url: str | None
     redis_url: str | None
     credential_encryption_key: str | None
+    gitlab_self_managed_allowed_hosts: tuple[str, ...]
 
     def runtime_directories(self) -> tuple[Path, Path, Path]:
         return (
@@ -125,6 +126,9 @@ def load_settings() -> Settings:
         database_url=os.getenv("TCI_DATABASE_URL"),
         redis_url=os.getenv("TCI_REDIS_URL"),
         credential_encryption_key=credential_encryption_key,
+        gitlab_self_managed_allowed_hosts=_parse_allowed_hosts(
+            os.getenv("TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS")
+        ),
     )
 
 
@@ -143,3 +147,19 @@ def _validate_credential_encryption_key(raw_value: str | None) -> str | None:
             "TCI_CREDENTIAL_ENCRYPTION_KEY는 유효한 Fernet 키 형식이어야 합니다."
         ) from error
     return raw_value
+
+
+def _parse_allowed_hosts(raw_value: str | None) -> tuple[str, ...]:
+    if not raw_value:
+        return ()
+    return tuple(
+        _normalize_allowed_host(host) for host in raw_value.split(",") if host.strip()
+    )
+
+
+def _normalize_allowed_host(raw_host: str) -> str:
+    host = raw_host.strip().lower()
+    hostname, separator, port = host.rpartition(":")
+    if separator and port.isdecimal():
+        return f"{hostname.rstrip('.')}:{port}"
+    return host.rstrip(".")

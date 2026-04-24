@@ -1299,19 +1299,24 @@ def create_connection_payload(
     *,
     planning_input_reference_id: uuid.UUID,
     provider: str = "github_cloud",
+    remote_url: str = "https://github.com/acme/sample-repo.git",
+    transport: str = "https",
     default_ref_name: str = "main",
+    credential_type: str = "https_pat",
+    credential_secret: str = "readonly-token-value",
+    credential_fingerprint: str = "pat-01",
 ) -> dict[str, Any]:
     return {
         "planningInputReferenceId": str(planning_input_reference_id),
         "provider": provider,
-        "remoteUrl": "https://github.com/acme/sample-repo.git",
-        "transport": "https",
+        "remoteUrl": remote_url,
+        "transport": transport,
         "defaultRefType": "branch",
         "defaultRefName": default_ref_name,
         "credential": {
-            "type": "https_pat",
-            "secret": "readonly-token-value",
-            "fingerprint": "pat-01",
+            "type": credential_type,
+            "secret": credential_secret,
+            "fingerprint": credential_fingerprint,
         },
     }
 
@@ -1483,16 +1488,23 @@ def _load_test_settings(tmp_path: Path, *, database_url: str | None = None):
     original_key = os.environ.get("TCI_CREDENTIAL_ENCRYPTION_KEY")
     original_template_root = os.environ.get("TCI_TEMPLATE_ROOT")
     original_database_url = os.environ.get("TCI_DATABASE_URL")
+    original_redis_url = os.environ.get("TCI_REDIS_URL")
+    original_gitlab_hosts = os.environ.get("TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS")
     template_root = (
         Path(__file__).resolve().parents[2] / "src" / "tci" / "web" / "templates"
     )
     os.environ["TCI_PROJECT_ROOT"] = str(tmp_path)
     os.environ["TCI_CREDENTIAL_ENCRYPTION_KEY"] = Fernet.generate_key().decode("utf-8")
     os.environ["TCI_TEMPLATE_ROOT"] = str(template_root)
+    os.environ["TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS"] = (
+        "gitlab.example.com,gitlab.example.com:8443,"
+        "localhost,127.0.0.1,192.168.10.20,192.168.10.20:2222"
+    )
     if database_url is None:
         os.environ.pop("TCI_DATABASE_URL", None)
     else:
         os.environ["TCI_DATABASE_URL"] = database_url
+    os.environ.pop("TCI_REDIS_URL", None)
     try:
         return load_settings()
     finally:
@@ -1512,3 +1524,11 @@ def _load_test_settings(tmp_path: Path, *, database_url: str | None = None):
             os.environ.pop("TCI_DATABASE_URL", None)
         else:
             os.environ["TCI_DATABASE_URL"] = original_database_url
+        if original_redis_url is None:
+            os.environ.pop("TCI_REDIS_URL", None)
+        else:
+            os.environ["TCI_REDIS_URL"] = original_redis_url
+        if original_gitlab_hosts is None:
+            os.environ.pop("TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS", None)
+        else:
+            os.environ["TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS"] = original_gitlab_hosts

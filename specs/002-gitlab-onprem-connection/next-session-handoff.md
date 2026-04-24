@@ -1,126 +1,123 @@
-# 다음 세션 인수인계
+# Next Session Handoff: GitLab Self-Managed Connection
 
-## 짧은 요약
+## 1. 짧은 요약
 
-`002-gitlab-onprem-connection`의 Phase 2 foundation 중 `T005`, `T006`까지 구현했다.
+GitLab self-managed 저장소 연결의 핵심 기반을 이어서 구현했다. 이번 세션의 중심은 `remoteUrl` 기반 GitLab provider 파싱, 온프레미스 host allowlist, localhost/private-IP/비표준 포트 지원, 그리고 outbound git/credential-bound 경로의 fail-closed 검증이었다.
 
-- mixed-provider ORM/enum/constraint 추가 완료
-- `004_gitlab_self_managed_provider_support.py` migration 작성 완료
-- GitLab foundation 단위 테스트 추가 완료
-- 다음 세션은 `T007`, `T009`, `T010`, `T012` 순으로 provider parsing, repository/API wiring을 이어가면 된다
+현재 구현은 GitLab self-managed 연결 생성, 검증, 기본 ref 변경, scope preview, snapshot build 경로에서 동일한 allowlist 정책을 공유한다. 최종 reviewer 루프는 `reviewer`, `python-reviewer`, `security-reviewer` 모두 finding 없음으로 끝났다.
 
-## 현재 상태
+## 2. 현재 상태
 
-- `pilot-git-repo-connection`에는 GitHub + GitLab self-managed를 함께 다루는 foundation 코드가 들어가 있다.
-- `repository_connections`, `repository_events`, `repository_sync_runs`, `code_snapshots` 관련 foundation schema/metadata는 테스트 기준으로 green이다.
-- GitLab 관련 route wiring, request/response schema, provider parser entrypoint, app wiring은 아직 미완료다.
-- `provider_project_path`는 앱 레벨에서는 필수지만 migration에서는 rollout-safe 하게 nullable 유지로 두었다.
-- reviewer가 실제로 지적한 blocking 이슈 3건은 반영 완료했다.
-  - `code_snapshots.connection_id` 인덱스 누락
-  - downgrade 시 004-only 인덱스 일부 미삭제
-  - migration에서 `provider_project_path`를 너무 이르게 `NOT NULL`로 강제
+- 코드 변경은 아직 커밋되지 않았다.
+- `tasks.md`와 `delivery-evidence.md`는 2026-04-24 구현 상태 기준으로 1차 정합화됐다.
+- `pilot-git-repo-connection/src/tci/infrastructure/git/remote_parsers.py`는 새 파일이며, GitLab/GitHub remote 파싱 진입점으로 사용된다.
+- GitLab self-managed는 explicit instance URL 입력 없이 `remoteUrl`에서 heuristic으로 instance와 project path를 계산한다.
+- `/gitlab` subpath는 instance path로 추정하지 않는다. 예: `https://gitlab.example.com/gitlab/group/repo.git`은 `provider_instance_url=https://gitlab.example.com`, `provider_project_path=gitlab/group/repo`로 저장한다.
+- `localhost`, private IPv4, 비표준 HTTPS/SSH 포트는 지원하되 `TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS` allowlist에 exact origin이 있어야 한다.
+- GitHub host, trailing-dot host, IPv6, query/fragment/userinfo, whitespace/control chars, dot path segment, malformed port는 GitLab provider에서 거부된다.
 
-## 이번 세션에서 바뀐 것
+## 3. 이번 세션에서 바뀐 것
 
-- foundation 테스트/스펙 보강
-  - `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py`
-  - `pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py`
-  - `pilot-git-repo-connection/tests/unit/repository_connections/test_process_github_event.py`
-- mixed-provider persistence/domain 변경
-  - `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
-  - `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
-  - `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_repository.py`
-  - `pilot-git-repo-connection/src/tci/domain/services/process_github_event.py`
-  - `pilot-git-repo-connection/tests/support/repository_connection_testkit.py`
-- migration 추가
-  - `pilot-git-repo-connection/alembic/versions/004_gitlab_self_managed_provider_support.py`
+- GitLab remote parser를 추가하고 connection creation 서비스가 공통 parser를 사용하도록 변경했다.
+- `TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS` 설정을 추가했다.
+- `ensure_gitlab_self_managed_host_allowed`를 추가하고 create/verify/update default ref/snapshot build/scope preview 경로에 연결했다.
+- Scope preview가 GitLab allowlist 거부를 fail-open하지 않도록 `RepositoryConnectionProblem`을 전파하게 했다.
+- DB 모델과 migration에 GitLab provider 제약, `provider_instance_url`, `provider_project_path` 관련 검증을 보강했다.
+- Repository persistence validation에서 GitLab remote URL, instance URL, project path consistency를 검증하게 했다.
+- `provider_project_path` DB column은 rollout 안전성을 위해 nullable 유지하되, GitLab row는 provider-scoped check로 non-null을 요구한다.
+- Korean problem detail의 unsupported provider 메시지를 GitHub 고정 표현에서 provider-neutral 표현으로 바꿨다.
+- 테스트 생성물이 커밋되지 않도록 `.gitignore`의 `__pycache__/`, `*.pyc` 규칙을 유지했다.
 
-## 다음 에이전트가 먼저 봐야 할 파일
+## 4. 다음 에이전트가 먼저 봐야 할 파일
 
-- `specs/002-gitlab-onprem-connection/next-session-handoff.md`
 - `specs/002-gitlab-onprem-connection/tasks.md`
-- `specs/002-gitlab-onprem-connection/plan.md`
-- `specs/002-gitlab-onprem-connection/data-model.md`
-- `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
+- `specs/002-gitlab-onprem-connection/delivery-evidence.md`
+- `pilot-git-repo-connection/src/tci/infrastructure/git/remote_parsers.py`
+- `pilot-git-repo-connection/src/tci/domain/services/repository_connection_support.py`
+- `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
+- `pilot-git-repo-connection/src/tci/domain/services/verify_repository_connection.py`
+- `pilot-git-repo-connection/src/tci/domain/services/update_default_ref.py`
+- `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`
+- `pilot-git-repo-connection/src/tci/domain/services/evaluate_scope_rule_warning.py`
 - `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
-- `pilot-git-repo-connection/alembic/versions/004_gitlab_self_managed_provider_support.py`
+- `pilot-git-repo-connection/src/tci/settings.py`
+- `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_provider_parsing.py`
 - `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py`
-- `pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py`
 - `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
+- `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_scope_contract.py`
 
-## 꼭 유지해야 할 기준
+## 5. 꼭 유지해야 할 기준
 
-- `tdd` 흐름을 유지해야 한다.
-- foundation 이후 단계도 기존 GitHub Cloud 계약과 response shape를 함부로 깨면 안 된다.
-- canonical connection 상태는 `active`, `reauth_required`, `ref_missing`만 유지해야 한다.
-- GitLab webhook 보안은 `X-Gitlab-Token` exact-match 모델을 유지해야 한다.
-- GitLab reachability 문제는 canonical status가 아니라 health projection으로 분리해야 한다.
-- GitLab `provider_instance_url`은 반드시 `https://` 기반 normalized URL이어야 한다.
-- GitLab `provider_project_path`는 앱 레벨에서 계속 필수로 검증해야 한다.
-- migration은 additive/rollout-safe 원칙을 유지해야 한다.
-  - writer가 전부 바뀌기 전에는 `provider_project_path NOT NULL` 같은 hard break를 넣지 말아야 한다.
-- `__pycache__` 변경은 pytest 산출물이라 커밋하지 말아야 한다.
+- GitLab self-managed outbound git 접근 전에는 반드시 allowlist 검사를 통과해야 한다.
+- Allowlist는 host-only가 아니라 port-sensitive origin 정책이다. 기본 포트는 host만 허용하고, 비표준 포트는 `host:port`가 필요하다.
+- SSH custom port는 `provider_instance_url`에 저장하지 않는다. 이후 검증은 저장된 `remote_url`에서 port를 다시 파싱한다.
+- Scope preview의 allowlist rejection은 preview 실패로 삼키면 안 된다.
+- GitHub 기존 흐름은 provider-specific GitLab validation 때문에 깨지면 안 된다.
+- Rollout 안전성을 위해 GitHub/기존 row에 GitLab-only non-null 제약을 강제하면 안 된다.
+- `__pycache__`와 `*.pyc`는 커밋 대상이 아니다.
 
-## 다시 논의하지 말아야 할 결정
+## 6. 다시 논의하지 말아야 할 결정
 
-- GitLab 지원은 기존 `pilot-git-repo-connection` Python 런타임 위에 additive change로 구현한다.
-- GitHub route와 contract는 유지하고 provider adapter만 추가한다.
-- GitLab connection용 별도 인스턴스 URL 입력 필드는 API에 새로 만들지 않는다.
-- GitLab credential은 읽기 전용만 허용한다.
-- GitLab Merge Request snapshot trigger는 `open`, `reopen`, code-moving `update`만 인정한다.
-- webhook secret의 이전 secret 동시 허용은 이번 범위에 포함하지 않는다.
-- `provider_project_path`는 domain/model에서는 유지하되, migration rollout 안전성을 위해 004에서는 nullable 유지로 둔다.
+- 사용자가 GitLab instance URL을 직접 올리는 방식은 이번 방향에서 제외했다.
+- GitLab instance subpath는 heuristic으로 추정하지 않는다.
+- `/gitlab`이라는 path segment도 우선 namespace/project path로 취급한다.
+- localhost/private-IP/비표준 SSH/HTTPS 포트는 지원한다.
+- 단, 해당 origin은 operator allowlist에 명시되어야 한다.
+- IPv6는 이번 범위에서 거부한다.
+- `github.com`과 trailing-dot 변형은 GitLab self-managed provider로 받지 않는다.
 
-## 이번 세션에서 얻은 중요한 메모
+## 7. 이번 세션에서 얻은 중요한 메모
 
-- `RepositoryConnectionRepository.create()`는 이제 GitLab remote/instance/path 정합성을 강하게 검증한다.
-  - `https://`, `git@host:path`, `ssh://` remote를 모두 고려한다.
-  - GitHub connection에 `provider_instance_url`이 들어오면 실패시킨다.
-- `process_github_event.py`는 `ProviderEventIdempotencySource.DELIVERY_HEADER`를 명시적으로 사용한다.
-- GitHub signature 형식 검사는 이제 정확히 `sha256=` + 64자리 lowercase hex만 인정한다.
-- `code_snapshots.connection_id` 인덱스는 ORM과 migration 둘 다 반영돼 있어야 한다.
-- reviewer, python-reviewer, database-reviewer 추가 재검토는 마지막에 새로 띄웠지만 응답 타임아웃으로 종료됐다.
-  - 다만 그 전에 받은 blocking findings는 모두 수정했다.
+- `TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS` 예시:
+  - `gitlab.example.com`
+  - `gitlab.example.com:8443`
+  - `localhost:2222`
+  - `192.168.10.20:2222`
+- 비표준 HTTPS 포트는 `provider_instance_url`에 보존한다.
+- 비표준 SSH 포트는 instance URL에는 보존하지 않고 remote URL로부터 allowlist origin을 재계산한다.
+- `update_default_ref.py`는 현재 context load 과정에서 credential decrypt가 allowlist check보다 먼저 발생한다. 네트워크 접근 전에는 차단되므로 최종 security-reviewer는 finding으로 보지 않았지만, least-exposure 개선 여지는 남아 있다.
+- 실제 PostgreSQL에 Alembic migration을 적용한 검증은 아직 수행하지 않았다.
+- 현재 sandbox에서 `git restore -- '*.pyc' '*/__pycache__/*'`가 `.git/index.lock` 생성 권한 문제로 실패했다. 다음 세션에서 Git 권한 또는 index lock 문제를 먼저 확인해야 한다.
 
-## 테스트와 검증 상태
+## 8. 테스트와 검증 상태
 
-- 통과한 테스트
-  - `python -m pytest pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_git_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_process_github_event.py pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py -q`
-  - 결과: `101 passed in 1.83s`
-- 통과한 정적 검증
-  - `mypy pilot-git-repo-connection/src/tci/domain/services/process_github_event.py pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py`
-  - 결과: `Success: no issues found in 3 source files`
-  - `ruff check pilot-git-repo-connection/alembic/versions/004_gitlab_self_managed_provider_support.py pilot-git-repo-connection/src/tci/domain/services/process_github_event.py pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_repository.py pilot-git-repo-connection/tests/support/repository_connection_testkit.py pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_process_github_event.py`
-  - `black --check` 같은 파일 세트 통과
-  - `git diff --check` 통과
-- 아직 하지 않은 것
-  - 전체 test suite 미실행
-  - 실제 Alembic upgrade/downgrade 실주행 미검증
-  - `security-reviewer` 미실행
-  - 마지막 reviewer/python-reviewer/database-reviewer 재검토는 타임아웃으로 미완료
+- `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections tests/contract/repository_ingestion`
+  - 결과: `244 passed, 9 skipped in 7.52s`
+- `PYTHONDONTWRITEBYTECODE=1 mypy ...`
+  - 변경된 source/test 중심 12개 파일 검사 결과: `Success: no issues found in 12 source files`
+- `ruff check ...`
+  - 결과: `All checks passed!`
+- `black --check ...`
+  - 결과: `17 files would be left unchanged`
+- `git diff --check`
+  - 결과: 통과
+- 최종 `reviewer`
+  - findings 없음
+  - residual risk: 실제 PostgreSQL Alembic migration 미검증
+- 최종 `python-reviewer`
+  - findings 없음
+  - residual risk: subagent 환경에서는 mypy/basedpyright 실행 불가였으나, 로컬 focused mypy는 통과
+- 최종 `security-reviewer`
+  - findings 없음
+  - residuals: `update_default_ref.py` decrypt-before-allowlist 순서 개선 여지, stored SSH custom-port가 scope preview와 snapshot build를 모두 통과하는 직접 E2E 부족
+
+## 9. 다음 세션의 시작 순서
+
+1. `git status --short`로 작업트리를 확인한다.
+2. `.pyc` 변경이 남아 있으면 Git 권한/index lock 문제를 해결한 뒤 tracked pyc를 HEAD로 되돌린다.
+3. 실제 PostgreSQL 환경에서 Alembic upgrade/downgrade 또는 migration constraint 검증을 수행한다.
+4. 남은 webhook/detail/UI task를 진행한다.
+5. 변경 전체에 대해 `pytest`, `mypy`, `ruff`, `black --check`, `git diff --check`를 다시 실행한다.
+6. 최종 reviewer 루프를 다시 한 번 돌리고, finding이 없으면 커밋 준비를 한다.
+
+## 10. 마지막 액션과 바로 다음 액션
+
+마지막 액션은 `specs/002-gitlab-onprem-connection/` 하위 문서를 현재 구현 상태에 맞춰 정합화한 것이다.
+
+바로 다음 액션은 Git 작업트리에서 pyc 노이즈와 `.git/index.lock` 생성 권한 문제를 정리하는 것이다. 그 다음 실제 PostgreSQL migration 검증과 남은 webhook/detail/UI task를 이어가면 된다.
 
 ## 병렬 작업과 소유권
 
-- 이번 세션에서 `reviewer`, `python-reviewer`, `database-reviewer` subagent를 여러 번 호출했다.
-- 남아 있는 병렬 작업 소유권은 없다.
-- 마지막 reviewer 셋은 결과 없이 종료됐으므로 다음 세션에서 필요하면 새로 다시 호출하면 된다.
-
-## 다음 세션의 시작 순서
-
-1. `tasks.md`에서 `T007`, `T009`, `T010`, `T012` 범위를 다시 고정한다.
-2. `repository_connection_support.py`, `create_repository_connection.py`, API schema/wiring 경로를 읽고 GitHub-only 가정이 남아 있는 지점을 정리한다.
-3. `T007` 기준으로 provider parsing/common entrypoint 테스트를 먼저 추가한다.
-4. 그 다음 `T009`, `T010`, `T012` 순으로 repository/service/API/app wiring을 최소 구현으로 green 만든다.
-5. 각 단계마다 기존 GitHub contract 회귀를 같은 타깃에서 다시 확인한다.
-6. GitLab webhook/auth/trust boundary 코드가 실제로 늘어나는 시점에는 `security-reviewer`를 반드시 돌린다.
-
-## 마지막 액션과 바로 다음 액션
-
-- 마지막 액션
-  - Phase 2 foundation 구현을 마쳤다.
-  - migration rollback 안전성과 rollout 안전성 이슈를 수정했다.
-  - targeted pytest, mypy, ruff, black, `git diff --check`까지 green 확인했다.
-- 바로 다음 액션
-  - `T007` RED 작성
-  - GitHub-only parser/service 경로를 provider-aware 구조로 확장
-  - `T009`, `T010`, `T012`로 wiring 이어가기
+- 구현 소유권은 현재 parent session이 가진다.
+- `reviewer`, `python-reviewer`, `security-reviewer`는 최종 read-only 검증에 사용했다.
+- 다음 세션에서 다시 agent를 호출한다면 같은 diff를 대상으로 병렬 reviewer 3종을 먼저 돌리는 것보다, migration 검증과 남은 webhook/detail/UI 구현을 완료한 뒤 최종 reviewer loop를 돌리는 편이 효율적이다.

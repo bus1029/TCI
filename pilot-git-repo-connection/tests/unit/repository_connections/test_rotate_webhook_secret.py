@@ -16,7 +16,9 @@ from tests.support.repository_connection_testkit import (
 )
 
 
-def test_rotate_webhook_secret_replaces_active_secret_and_starts_grace_window(tmp_path) -> None:
+def test_rotate_webhook_secret_replaces_active_secret_and_starts_grace_window(
+    tmp_path,
+) -> None:
     from tci.domain.services.rotate_webhook_secret import (
         RotateWebhookSecretCommand,
         rotate_webhook_secret,
@@ -48,16 +50,25 @@ def test_rotate_webhook_secret_replaces_active_secret_and_starts_grace_window(tm
     )
 
     connection = store.connections[connection_id]
-    rotated_revision = store.webhook_secret_revisions[rotation_result.webhook_secret_revision_id]
-    assert connection.active_webhook_secret_revision_id == rotation_result.webhook_secret_revision_id
-    assert getattr(rotated_revision.status, "value", rotated_revision.status) == "active"
+    rotated_revision = store.webhook_secret_revisions[
+        rotation_result.webhook_secret_revision_id
+    ]
+    assert (
+        connection.active_webhook_secret_revision_id
+        == rotation_result.webhook_secret_revision_id
+    )
+    assert (
+        getattr(rotated_revision.status, "value", rotated_revision.status) == "active"
+    )
     assert previous_revision.status == "previous_grace"
     assert previous_revision.grace_until == rotated_at + timedelta(hours=24)
     assert rotation_result.grace_until == rotated_at + timedelta(hours=24)
     assert store.webhook_rotation_lock_calls == 1
 
 
-def test_rotate_webhook_secret_returns_null_grace_until_for_first_issue(tmp_path) -> None:
+def test_rotate_webhook_secret_returns_null_grace_until_for_first_issue(
+    tmp_path,
+) -> None:
     from tci.domain.services.rotate_webhook_secret import (
         RotateWebhookSecretCommand,
         rotate_webhook_secret,
@@ -107,7 +118,7 @@ def test_rotation_projection_counts_only_current_previous_secret_revision(
         connection_id=connection_id,
         secret="initial-secret",
     )
-    first_rotated_at = datetime(2026, 4, 21, 9, 0, tzinfo=UTC)
+    first_rotated_at = datetime.now(tz=UTC)
     second_rotated_at = first_rotated_at + timedelta(hours=1)
 
     rotate_webhook_secret(
@@ -361,15 +372,18 @@ def test_rotation_with_reused_secret_prefers_new_active_revision(
         if event.provider_delivery_id == "delivery-reused-secret"
     )
     assert accepted_event.verified_secret_revision_status == "active"
-    assert accepted_event.verified_secret_revision_id == store.connections[
-        connection_id
-    ].active_webhook_secret_revision_id
+    assert (
+        accepted_event.verified_secret_revision_id
+        == store.connections[connection_id].active_webhook_secret_revision_id
+    )
 
 
 def test_rotation_projection_counts_legacy_previous_grace_events_without_revision_id(
     tmp_path, monkeypatch
 ) -> None:
-    from tci.domain.services.rotate_webhook_secret import build_webhook_secret_rotation_projection
+    from tci.domain.services.rotate_webhook_secret import (
+        build_webhook_secret_rotation_projection,
+    )
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
@@ -379,7 +393,7 @@ def test_rotation_projection_counts_legacy_previous_grace_events_without_revisio
         json=create_connection_payload(planning_input_reference_id=reference.id),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
-    grace_until = datetime(2026, 4, 22, 9, 0, tzinfo=UTC)
+    grace_until = datetime.now(tz=UTC) + timedelta(hours=24)
     seed_rotated_webhook_secret_with_grace(
         store,
         connection_id=connection_id,

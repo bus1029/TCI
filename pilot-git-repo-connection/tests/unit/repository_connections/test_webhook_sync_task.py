@@ -7,6 +7,17 @@ import uuid
 import pytest
 
 from tci.infrastructure.queue.repository_ingestion_tasks import _run_webhook_sync_task
+from tci.domain.services.repository_connection_support import (
+    RepositoryConnectionProblem,
+)
+from tci.domain.services.build_code_snapshot import (
+    BuildCodeSnapshotCommand,
+    build_code_snapshot,
+)
+from tci.domain.services.create_initial_snapshot import (
+    CreateInitialSnapshotCommand,
+    create_initial_snapshot,
+)
 from tests.support.repository_connection_testkit import (
     build_github_push_payload,
     build_github_webhook_headers,
@@ -16,6 +27,56 @@ from tests.support.repository_connection_testkit import (
     seed_planning_input_reference,
     serialize_github_webhook_payload,
 )
+
+
+def test_build_code_snapshot_rejects_unallowlisted_gitlab_before_git_access(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com/group/sample-repo.git",
+        ),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    sync_run = create_initial_snapshot(
+        CreateInitialSnapshotCommand(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        ),
+        dependencies=client.app.state.dependencies,
+    )
+    store.last_resolved_remote_url = None
+    object.__setattr__(
+        client.app.state.settings,
+        "gitlab_self_managed_allowed_hosts",
+        (),
+    )
+
+    try:
+        build_code_snapshot(
+            BuildCodeSnapshotCommand(
+                workspace_id=workspace_id,
+                connection_id=connection_id,
+                sync_run_id=sync_run.id,
+            ),
+            dependencies=client.app.state.dependencies,
+        )
+    except RepositoryConnectionProblem as error:
+        assert (
+            error.detail == "GitLab Self-Managed host는 허용 목록에 등록되어야 합니다."
+        )
+    else:
+        raise AssertionError("GitLab snapshot should reject unallowlisted hosts")
+
+    assert store.sync_runs[sync_run.id].status.value == "failed"
+    assert store.sync_runs[sync_run.id].failure_code.value == "AUTH_FAILED"
+    assert store.last_resolved_remote_url is None
 
 
 def test_run_webhook_sync_task_marks_event_failed_when_snapshot_build_fails(
@@ -29,7 +90,9 @@ def test_run_webhook_sync_task_marks_event_failed_when_snapshot_build_fails(
         json=create_connection_payload(planning_input_reference_id=reference.id),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
-    seed_active_webhook_secret(store, connection_id=connection_id, secret="webhook-secret")
+    seed_active_webhook_secret(
+        store, connection_id=connection_id, secret="webhook-secret"
+    )
     store.resolved_ref_commits["main"] = "b" * 40
     object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
     monkeypatch.setattr(
@@ -93,7 +156,9 @@ def test_run_webhook_sync_task_does_not_overwrite_retried_event_state(
         json=create_connection_payload(planning_input_reference_id=reference.id),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
-    seed_active_webhook_secret(store, connection_id=connection_id, secret="webhook-secret")
+    seed_active_webhook_secret(
+        store, connection_id=connection_id, secret="webhook-secret"
+    )
     store.resolved_ref_commits["main"] = "c" * 40
     object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
     monkeypatch.setattr(

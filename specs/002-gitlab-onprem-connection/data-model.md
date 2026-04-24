@@ -12,14 +12,17 @@
 
 ## Current Implementation Alignment
 
-- 2026-04-23 기준 이 문서는 아직 설계 기준선이다. 실제 DB/ORM 변경은 시작하지 않았고, Phase 1에서는 이를 검증할 test/evidence scaffold만 추가했다.
-- 다음 구현 시작점은 `tasks.md`의 `T005`, `T006`이며, 아래 항목이 첫 실제 코드 변경 대상이다.
+- 2026-04-23 기준 Phase 2 foundation의 ORM/migration 일부가 구현됐다.
+- 2026-04-24 기준 GitLab self-managed connection metadata와 remote validation은 실제 코드에 반영됐다.
+- 현재 구현 완료 또는 반영 중인 항목:
   - `RepositoryConnection.provider`
   - `provider_instance_url`
+  - `provider_project_path`
   - `provider_event_idempotency_source`
   - `webhook_merge_request` trigger support
   - health projection persistence fields
-- 따라서 이 문서의 엔터티/필드는 “Phase 2에서 구현해야 할 목표 모델”로 해석한다.
+- 아직 pending인 항목은 GitLab webhook event normalization, detail/read-model 확장, UI 표시, 실제 PostgreSQL migration 적용 검증이다.
+- 따라서 이 문서는 “구현된 foundation + 남은 목표 모델”로 해석한다.
 
 ## Core Entities
 
@@ -68,6 +71,9 @@
 
 - `provider = github_cloud`면 `provider_instance_url`은 `null`, `webhook_auth_mode = hmac_sha256`
 - `provider = gitlab_self_managed`면 `provider_instance_url`이 저장되더라도 `remote_url`에서 파생된 값이어야 하며 별도 사용자 입력 필드는 아니다. `webhook_auth_mode = shared_token`
+- GitLab self-managed의 `provider_instance_url`은 `https://host` 또는 비표준 HTTPS 포트가 포함된 `https://host:port` 형식이다.
+- SSH custom port는 `provider_instance_url`에 저장하지 않고, outbound 검증 시 저장된 `remote_url`에서 다시 파싱한다.
+- GitLab self-managed의 `provider_project_path`는 `/gitlab` 같은 path prefix도 namespace로 포함한다. instance subpath는 추정하지 않는다.
 - `status`는 `active`, `reauth_required`, `ref_missing`만 허용
 - `provider_project_path`는 `repository_namespace + "/" + repository_name`과 일치해야 한다
 - canonical status는 webhook mismatch나 서버 일시 장애로 변경되지 않는다
@@ -258,4 +264,6 @@ active + secret_mismatch_detected -> active + healthy
 
 - 기존 GitHub rows는 migration 후에도 유효해야 하므로 `provider_instance_url`은 nullable add-column 또는 derived persistence field로 도입한다.
 - 기존 GitHub webhook events는 `provider_event_type = pull_request`를 계속 유지하고, GitLab은 `merge_request`를 새 값으로 추가한다.
+- `provider_project_path` DB column은 rollout-safe하게 nullable로 유지하되, GitLab row는 provider-scoped check로 non-null을 요구한다.
+- GitLab remote URL은 GitHub host, trailing-dot host, IPv6, userinfo, query/fragment, whitespace/control chars, dot path segment, malformed port를 거부한다.
 - 기존 API summary fields(`lastProcessedEvent`, `lastSuccessfulSnapshotAt`, `lastFailedSyncAt`)는 shape 변경 없이 provider 값과 health 정보만 확장한다.

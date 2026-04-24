@@ -147,6 +147,9 @@ pilot-git-repo-connection/
 
 - `RepositoryProvider` enum과 remote parser를 확장한다.
 - GitLab self-managed 식별은 기존 저장소 주소와 provider metadata를 사용하며, 별도 `providerInstanceUrl` 사용자 입력 필드는 추가하지 않는다.
+- `provider_instance_url`은 `remoteUrl`에서 파생한다. `/gitlab` 같은 path prefix는 instance subpath로 추정하지 않고 project namespace로 취급한다.
+- localhost, private IPv4, 비표준 SSH/HTTPS 포트는 지원하되, outbound git 접근 전 `TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS` exact-origin allowlist를 통과해야 한다.
+- GitLab remote parser는 GitHub host, trailing-dot host, IPv6, userinfo, query/fragment, whitespace/control chars, dot path segment, malformed port를 거부한다.
 - GitHub/GitLab 모두 같은 canonical status와 detail response shape를 유지한다.
 - credential validator는 기존 `git ls-remote` 흐름을 재사용하되, GitLab remote URL parser와 read-only token scope validation을 추가한다.
 
@@ -182,6 +185,7 @@ pilot-git-repo-connection/
 
 - Unit
   - GitLab remote URL parsing
+  - GitLab self-managed host allowlist and custom port handling
   - GitLab token verification
   - GitLab delivery id extraction priority
   - MR `update` gating (`oldrev` / `last_commit.id` 비교)

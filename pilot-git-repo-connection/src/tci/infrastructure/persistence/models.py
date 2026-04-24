@@ -242,15 +242,38 @@ class RepositoryConnection(Base):
             "((provider = 'github_cloud' AND "
             "(remote_url LIKE 'git@github.com:%' OR remote_url LIKE 'https://github.com/%')) "
             "OR (provider = 'gitlab_self_managed' AND "
-            "((remote_url LIKE 'git@%:%' AND remote_url !~* '^git@github\\.com:') "
-            "OR (remote_url LIKE 'https://%/%' AND remote_url !~* '^https://github\\.com(?::[0-9]+)?/') "
-            "OR (remote_url LIKE 'ssh://%/%' "
-            "AND remote_url !~* '^ssh://(?:[^@/]+@)?github\\.com(?::[0-9]+)?/'))))",
+            "((remote_url LIKE 'git@%:%' AND remote_url !~* '^git@github\\.com\\.?:' "
+            "AND remote_url !~ '^git@[-[:space:][:cntrl:]]' "
+            "AND remote_url !~ '^git@[^:]*\\.\\.' "
+            "AND remote_url !~ '^git@[^:]*\\.-' "
+            "AND remote_url !~ '^git@[^:]*\\.:' "
+            "AND remote_url !~ '^git@[^:]*-[.:]' "
+            "AND remote_url !~ '^git@[^:]*[[:space:][:cntrl:]][^:]*:') "
+            "OR (remote_url LIKE 'https://%/%' "
+            "AND remote_url !~* '^https://github\\.com\\.?(?::[0-9]+)?/' "
+            "AND remote_url !~ '^https://[-[:space:][:cntrl:]]' "
+            "AND remote_url !~ '^https://[^/]*\\.\\.' "
+            "AND remote_url !~ '^https://[^/]*\\.-' "
+            "AND remote_url !~ '^https://[^/?#]*\\.(?::[0-9]+)?/' "
+            "AND remote_url !~ '^https://[^/]*-[.:/]' "
+            "AND remote_url !~ '^https://[^/]*[[:space:][:cntrl:]][^/]*/' "
+            "AND remote_url !~ '^https://\\[') "
+            "OR (remote_url LIKE 'ssh://git@%/%' "
+            "AND remote_url !~* '^ssh://(?:[^@/]+@)?github\\.com\\.?(?::[0-9]+)?/' "
+            "AND remote_url !~ '^ssh://git@[-[:space:][:cntrl:]]' "
+            "AND remote_url !~ '^ssh://git@[^/]*\\.\\.' "
+            "AND remote_url !~ '^ssh://git@[^/]*\\.-' "
+            "AND remote_url !~ '^ssh://git@[^/?#]*\\.(?::[0-9]+)?/' "
+            "AND remote_url !~ '^ssh://git@[^/]*-[.:/]' "
+            "AND remote_url !~ '^ssh://git@[^/]*[[:space:][:cntrl:]][^/]*/' "
+            "AND remote_url !~ '^ssh://git@\\['))))",
             name="ck_repo_conn_remote_url_host",
         ),
         CheckConstraint(
             "remote_url NOT LIKE 'https://%@%/%' "
-            "AND remote_url NOT LIKE 'ssh://%:%@%/%'",
+            "AND remote_url NOT LIKE 'ssh://%:%@%/%' "
+            "AND remote_url NOT LIKE '%?%' "
+            "AND remote_url NOT LIKE '%#%'",
             name="ck_repo_conn_remote_url_no_userinfo",
         ),
         CheckConstraint(
@@ -268,7 +291,13 @@ class RepositoryConnection(Base):
             "("
             "(provider <> 'gitlab_self_managed') "
             "OR "
-            "(provider_instance_url ~ '^https://[^/@:?#]+(:[0-9]+)?(/[^?#]*)?$')"
+            "(provider_instance_url ~ '^https://[A-Za-z0-9][A-Za-z0-9.-]*(?::[0-9]+)?/?$' "
+            "AND provider_instance_url !~ '^https://[^/]*\\.\\.' "
+            "AND provider_instance_url !~ '^https://[^/]*\\.-' "
+            "AND provider_instance_url !~ '^https://[^/]*\\.(?::[0-9]+)?/?$' "
+            "AND provider_instance_url !~ '^https://[^/:/]*-(?::[0-9]+)?/?$' "
+            "AND provider_instance_url !~ '^https://[^/]*[[:space:][:cntrl:]][^/]*' "
+            "AND provider_instance_url !~ '^https://[^/]*-[.:/]')"
             ")",
             name="ck_repo_conn_gitlab_instance_url_https",
         ),
@@ -300,30 +329,25 @@ class RepositoryConnection(Base):
             name="ck_repo_conn_gitlab_https_port_match",
         ),
         CheckConstraint(
-            "(provider_project_path LIKE '%/%' "
+            "((provider <> 'gitlab_self_managed') "
+            "OR (provider_project_path IS NOT NULL "
+            "AND provider_project_path LIKE '%/%' "
             "AND provider_project_path NOT LIKE '/%' "
             "AND provider_project_path NOT LIKE '%/' "
-            "AND provider_project_path NOT LIKE '%//%')",
+            "AND provider_project_path NOT LIKE '%//%' "
+            "AND provider_project_path NOT LIKE '%?%' "
+            "AND provider_project_path NOT LIKE '%#%' "
+            "AND provider_project_path !~ '[[:space:][:cntrl:]]' "
+            "AND provider_project_path !~ '(^|/)\\.\\.?(/|$)'))",
             name="ck_repo_conn_provider_project_path",
         ),
         CheckConstraint(
             "("
             "(provider <> 'gitlab_self_managed') "
             "OR "
-            "(provider_project_path = CASE "
+            "(provider_project_path IS NOT NULL AND provider_project_path = CASE "
             "WHEN remote_url LIKE 'https://%' "
-            "THEN CASE "
-            "WHEN nullif(regexp_replace(regexp_replace(provider_instance_url, '^https://[^/]+/?', ''), '/$', ''), '') IS NOT NULL "
-            "THEN CASE "
-            "WHEN left(regexp_replace(regexp_replace(remote_url, '^https://[^/]+/', ''), '\\.git$', ''), "
-            "length(regexp_replace(regexp_replace(provider_instance_url, '^https://[^/]+/?', ''), '/$', '')) + 1) = "
-            "regexp_replace(regexp_replace(provider_instance_url, '^https://[^/]+/?', ''), '/$', '') || '/' "
-            "THEN substr(regexp_replace(regexp_replace(remote_url, '^https://[^/]+/', ''), '\\.git$', ''), "
-            "length(regexp_replace(regexp_replace(provider_instance_url, '^https://[^/]+/?', ''), '/$', '')) + 2) "
-            "ELSE '' "
-            "END "
-            "ELSE regexp_replace(regexp_replace(remote_url, '^https://[^/]+/', ''), '\\.git$', '') "
-            "END "
+            "THEN regexp_replace(regexp_replace(remote_url, '^https://[^/]+/', ''), '\\.git$', '') "
             "WHEN remote_url LIKE 'git@%:%' "
             "THEN regexp_replace(regexp_replace(remote_url, '^git@[^:]+:', ''), '\\.git$', '') "
             "WHEN remote_url LIKE 'ssh://%/%' "
@@ -403,7 +427,7 @@ class RepositoryConnection(Base):
     )
     repository_owner: Mapped[str] = mapped_column(String(255), nullable=False)
     repository_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    provider_project_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    provider_project_path: Mapped[str | None] = mapped_column(String(512))
     default_ref_type: Mapped[DefaultRefType] = mapped_column(
         sql_enum(DefaultRefType, name="default_ref_type"),
         nullable=False,

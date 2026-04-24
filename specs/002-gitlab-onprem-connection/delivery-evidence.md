@@ -28,9 +28,9 @@
 | Phase | Goal | Status | Evidence |
 |------|------|--------|----------|
 | Phase 1 | 증적 문서 및 테스트 골격 준비 | scaffolded | T001-T004 |
-| Phase 2 | mixed-provider 공통 기반 구축 | in_progress | T005, T006, T011 |
-| Phase 3 | US1 GitLab 연결과 초기 snapshot | pending | - |
-| Phase 4 | US2 scope/ref 관리 | pending | - |
+| Phase 2 | mixed-provider 공통 기반 구축 | in_progress | T005, T006, T007, T011 |
+| Phase 3 | US1 GitLab 연결과 초기 snapshot | in_progress | T013, T016, create/verify/default-ref/snapshot allowlist slice |
+| Phase 4 | US2 scope/ref 관리 | in_progress | scope preview allowlist rejection slice |
 | Phase 5 | US3 webhook 최신화 | pending | - |
 | Phase 6 | polish, quickstart, latency 검증 | pending | - |
 
@@ -38,7 +38,7 @@
 
 ### User Story 1
 
-- 상태: pending
+- 상태: in_progress
 - 범위
   - GitLab self-managed 저장소 연결 생성
   - verify 성공 및 `reauth_required` / `ref_missing` 전이
@@ -47,16 +47,24 @@
 - 근거
   - Contract
     - Phase 1 scaffold: `tests/contract/repository_ingestion/test_gitlab_connection_contract.py`
+    - Implemented coverage: `tests/contract/repository_ingestion/test_repository_connection_contract.py`
+      - GitLab provider create and derived metadata
+      - allowlist rejection before git access
+      - custom HTTPS/SSH port allowlist behavior
+      - `/gitlab` path prefix as project namespace
+      - GitLab detail response shape compatibility
+      - default-ref patch allowlist rejection
   - Integration
     - Phase 1 scaffold: `tests/integration/repository_connections/test_gitlab_provider_flows.py`
     - Phase 1 scaffold: `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
     - Planned follow-up split in `T014`: `tests/integration/repository_connections/test_gitlab_connection_lifecycle.py`
   - 실행 결과
-    - pending
+    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections tests/contract/repository_ingestion`
+    - 결과: `244 passed, 9 skipped in 7.52s`
 
 ### User Story 2
 
-- 상태: pending
+- 상태: in_progress
 - 범위
   - GitLab ref 변경 관리
   - scope rule 저장과 경고
@@ -65,11 +73,14 @@
 - 근거
   - Contract
     - Phase 1 scaffold: `tests/contract/repository_ingestion/test_gitlab_connection_contract.py`
+    - Implemented coverage: `tests/contract/repository_ingestion/test_repository_scope_contract.py`
+      - GitLab allowlist rejection is propagated before preview git access
   - Integration
     - Phase 1 scaffold: `tests/integration/repository_connections/test_gitlab_provider_flows.py`
     - Phase 1 scaffold: `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
   - 실행 결과
-    - pending
+    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections tests/contract/repository_ingestion`
+    - 결과: `244 passed, 9 skipped in 7.52s`
 
 ### User Story 3
 
@@ -94,15 +105,15 @@
 
 | Requirement | Summary | Planned Evidence |
 |-------------|---------|------------------|
-| FR-001 | GitHub Cloud 기준선 유지 + GitLab self-managed 추가 | US1/US3 regression tests |
-| FR-002 | provider, remote, transport, credential, status 등록 | GitLab connection contract/integration |
+| FR-001 | GitHub Cloud 기준선 유지 + GitLab self-managed 추가 | US1/US3 regression tests; GitLab parser keeps GitHub parser path intact |
+| FR-002 | provider, remote, transport, credential, status 등록 | GitLab connection contract/integration; create contract now verifies derived metadata |
 | FR-002a | 읽기 전용 credential만 허용 | GitLab readonly validator unit/integration |
-| FR-003 | 연결 등록 시 접근 가능 여부 검증 | create/verify contract/integration |
+| FR-003 | 연결 등록 시 접근 가능 여부 검증 | create/verify contract/integration; allowlist rejection before git access covered |
 | FR-004 | GitHub 기존 흐름 유지 | GitHub compatibility regression |
 | FR-004a | canonical status는 `active`, `reauth_required`, `ref_missing`만 사용 | phase2 foundation/unit |
-| FR-005 | 기본 분석 대상 ref 1개 선택/변경 | connection patch and verify tests |
+| FR-005 | 기본 분석 대상 ref 1개 선택/변경 | connection patch and verify tests; GitLab allowlist check covered on patch |
 | FR-006 | ref 변경 후 기존 snapshot/event 이력 보존 | integration lifecycle tests |
-| FR-007 | 조치 필요 상태에서 새 수집 차단 | blocked snapshot/webhook integration |
+| FR-007 | 조치 필요 상태에서 새 수집 차단 | blocked snapshot/webhook integration; snapshot allowlist rejection before git access covered |
 | FR-007a | auth 실패 시 `reauth_required` | verify lifecycle tests |
 | FR-007b | ref 조회 실패 시 `ref_missing` | verify lifecycle tests |
 | FR-008 | include/exclude/file type 규칙 관리 | scope contract/integration |
@@ -119,8 +130,8 @@
 | FR-015a | webhook 이상을 health 신호로 분리 | connection detail contract/integration |
 | FR-016 | duplicate/stale webhook guard | webhook integration |
 | FR-017 | latest success/failure/last processed event 요약 | detail/event contract |
-| FR-018 | connection/scope/event/snapshot traceability 유지 | detail and evidence trace checks |
-| FR-019 | 빈 수집 위험 경고와 empty snapshot 실패 처리 | scope warning and snapshot tests |
+| FR-018 | connection/scope/event/snapshot traceability 유지 | detail and evidence trace checks; GitLab `provider_instance_url` and `provider_project_path` persistence covered |
+| FR-019 | 빈 수집 위험 경고와 empty snapshot 실패 처리 | scope warning and snapshot tests; allowlist rejection is not swallowed by preview failure handling |
 | FR-020 | mixed-provider 동시 운영 시 상태/이력 분리 | compatibility regression |
 | FR-021 | 읽기 전용 공유 credential 운영 모델 유지 | validator/service tests |
 | FR-022 | GitHub와 유사한 작업 순서/상태 해석 제공 | quickstart and operator flow |
@@ -155,6 +166,18 @@
 - Integration
   - `tests/integration/repository_connections/test_gitlab_connection_lifecycle.py` in `T014`
 
+### 2026-04-24 Implemented Coverage
+
+- Contract
+  - `tests/contract/repository_ingestion/test_repository_connection_contract.py`
+  - `tests/contract/repository_ingestion/test_repository_scope_contract.py`
+- Unit
+  - `tests/unit/repository_connections/test_gitlab_provider_parsing.py`
+  - `tests/unit/repository_connections/test_gitlab_foundation.py`
+  - `tests/unit/repository_connections/test_verify_repository_connection.py`
+  - `tests/unit/repository_connections/test_webhook_sync_task.py`
+  - `tests/unit/repository_connections/test_settings.py`
+
 ## Phase 1 Completion Evidence
 
 - T001: `delivery-evidence.md` 스캐폴드 생성 완료
@@ -184,6 +207,54 @@
     - `python -m pytest pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_git_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_process_github_event.py pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py -q`
     - 결과: `101 passed in 1.83s`
 
+## Phase 2/US1 Security Slice Evidence
+
+- T007: provider parsing and remote validation entry point refactor 완료
+  - 근거 파일
+    - `pilot-git-repo-connection/src/tci/infrastructure/git/remote_parsers.py`
+    - `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
+    - `pilot-git-repo-connection/src/tci/domain/services/repository_connection_support.py`
+  - 검증 범위
+    - GitLab HTTPS, SCP-like SSH, `ssh://` remote parsing
+    - `/gitlab` path prefix를 project namespace로 처리
+    - localhost/private IPv4/custom HTTPS/custom SSH port parsing
+    - GitHub host, trailing-dot host, IPv6, userinfo, query/fragment, whitespace/control chars, dot segment, malformed port 거부
+- T013: GitLab connection contract coverage 추가 완료
+  - 근거 파일
+    - `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
+  - 중요 메모
+    - Phase 1 scaffold 파일인 `test_gitlab_connection_contract.py`는 유지한다.
+    - 실제 coverage는 기존 provider-neutral contract suite에 추가했다.
+- T016: GitLab remote URL parser와 namespace/project extraction 구현 완료
+  - 근거 파일
+    - `pilot-git-repo-connection/src/tci/infrastructure/git/remote_parsers.py`
+- Additional security coverage
+  - `TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS` 설정 추가
+  - create, verify, default-ref update, scope preview, snapshot build 경로에서 outbound git 접근 전 allowlist 검증
+  - Scope preview는 allowlist rejection을 preview failure로 삼키지 않고 전파
+
+## 2026-04-24 Verification Snapshot
+
+- 테스트
+  - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections tests/contract/repository_ingestion`
+  - 결과: `244 passed, 9 skipped in 7.52s`
+- 타입/정적 검증
+  - `PYTHONDONTWRITEBYTECODE=1 mypy src/tci/settings.py src/tci/infrastructure/git/remote_parsers.py src/tci/domain/services/create_repository_connection.py src/tci/domain/services/repository_connection_support.py src/tci/domain/services/verify_repository_connection.py src/tci/domain/services/update_default_ref.py src/tci/domain/services/build_code_snapshot.py src/tci/domain/services/evaluate_scope_rule_warning.py src/tci/infrastructure/persistence/repository_connection_repository.py tests/unit/repository_connections/test_gitlab_provider_parsing.py tests/unit/repository_connections/test_gitlab_foundation.py tests/unit/repository_connections/test_settings.py`
+  - 결과: `Success: no issues found in 12 source files`
+- 스타일/포맷 검증
+  - focused `ruff check` 통과
+  - focused `black --check` 통과: `17 files would be left unchanged`
+- diff hygiene
+  - `git diff --check` 통과
+- Reviewer loop
+  - `reviewer`: findings 없음
+  - `python-reviewer`: findings 없음
+  - `security-reviewer`: findings 없음
+- Residual risks
+  - 실제 PostgreSQL Alembic migration 적용 검증은 아직 미실행
+  - `update_default_ref.py`는 outbound git 접근 전 차단되지만 credential decrypt가 allowlist check보다 먼저 발생한다.
+  - stored SSH custom-port가 scope preview와 snapshot build를 모두 통과하는 직접 E2E는 아직 없다.
+
 ## Foundation Verification Snapshot
 
 - 타입/정적 검증
@@ -197,14 +268,14 @@
 
 ## Open Evidence Slots
 
-- 실제 pytest 실행 명령과 pass/fail 결과
 - 수동 quickstart 검증 메모
 - latency 측정 결과
 - GitHub regression 실행 결과
-- reviewer / python-reviewer / database-reviewer 최종 재검토 결과
-- security-reviewer 피드백과 조치 기록
+- 실제 PostgreSQL migration 적용 검증 결과
+- GitLab webhook flow 구현 후 reviewer / python-reviewer / security-reviewer 최종 재검토 결과
 
 ## 변경 이력
 
 - 2026-04-23: Phase 1 evidence scaffold 생성
 - 2026-04-23: Phase 2 foundation partial evidence 추가 (`T005`, `T006`, `T011`)
+- 2026-04-24: GitLab remote parser, allowlist, localhost/private-IP/custom-port, fail-closed outbound guard evidence 추가 (`T007`, `T013`, `T016` 및 security slice)

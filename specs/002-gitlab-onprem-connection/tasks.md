@@ -42,7 +42,7 @@
 
 - [x] T005 Extend provider enums, canonical state helpers, and shared persistence models for `gitlab_self_managed`, `provider_instance_url`, delivery-id source, health projection, and `webhook_merge_request` trigger support in `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
 - [x] T006 Create additive Alembic migration for mixed-provider repository ingestion schema changes in `pilot-git-repo-connection/alembic/versions/004_gitlab_self_managed_provider_support.py`
-- [ ] T007 [P] Refactor provider parsing and remote validation entry points to support GitHub/GitLab side by side in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py` and `pilot-git-repo-connection/src/tci/infrastructure/git/remote_parsers.py`
+- [x] T007 [P] Refactor provider parsing and remote validation entry points to support GitHub/GitLab side by side in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py` and `pilot-git-repo-connection/src/tci/infrastructure/git/remote_parsers.py`
 - [ ] T008 [P] Introduce shared provider event types and normalized event DTOs in `pilot-git-repo-connection/src/tci/infrastructure/webhooks/provider_event_types.py` and `pilot-git-repo-connection/src/tci/domain/services/repository_event_processing.py`
 - [ ] T009 [P] Extend repository connection, event, cursor, sync run, and snapshot repositories for mixed-provider reads/writes in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`, `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_repository.py`, `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_cursor_repository.py`, `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_sync_run_repository.py`, and `pilot-git-repo-connection/src/tci/infrastructure/persistence/code_snapshot_repository.py`
 - [ ] T010 [P] Extend shared API schemas for mixed-provider connection detail, webhook health, and traceability fields in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`, `pilot-git-repo-connection/src/tci/api/schemas/repository_scope.py`, and `pilot-git-repo-connection/src/tci/api/schemas/_base.py`
@@ -54,9 +54,11 @@
 **Phase 2 Execution Note**:
 
 - 2026-04-23 기준 부분 완료
+- 2026-04-24 GitLab remote parser, provider metadata validation, host allowlist security slice 추가 완료
 - 완료 작업:
   - `T005`
   - `T006`
+  - `T007`
   - `T011`
 - 검증 명령:
   - `python -m pytest pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_git_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_process_github_event.py pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py -q`
@@ -71,6 +73,36 @@
   - `black --check` 통과
   - `git diff --check` 통과
 
+**Phase 2 Additional Execution Note**:
+
+- 2026-04-24 완료/보강 작업:
+  - `T007`: `remote_parsers.py` 추가, GitHub/GitLab side-by-side parsing, GitLab host/project path validation
+  - `T009` 일부: `repository_connection_repository.py`의 GitLab metadata validation 보강
+  - `T011` 보강: localhost/private IPv4, custom port, trailing-dot host, invalid project path, GitHub host rejection test 추가
+- 보안 결정:
+  - `providerInstanceUrl` 사용자 입력은 추가하지 않는다.
+  - `/gitlab` path prefix는 instance subpath가 아니라 project namespace로 취급한다.
+  - localhost/private IPv4/비표준 포트는 `TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS` exact-origin allowlist가 있을 때만 outbound git 접근을 허용한다.
+- 검증 명령:
+  - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections tests/contract/repository_ingestion`
+  - `PYTHONDONTWRITEBYTECODE=1 mypy src/tci/settings.py src/tci/infrastructure/git/remote_parsers.py src/tci/domain/services/create_repository_connection.py src/tci/domain/services/repository_connection_support.py src/tci/domain/services/verify_repository_connection.py src/tci/domain/services/update_default_ref.py src/tci/domain/services/build_code_snapshot.py src/tci/domain/services/evaluate_scope_rule_warning.py src/tci/infrastructure/persistence/repository_connection_repository.py tests/unit/repository_connections/test_gitlab_provider_parsing.py tests/unit/repository_connections/test_gitlab_foundation.py tests/unit/repository_connections/test_settings.py`
+  - `ruff check` focused changed files
+  - `black --check` focused changed files
+  - `git diff --check`
+- 결과:
+  - `244 passed, 9 skipped in 7.52s`
+  - `Success: no issues found in 12 source files`
+  - `ruff check` 통과
+  - `black --check` 통과
+  - `git diff --check` 통과
+- Reviewer:
+  - `reviewer`: findings 없음
+  - `python-reviewer`: findings 없음
+  - `security-reviewer`: findings 없음
+- 남은 리스크:
+  - 실제 PostgreSQL Alembic migration 적용 검증은 아직 미실행
+  - `update_default_ref.py`는 outbound 접근 전 차단되지만 credential decrypt가 allowlist check보다 먼저 발생해 least-exposure 개선 여지가 있다.
+
 ---
 
 ## Phase 3: User Story 1 - 온프레미스 GitLab 저장소 연결과 초기 스냅샷 생성 (Priority: P1) 🎯 MVP
@@ -81,13 +113,13 @@
 
 ### Tests for User Story 1
 
-- [ ] T013 [P] [US1] Add contract tests for GitLab repository connection create/get/patch/verify flows and provider validation in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_connection_contract.py`
+- [x] T013 [P] [US1] Add contract tests for GitLab repository connection create/get/patch/verify flows and provider validation in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
 - [ ] T014 [P] [US1] Add integration tests for GitLab connection verify, `reauth_required`, `ref_missing`, blocked manual collection, and initial snapshot creation in `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_connection_lifecycle.py`
 - [ ] T015 [P] [US1] Add GitHub compatibility regression tests for connection create/verify/manual snapshot in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
 
 ### Implementation for User Story 1
 
-- [ ] T016 [P] [US1] Implement GitLab remote URL parser and namespace/project extraction in `pilot-git-repo-connection/src/tci/infrastructure/git/gitlab_remote_parser.py`
+- [x] T016 [P] [US1] Implement GitLab remote URL parser and namespace/project extraction in `pilot-git-repo-connection/src/tci/infrastructure/git/remote_parsers.py`
 - [ ] T017 [P] [US1] Implement GitLab credential scope validation and read-only token probing in `pilot-git-repo-connection/src/tci/infrastructure/git/gitlab_readonly_validator.py`
 - [ ] T018 [US1] Extend repository connection creation service for GitLab read-only credential validation, repository-address-based provider detection, and mixed-provider error mapping in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
 - [ ] T019 [US1] Extend repository connection verify and default-ref update services for GitLab `reauth_required`/`ref_missing` transitions in `pilot-git-repo-connection/src/tci/domain/services/verify_repository_connection.py` and `pilot-git-repo-connection/src/tci/domain/services/update_default_ref.py`
@@ -199,12 +231,12 @@
 
 ```bash
 # Tests first
-Task: "T013 [US1] contract tests in tests/contract/repository_ingestion/test_gitlab_connection_contract.py"
+Task: "T013 [US1] contract tests in tests/contract/repository_ingestion/test_repository_connection_contract.py"
 Task: "T014 [US1] integration tests in tests/integration/repository_connections/test_gitlab_connection_lifecycle.py"
 Task: "T015 [US1] GitHub compatibility regression in tests/integration/repository_connections/test_github_gitlab_compatibility.py"
 
 # Then independent implementation work
-Task: "T016 [US1] GitLab remote parser in src/tci/infrastructure/git/gitlab_remote_parser.py"
+Task: "T016 [US1] GitLab remote parser in src/tci/infrastructure/git/remote_parsers.py"
 Task: "T017 [US1] GitLab readonly validator in src/tci/infrastructure/git/gitlab_readonly_validator.py"
 ```
 

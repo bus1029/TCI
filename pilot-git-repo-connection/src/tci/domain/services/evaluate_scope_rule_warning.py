@@ -4,10 +4,15 @@ from dataclasses import dataclass
 import uuid
 
 from tci.domain.services.repository_connection_support import (
+    RepositoryConnectionProblem,
     bind_git_credential,
     decrypt_secret_from_storage,
+    ensure_gitlab_self_managed_host_allowed,
 )
-from tci.domain.services.scope_filter_engine import ScopeFilterRuleSet, filter_snapshot_entries
+from tci.domain.services.scope_filter_engine import (
+    ScopeFilterRuleSet,
+    filter_snapshot_entries,
+)
 from tci.infrastructure.persistence.models import ScopeRuleWarningState
 
 
@@ -23,15 +28,21 @@ class EvaluateScopeRuleWarningCommand:
     exclude_binary: bool
 
 
-def evaluate_scope_rule_warning(command: EvaluateScopeRuleWarningCommand, *, dependencies):
+def evaluate_scope_rule_warning(
+    command: EvaluateScopeRuleWarningCommand, *, dependencies
+):
     if dependencies.session_factory is None:
-        raise RuntimeError("범위 규칙 경고를 계산하려면 데이터베이스 세션이 필요합니다.")
+        raise RuntimeError(
+            "범위 규칙 경고를 계산하려면 데이터베이스 세션이 필요합니다."
+        )
 
     with dependencies.session_factory() as session:
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )
-        credential_repository = dependencies.credential_revision_repository_factory(session)
+        credential_repository = dependencies.credential_revision_repository_factory(
+            session
+        )
         connection = connection_repository.get(
             workspace_id=command.workspace_id,
             connection_id=command.connection_id,
@@ -45,6 +56,12 @@ def evaluate_scope_rule_warning(command: EvaluateScopeRuleWarningCommand, *, dep
             return ScopeRuleWarningState.OK
 
         try:
+            ensure_gitlab_self_managed_host_allowed(
+                provider=connection.provider,
+                provider_instance_url=connection.provider_instance_url,
+                settings=dependencies.settings,
+                remote_url=connection.remote_url,
+            )
             credential_secret = decrypt_secret_from_storage(
                 credential_revision.encrypted_secret,
                 settings=dependencies.settings,
@@ -69,10 +86,14 @@ def evaluate_scope_rule_warning(command: EvaluateScopeRuleWarningCommand, *, dep
                         else connection.remote_url
                     ),
                 )
-                materialized_snapshot = dependencies.git_mirror_manager.read_snapshot_entries(
-                    mirror=mirror,
-                    commit_sha=resolved_ref.commit_sha,
+                materialized_snapshot = (
+                    dependencies.git_mirror_manager.read_snapshot_entries(
+                        mirror=mirror,
+                        commit_sha=resolved_ref.commit_sha,
+                    )
                 )
+        except RepositoryConnectionProblem:
+            raise
         except Exception:
             # 미리보기는 저장 보조 정보이므로, 계산 실패가 규칙 저장 자체를 막지 않게 한다.
             return ScopeRuleWarningState.OK

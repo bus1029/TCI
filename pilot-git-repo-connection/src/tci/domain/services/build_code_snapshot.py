@@ -10,6 +10,7 @@ from tci.domain.services.repository_connection_support import (
     RepositoryConnectionProblem,
     bind_git_credential,
     decrypt_secret_from_storage,
+    ensure_gitlab_self_managed_host_allowed,
 )
 from tci.domain.services.scope_filter_engine import (
     filter_snapshot_entries,
@@ -24,6 +25,7 @@ from tci.infrastructure.persistence.models import (
     DefaultRefType,
     RefType,
     RepositoryConnectionStatus,
+    RepositoryProvider,
     SyncFailureCode,
     SyncRunStatus,
 )
@@ -40,6 +42,8 @@ class BuildCodeSnapshotCommand:
 class SnapshotBuildContext:
     connection_id: uuid.UUID
     planning_input_reference_id: uuid.UUID
+    provider: RepositoryProvider
+    provider_instance_url: str | None
     remote_url: str
     transport: object
     requested_ref_type: object
@@ -92,6 +96,12 @@ def build_code_snapshot(command, *, dependencies):
         )
 
     try:
+        ensure_gitlab_self_managed_host_allowed(
+            provider=context.provider,
+            provider_instance_url=context.provider_instance_url,
+            settings=dependencies.settings,
+            remote_url=context.remote_url,
+        )
         credential_secret = decrypt_secret_from_storage(
             context.encrypted_secret,
             settings=dependencies.settings,
@@ -116,12 +126,16 @@ def build_code_snapshot(command, *, dependencies):
                     else context.remote_url
                 ),
             )
-            materialized_snapshot = dependencies.git_mirror_manager.read_snapshot_entries(
-                mirror=mirror,
-                commit_sha=resolved_ref.commit_sha,
+            materialized_snapshot = (
+                dependencies.git_mirror_manager.read_snapshot_entries(
+                    mirror=mirror,
+                    commit_sha=resolved_ref.commit_sha,
+                )
             )
     except Exception as error:
-        failure_code, connection_status, failure_message = _classify_snapshot_failure(error)
+        failure_code, connection_status, failure_message = _classify_snapshot_failure(
+            error
+        )
         return _fail_snapshot_build(
             workspace_id=command.workspace_id,
             connection_id=command.connection_id,
@@ -200,8 +214,8 @@ def build_code_snapshot(command, *, dependencies):
             sync_run_repository = dependencies.repository_sync_run_repository_factory(
                 session
             )
-            connection_repository = dependencies.repository_connection_repository_factory(
-                session
+            connection_repository = (
+                dependencies.repository_connection_repository_factory(session)
             )
             snapshot = snapshot_repository.create(
                 draft=CodeSnapshotDraft(
@@ -256,14 +270,22 @@ def build_code_snapshot(command, *, dependencies):
 
 
 def _load_snapshot_context(
-    *, workspace_id: uuid.UUID, connection_id: uuid.UUID, sync_run_id: uuid.UUID, dependencies
+    *,
+    workspace_id: uuid.UUID,
+    connection_id: uuid.UUID,
+    sync_run_id: uuid.UUID,
+    dependencies,
 ):
     with dependencies.session_factory() as session:
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )
-        credential_repository = dependencies.credential_revision_repository_factory(session)
-        sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
+        credential_repository = dependencies.credential_revision_repository_factory(
+            session
+        )
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(
+            session
+        )
         connection = connection_repository.get(
             workspace_id=workspace_id,
             connection_id=connection_id,
@@ -282,13 +304,17 @@ def _load_snapshot_context(
         return SnapshotBuildContext(
             connection_id=connection.id,
             planning_input_reference_id=connection.planning_input_reference_id,
+            provider=connection.provider,
+            provider_instance_url=connection.provider_instance_url,
             remote_url=connection.remote_url,
             transport=connection.transport,
             requested_ref_type=sync_run.requested_ref_type,
             requested_ref_name=sync_run.requested_ref_name,
             sync_run_status=sync_run.status,
             credential_type=(
-                None if credential_revision is None else credential_revision.credential_type
+                None
+                if credential_revision is None
+                else credential_revision.credential_type
             ),
             encrypted_secret=(
                 None
@@ -299,10 +325,16 @@ def _load_snapshot_context(
 
 
 def _mark_sync_run_running(
-    *, workspace_id: uuid.UUID, connection_id: uuid.UUID, sync_run_id: uuid.UUID, dependencies
+    *,
+    workspace_id: uuid.UUID,
+    connection_id: uuid.UUID,
+    sync_run_id: uuid.UUID,
+    dependencies,
 ) -> None:
     with dependencies.session_factory() as session:
-        sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(
+            session
+        )
         sync_run_repository.mark_running(
             connection_id=connection_id,
             sync_run_id=sync_run_id,
@@ -394,18 +426,26 @@ def _fail_snapshot_build(
     dependencies,
 ):
     problem = RepositoryConnectionProblem(
-        ProblemCode.CONNECTION_AUTH_FAILED
-        if failure_code is SyncFailureCode.AUTH_FAILED
-        else ProblemCode.DEFAULT_REF_NOT_FOUND
-        if failure_code is SyncFailureCode.REF_NOT_FOUND
-        else ProblemCode.NO_INCLUDED_FILES
-        if failure_code is SyncFailureCode.NO_INCLUDED_FILES
-        else ProblemCode.INVALID_INPUT,
+        (
+            ProblemCode.CONNECTION_AUTH_FAILED
+            if failure_code is SyncFailureCode.AUTH_FAILED
+            else (
+                ProblemCode.DEFAULT_REF_NOT_FOUND
+                if failure_code is SyncFailureCode.REF_NOT_FOUND
+                else (
+                    ProblemCode.NO_INCLUDED_FILES
+                    if failure_code is SyncFailureCode.NO_INCLUDED_FILES
+                    else ProblemCode.INVALID_INPUT
+                )
+            )
+        ),
         failure_message,
     )
     now = datetime.now(tz=UTC)
     with dependencies.session_factory() as session:
-        sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(
+            session
+        )
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )

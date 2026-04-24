@@ -90,6 +90,7 @@ def _build_test_settings(project_root: Path):
         database_url=None,
         redis_url=None,
         credential_encryption_key=None,
+        gitlab_self_managed_allowed_hosts=(),
     )
 
 

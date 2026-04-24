@@ -137,3 +137,45 @@ def test_save_scope_rule_tolerates_preview_failure_and_still_saves_rule(
 
     assert response.status_code == 200
     assert response.json()["warningState"] == "ok"
+
+
+def test_save_scope_rule_rejects_unallowlisted_gitlab_before_preview_git_access(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com/group/sample-repo.git",
+        ),
+    )
+    connection_id = create_response.json()["id"]
+    store.last_resolved_remote_url = None
+    object.__setattr__(
+        client.app.state.settings,
+        "gitlab_self_managed_allowed_hosts",
+        (),
+    )
+
+    response = client.post(
+        f"/api/repository-connections/{connection_id}/scope-rules",
+        json={
+            "includePaths": ["src/**"],
+            "excludePaths": [],
+            "allowedFileTypes": [".py"],
+            "blockedFileTypes": [],
+            "maxFileSizeBytes": 5242880,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "GitLab Self-Managed host는 허용 목록에 등록되어야 합니다.",
+    }
+    assert store.last_resolved_remote_url is None

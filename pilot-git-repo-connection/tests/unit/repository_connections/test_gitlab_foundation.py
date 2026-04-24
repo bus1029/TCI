@@ -130,18 +130,44 @@ def test_gitlab_foundation_connection_constraints_enforce_https_instance_and_hos
     )
 
     assert "provider_instance_url ~ '^https://" in instance_url_sql
-    assert "(/[^?#]*)?" in instance_url_sql
+    assert "(?::[0-9]+)?/?$" in instance_url_sql
+    assert "!~ '^https://[^/:/]*-(?::[0-9]+)?/?$'" in instance_url_sql
     assert "lower(regexp_replace(provider_instance_url, '^https://" in instance_host_sql
     assert "regexp_replace(remote_url, '^git@([^:]+):.*$', '\\1')" in instance_host_sql
     assert "regexp_replace(remote_url, '^ssh://" in instance_host_sql
     assert "coalesce(nullif" in instance_port_sql
     assert "^https://[^/:?#]+(?::([0-9]+))?/.*$" in instance_port_sql
     assert "ssh://%:%@%/%" in remote_url_userinfo_sql
+    assert "remote_url NOT LIKE '%?%'" in remote_url_userinfo_sql
+    assert "remote_url NOT LIKE '%#%'" in remote_url_userinfo_sql
     remote_url_host_sql = _check_sql(
         "repository_connections", "ck_repo_conn_remote_url_host"
     )
-    assert "!~* '^https://github\\.com" in remote_url_host_sql
-    assert "!~* '^ssh://(?:[^@/]+@)?github\\.com" in remote_url_host_sql
+    assert "github\\.com\\.?" in remote_url_host_sql
+    assert "!~* '^https://github\\.com\\.?" in remote_url_host_sql
+    assert "!~* '^ssh://(?:[^@/]+@)?github\\.com\\.?" in remote_url_host_sql
+    assert "!~ '^git@[-[:space:][:cntrl:]]'" in remote_url_host_sql
+    assert "remote_url LIKE 'ssh://git@%/%'" in remote_url_host_sql
+    assert "!~ '^ssh://git@[-[:space:][:cntrl:]]'" in remote_url_host_sql
+    assert "!~ '^git@[^:]*\\.:'" in remote_url_host_sql
+    assert "!~ '^https://[^/?#]*\\." in remote_url_host_sql
+    assert "!~ '^ssh://git@[^/?#]*\\." in remote_url_host_sql
+    assert "!~ '^https://\\['" in remote_url_host_sql
+    assert "!~ '^ssh://git@\\['" in remote_url_host_sql
+    provider_project_path_sql = _check_sql(
+        "repository_connections", "ck_repo_conn_provider_project_path"
+    )
+    project_path_match_sql = _check_sql(
+        "repository_connections", "ck_repo_conn_gitlab_project_path_match"
+    )
+    assert "provider_project_path IS NOT NULL" in provider_project_path_sql
+    assert "provider_project_path NOT LIKE '%?%'" in provider_project_path_sql
+    assert "provider_project_path NOT LIKE '%#%'" in provider_project_path_sql
+    assert (
+        "provider_project_path !~ '[[:space:][:cntrl:]]'" in provider_project_path_sql
+    )
+    assert "provider_project_path !~ '(^|/)\\.\\.?(/|$)'" in provider_project_path_sql
+    assert "provider_project_path IS NOT NULL" in project_path_match_sql
     assert "ck_repo_conn_gitlab_instance_url_https" in revision_text
     assert "ck_repo_conn_gitlab_instance_host_match" in revision_text
     assert "ck_repo_conn_gitlab_https_port_match" in revision_text
@@ -423,7 +449,7 @@ def test_gitlab_foundation_repository_rejects_remote_url_query_or_fragment() -> 
         )
 
 
-def test_gitlab_foundation_repository_accepts_subpath_instance_url_and_ssh_remote() -> (
+def test_gitlab_foundation_repository_treats_gitlab_path_prefix_as_project_namespace_for_ssh_remote() -> (
     None
 ):
     repository = RepositoryConnectionRepository(session=MagicMock())
@@ -432,12 +458,12 @@ def test_gitlab_foundation_repository_accepts_subpath_instance_url_and_ssh_remot
         workspace_id=uuid.uuid4(),
         planning_input_reference_id=uuid.uuid4(),
         provider=RepositoryProvider.GITLAB_SELF_MANAGED,
-        remote_url="git@GitLab.EXAMPLE.com:group/subgroup/repo.git",
+        remote_url="git@GitLab.EXAMPLE.com:gitlab/group/subgroup/repo.git",
         transport=RepositoryTransport.SSH,
         repository_owner="group",
         repository_name="repo",
-        provider_instance_url="https://gitlab.example.com/gitlab",
-        provider_project_path="group/subgroup/repo",
+        provider_instance_url="https://gitlab.example.com",
+        provider_project_path="gitlab/group/subgroup/repo",
         default_ref_type=DefaultRefType.BRANCH,
         default_ref_name="main",
         status=RepositoryConnectionStatus.ACTIVE,
@@ -447,11 +473,11 @@ def test_gitlab_foundation_repository_accepts_subpath_instance_url_and_ssh_remot
 
     connection = repository.create(draft)
 
-    assert connection.provider_instance_url == "https://gitlab.example.com/gitlab"
-    assert connection.provider_project_path == "group/subgroup/repo"
+    assert connection.provider_instance_url == "https://gitlab.example.com"
+    assert connection.provider_project_path == "gitlab/group/subgroup/repo"
 
 
-def test_gitlab_foundation_repository_accepts_subpath_instance_url_and_https_remote() -> (
+def test_gitlab_foundation_repository_treats_gitlab_path_prefix_as_project_namespace_for_https_remote() -> (
     None
 ):
     repository = RepositoryConnectionRepository(session=MagicMock())
@@ -464,8 +490,8 @@ def test_gitlab_foundation_repository_accepts_subpath_instance_url_and_https_rem
         transport=RepositoryTransport.HTTPS,
         repository_owner="group",
         repository_name="repo",
-        provider_instance_url="https://GitLab.EXAMPLE.com/gitlab/",
-        provider_project_path="group/subgroup/repo",
+        provider_instance_url="https://GitLab.EXAMPLE.com/",
+        provider_project_path="gitlab/group/subgroup/repo",
         default_ref_type=DefaultRefType.BRANCH,
         default_ref_name="main",
         status=RepositoryConnectionStatus.ACTIVE,
@@ -475,8 +501,8 @@ def test_gitlab_foundation_repository_accepts_subpath_instance_url_and_https_rem
 
     connection = repository.create(draft)
 
-    assert connection.provider_instance_url == "https://gitlab.example.com/gitlab"
-    assert connection.provider_project_path == "group/subgroup/repo"
+    assert connection.provider_instance_url == "https://gitlab.example.com"
+    assert connection.provider_project_path == "gitlab/group/subgroup/repo"
 
 
 def test_gitlab_foundation_repository_accepts_nondefault_https_instance_port() -> None:
@@ -486,11 +512,11 @@ def test_gitlab_foundation_repository_accepts_nondefault_https_instance_port() -
         workspace_id=uuid.uuid4(),
         planning_input_reference_id=uuid.uuid4(),
         provider=RepositoryProvider.GITLAB_SELF_MANAGED,
-        remote_url="https://gitlab.example.com:8443/gitlab/group/subgroup/repo.git",
+        remote_url="https://gitlab.example.com:8443/group/subgroup/repo.git",
         transport=RepositoryTransport.HTTPS,
         repository_owner="group",
         repository_name="repo",
-        provider_instance_url="https://gitlab.example.com:8443/gitlab",
+        provider_instance_url="https://gitlab.example.com:8443",
         provider_project_path="group/subgroup/repo",
         default_ref_type=DefaultRefType.BRANCH,
         default_ref_name="main",
@@ -501,7 +527,7 @@ def test_gitlab_foundation_repository_accepts_nondefault_https_instance_port() -
 
     connection = repository.create(draft)
 
-    assert connection.provider_instance_url == "https://gitlab.example.com:8443/gitlab"
+    assert connection.provider_instance_url == "https://gitlab.example.com:8443"
 
 
 def test_gitlab_foundation_repository_rejects_https_port_mismatch() -> None:
@@ -511,11 +537,11 @@ def test_gitlab_foundation_repository_rejects_https_port_mismatch() -> None:
         workspace_id=uuid.uuid4(),
         planning_input_reference_id=uuid.uuid4(),
         provider=RepositoryProvider.GITLAB_SELF_MANAGED,
-        remote_url="https://gitlab.example.com/gitlab/group/subgroup/repo.git",
+        remote_url="https://gitlab.example.com/group/subgroup/repo.git",
         transport=RepositoryTransport.HTTPS,
         repository_owner="group",
         repository_name="repo",
-        provider_instance_url="https://gitlab.example.com:8443/gitlab",
+        provider_instance_url="https://gitlab.example.com:8443",
         provider_project_path="group/subgroup/repo",
         default_ref_type=DefaultRefType.BRANCH,
         default_ref_name="main",
@@ -547,7 +573,7 @@ def test_gitlab_foundation_repository_rejects_instance_url_with_query_or_fragmen
         transport=RepositoryTransport.HTTPS,
         repository_owner="group",
         repository_name="repo",
-        provider_instance_url="https://gitlab.example.com/gitlab?via=ui",
+        provider_instance_url="https://gitlab.example.com?via=ui",
         provider_project_path="group/subgroup/repo",
         default_ref_type=DefaultRefType.BRANCH,
         default_ref_name="main",
@@ -594,6 +620,185 @@ def test_gitlab_foundation_repository_rejects_project_path_mismatch() -> None:
         raise AssertionError(
             "GitLab connection should reject mismatched provider_project_path"
         )
+
+
+def test_gitlab_foundation_repository_accepts_localhost_and_private_ip_remotes() -> (
+    None
+):
+    repository = RepositoryConnectionRepository(session=MagicMock())
+
+    for remote_url, transport, instance_url in (
+        (
+            "https://localhost/group/subgroup/repo.git",
+            RepositoryTransport.HTTPS,
+            "https://localhost",
+        ),
+        (
+            "ssh://git@192.168.10.20:2222/group/subgroup/repo.git",
+            RepositoryTransport.SSH,
+            "https://192.168.10.20",
+        ),
+    ):
+        draft = RepositoryConnectionDraft(
+            id=uuid.uuid4(),
+            workspace_id=uuid.uuid4(),
+            planning_input_reference_id=uuid.uuid4(),
+            provider=RepositoryProvider.GITLAB_SELF_MANAGED,
+            remote_url=remote_url,
+            transport=transport,
+            repository_owner="group/subgroup",
+            repository_name="repo",
+            provider_instance_url=instance_url,
+            provider_project_path="group/subgroup/repo",
+            default_ref_type=DefaultRefType.BRANCH,
+            default_ref_name="main",
+            status=RepositoryConnectionStatus.ACTIVE,
+            mirror_path=".runtime/git-mirrors/example.git",
+            last_verified_at=None,
+        )
+
+        connection = repository.create(draft)
+
+        assert connection.provider_instance_url == instance_url
+        assert connection.provider_project_path == "group/subgroup/repo"
+
+
+def test_gitlab_foundation_repository_rejects_trailing_dot_hosts() -> None:
+    repository = RepositoryConnectionRepository(session=MagicMock())
+
+    for remote_url, transport, instance_url in (
+        (
+            "https://gitlab.example.com./group/subgroup/repo.git",
+            RepositoryTransport.HTTPS,
+            "https://gitlab.example.com.",
+        ),
+        (
+            "git@gitlab.example.com.:group/subgroup/repo.git",
+            RepositoryTransport.SSH,
+            "https://gitlab.example.com.",
+        ),
+        (
+            "ssh://git@gitlab.example.com./group/subgroup/repo.git",
+            RepositoryTransport.SSH,
+            "https://gitlab.example.com.",
+        ),
+    ):
+        draft = RepositoryConnectionDraft(
+            id=uuid.uuid4(),
+            workspace_id=uuid.uuid4(),
+            planning_input_reference_id=uuid.uuid4(),
+            provider=RepositoryProvider.GITLAB_SELF_MANAGED,
+            remote_url=remote_url,
+            transport=transport,
+            repository_owner="group/subgroup",
+            repository_name="repo",
+            provider_instance_url=instance_url,
+            provider_project_path="group/subgroup/repo",
+            default_ref_type=DefaultRefType.BRANCH,
+            default_ref_name="main",
+            status=RepositoryConnectionStatus.ACTIVE,
+            mirror_path=".runtime/git-mirrors/example.git",
+            last_verified_at=None,
+        )
+
+        try:
+            repository.create(draft)
+        except ValueError as error:
+            assert "supported host" in str(error)
+        else:
+            raise AssertionError("GitLab connection should reject trailing-dot hosts")
+
+
+def test_gitlab_foundation_repository_rejects_invalid_project_paths() -> None:
+    repository = RepositoryConnectionRepository(session=MagicMock())
+
+    for project_path in (
+        "group name/subgroup/repo",
+        "group/\x01/repo",
+        "group/./repo",
+        "group/../repo",
+    ):
+        draft = RepositoryConnectionDraft(
+            id=uuid.uuid4(),
+            workspace_id=uuid.uuid4(),
+            planning_input_reference_id=uuid.uuid4(),
+            provider=RepositoryProvider.GITLAB_SELF_MANAGED,
+            remote_url="https://gitlab.example.com/group/subgroup/repo.git",
+            transport=RepositoryTransport.HTTPS,
+            repository_owner="group/subgroup",
+            repository_name="repo",
+            provider_instance_url="https://gitlab.example.com",
+            provider_project_path=project_path,
+            default_ref_type=DefaultRefType.BRANCH,
+            default_ref_name="main",
+            status=RepositoryConnectionStatus.ACTIVE,
+            mirror_path=".runtime/git-mirrors/example.git",
+            last_verified_at=None,
+        )
+
+        try:
+            repository.create(draft)
+        except ValueError as error:
+            assert "normalized provider_project_path" in str(error)
+        else:
+            raise AssertionError(
+                "GitLab connection should reject invalid project paths"
+            )
+
+
+def test_gitlab_foundation_repository_rejects_unsafe_ssh_hosts() -> None:
+    repository = RepositoryConnectionRepository(session=MagicMock())
+
+    for remote_url, instance_url in (
+        (
+            "ssh://deploy@gitlab.example.com/group/subgroup/repo.git",
+            "https://gitlab.example.com",
+        ),
+        (
+            "git@gitlab.example.com:group/subgroup/repo.git?x=1",
+            "https://gitlab.example.com",
+        ),
+        (
+            "git@gitlab.example.com:group/subgroup/repo.git#frag",
+            "https://gitlab.example.com",
+        ),
+        (
+            "ssh://git@gitlab.example.com:/group/subgroup/repo.git",
+            "https://gitlab.example.com",
+        ),
+        ("git@-oProxyCommand=sh:group/subgroup/repo.git", "https://-oproxycommand=sh"),
+        ("git@host withspace:group/subgroup/repo.git", "https://host withspace"),
+        ("ssh://git@-evil/group/subgroup/repo.git", "https://-evil"),
+        ("ssh://git@[::1]/group/subgroup/repo.git", "https://[::1]"),
+    ):
+        draft = RepositoryConnectionDraft(
+            id=uuid.uuid4(),
+            workspace_id=uuid.uuid4(),
+            planning_input_reference_id=uuid.uuid4(),
+            provider=RepositoryProvider.GITLAB_SELF_MANAGED,
+            remote_url=remote_url,
+            transport=RepositoryTransport.SSH,
+            repository_owner="group/subgroup",
+            repository_name="repo",
+            provider_instance_url=instance_url,
+            provider_project_path="group/subgroup/repo",
+            default_ref_type=DefaultRefType.BRANCH,
+            default_ref_name="main",
+            status=RepositoryConnectionStatus.ACTIVE,
+            mirror_path=".runtime/git-mirrors/example.git",
+            last_verified_at=None,
+        )
+
+        try:
+            repository.create(draft)
+        except ValueError as error:
+            assert (
+                "supported" in str(error)
+                or "query or fragment" in str(error)
+                or "whitespace or control" in str(error)
+            )
+        else:
+            raise AssertionError("GitLab connection should reject unsafe SSH hosts")
 
 
 def test_gitlab_foundation_repository_event_repository_tracks_idempotency_source() -> (

@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
 from hashlib import sha256
 import os
 from pathlib import Path
-import re
 import shlex
 import tempfile
 from threading import Lock
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -30,25 +28,14 @@ class RepositoryConnectionProblem(RuntimeError):
         self.detail = message
 
 
-@dataclass(frozen=True, slots=True)
-class ParsedGitHubRemote:
-    owner: str
-    name: str
-
-
-_GITHUB_HTTPS_PATTERN = re.compile(
-    r"^https://github\.com/(?P<owner>[A-Za-z0-9_.-]+)/(?P<name>[A-Za-z0-9_.-]+?)(?:\.git)?$"
-)
-_GITHUB_SSH_PATTERN = re.compile(
-    r"^git@github\.com:(?P<owner>[A-Za-z0-9_.-]+)/(?P<name>[A-Za-z0-9_.-]+?)(?:\.git)?$"
-)
 _SSH_CREDENTIAL_BIND_LOCK = Lock()
 
 
 def parse_provider(raw_value: str) -> RepositoryProvider:
-    if raw_value != RepositoryProvider.GITHUB_CLOUD.value:
-        raise RepositoryConnectionProblem(ProblemCode.UNSUPPORTED_PROVIDER)
-    return RepositoryProvider.GITHUB_CLOUD
+    try:
+        return RepositoryProvider(raw_value)
+    except ValueError as error:
+        raise RepositoryConnectionProblem(ProblemCode.UNSUPPORTED_PROVIDER) from error
 
 
 def parse_transport(raw_value: str) -> RepositoryTransport:
@@ -81,23 +68,6 @@ def parse_credential_type(raw_value: str) -> CredentialType:
         ) from error
 
 
-def parse_github_remote(
-    *, remote_url: str, transport: RepositoryTransport
-) -> ParsedGitHubRemote:
-    pattern = (
-        _GITHUB_HTTPS_PATTERN
-        if transport is RepositoryTransport.HTTPS
-        else _GITHUB_SSH_PATTERN
-    )
-    match = pattern.match(remote_url)
-    if match is None:
-        raise RepositoryConnectionProblem(
-            ProblemCode.INVALID_INPUT,
-            "remoteUrl은 GitHub Cloud 저장소 주소여야 합니다.",
-        )
-    return ParsedGitHubRemote(owner=match.group("owner"), name=match.group("name"))
-
-
 def hash_secret_for_storage(secret: str) -> str:
     # fingerprint 표시값은 원문 대신 해시 기반 표현으로 고정한다.
     return sha256(secret.encode("utf-8")).hexdigest()
@@ -109,8 +79,10 @@ def encrypt_secret_for_storage(secret: str, *, settings) -> str:
 
 def decrypt_secret_from_storage(encrypted_secret: str, *, settings) -> str:
     try:
-        return _build_fernet(settings).decrypt(encrypted_secret.encode("utf-8")).decode(
-            "utf-8"
+        return (
+            _build_fernet(settings)
+            .decrypt(encrypted_secret.encode("utf-8"))
+            .decode("utf-8")
         )
     except InvalidToken as error:
         raise RepositoryConnectionProblem(
@@ -124,6 +96,57 @@ def derive_fingerprint(*, secret: str, provided_fingerprint: str | None) -> str:
         # 클라이언트가 보낸 fingerprint를 그대로 저장하지 않고 서버 기준 표현으로 고정한다.
         return f"provided:{hash_secret_for_storage(provided_fingerprint)[:12]}"
     return f"sha256:{hash_secret_for_storage(secret)[:12]}"
+
+
+def ensure_gitlab_self_managed_host_allowed(
+    *,
+    provider: RepositoryProvider,
+    provider_instance_url: str | None,
+    settings,
+    remote_url: str | None = None,
+    remote_port: int | None = None,
+) -> None:
+    if provider is not RepositoryProvider.GITLAB_SELF_MANAGED:
+        return
+    if provider_instance_url is None:
+        raise RepositoryConnectionProblem(
+            ProblemCode.INVALID_INPUT,
+            "GitLab Self-Managed host는 허용 목록에 등록되어야 합니다.",
+        )
+    parsed_instance = urlparse(provider_instance_url)
+    hostname = (parsed_instance.hostname or "").lower().rstrip(".")
+    effective_port = (
+        remote_port
+        if remote_port is not None
+        else (
+            _extract_remote_port(remote_url)
+            if remote_url is not None
+            else parsed_instance.port
+        )
+    )
+    allowed_origin = (
+        hostname if effective_port is None else f"{hostname}:{effective_port}"
+    )
+    allowed_hosts = tuple(
+        host.lower().rstrip(".")
+        for host in getattr(settings, "gitlab_self_managed_allowed_hosts", ())
+    )
+    if allowed_origin not in allowed_hosts:
+        raise RepositoryConnectionProblem(
+            ProblemCode.INVALID_INPUT,
+            "GitLab Self-Managed host는 허용 목록에 등록되어야 합니다.",
+        )
+
+
+def _extract_remote_port(remote_url: str | None) -> int | None:
+    if remote_url is None:
+        return None
+    if remote_url.startswith("ssh://") or remote_url.startswith("https://"):
+        try:
+            return urlparse(remote_url).port
+        except ValueError:
+            return None
+    return None
 
 
 @contextmanager

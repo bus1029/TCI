@@ -159,6 +159,26 @@
 **Alternatives considered**:
 - GitLab 신규 시나리오만 검증: 가장 큰 리스크인 기존 기능 파손을 놓치게 된다.
 
+## 결정 11: GitLab instance는 `remoteUrl`에서 파생하고 outbound host는 allowlist로 제한한다
+
+**Decision**:
+- 사용자가 별도 `providerInstanceUrl`을 입력하지 않는다.
+- `provider_instance_url`은 `remoteUrl`에서 파생한 저장 메타데이터다.
+- `/gitlab` 같은 path prefix는 instance subpath로 추정하지 않고 project namespace로 취급한다.
+- localhost, private IPv4, 비표준 HTTPS/SSH 포트는 지원하되 `TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS` exact-origin allowlist가 필요하다.
+- IPv6, GitHub host, trailing-dot host, userinfo, query/fragment, whitespace/control chars, dot path segment, malformed port는 거부한다.
+
+**Rationale**:
+- 별도 instance URL 입력은 operator 입력 부담과 `remoteUrl`/instance mismatch 위험을 늘린다.
+- self-managed GitLab의 subpath 배포 여부는 `remoteUrl`만으로 안정적으로 판별하기 어렵다.
+- 온프레미스 환경에서는 localhost/private network 접근이 필요할 수 있지만, SSRF와 내부망 오용을 막기 위해 outbound git 접근 전 allowlist가 필요하다.
+- 비표준 포트는 운영상 필요하지만, host-only allowlist로 포트까지 암묵 허용하면 노출 범위가 넓어진다.
+
+**Alternatives considered**:
+- 사용자가 instance URL을 직접 입력: 명시성은 높지만 mismatch 검증과 UX 복잡도가 커진다.
+- `/gitlab`을 instance subpath로 자동 추정: 실제 namespace가 `gitlab/...`인 저장소와 충돌한다.
+- localhost/private IP를 일괄 차단: 보안은 단순하지만 온프레미스 검증과 사설 GitLab 운영을 지원하기 어렵다.
+
 ## Sources Used
 
 - GitLab Docs, Webhooks: https://docs.gitlab.com/ee/user/project/integrations/webhooks.html

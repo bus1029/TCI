@@ -7,10 +7,13 @@
 ## Current Readiness
 
 - 2026-04-23 기준 Phase 1 setup 완료
-- 현재 이 문서의 전체 시나리오는 아직 실행 가능한 제품 동작이 아니라, 이후 구현과 검증이 따라야 할 quickstart 기준선이다.
+- 2026-04-24 기준 GitLab self-managed 연결 생성, remote metadata 파싱, host allowlist, verify/default-ref/scope-preview/snapshot fail-closed 경로가 구현됐다.
+- 전체 webhook quickstart는 아직 실행 가능한 제품 동작이 아니라, 이후 구현과 검증이 따라야 할 기준선이다.
 - 현재 준비된 자동화 표면:
   - `tests/contract/repository_ingestion/test_gitlab_connection_contract.py`
   - `tests/contract/repository_ingestion/test_gitlab_webhook_contract.py`
+  - `tests/contract/repository_ingestion/test_repository_connection_contract.py`
+  - `tests/contract/repository_ingestion/test_repository_scope_contract.py`
   - `tests/integration/repository_connections/test_gitlab_provider_flows.py`
   - `tests/unit/repository_connections/test_gitlab_provider_parsing.py`
   - `tests/unit/repository_connections/test_process_gitlab_event.py`
@@ -28,15 +31,22 @@
    - 또는 `read_repository` scope를 가진 HTTPS access token
 6. 회귀 검증용 GitHub Cloud 테스트 저장소 1개 준비
 7. 런타임 디렉터리 `pilot-git-repo-connection/.runtime/git-mirrors`, `pilot-git-repo-connection/.runtime/code-snapshots`가 생성되어 있어야 한다.
+8. GitLab self-managed host allowlist 설정
+   - 환경 변수: `TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS`
+   - 기본 HTTPS/SSH origin은 host만 등록한다. 예: `gitlab.example.com`
+   - 비표준 포트는 `host:port`로 등록한다. 예: `gitlab.example.com:8443`, `192.168.10.20:2222`
+   - `localhost`와 private IPv4는 지원하지만 allowlist 등록이 필요하다.
 
 ## 검증 시나리오
 
 ### 1. GitLab 연결 생성 및 검증
 
 1. `POST /api/repository-connections`로 `provider=gitlab_self_managed`, `remoteUrl`, `transport`, `defaultRefType`, `defaultRefName`, `credential`를 등록한다.
-2. `POST /api/repository-connections/{id}/verify`를 호출해 연결 검증이 성공하는지 확인한다.
-3. 상세 조회에서 `status=active`, `provider=gitlab_self_managed`, `lastProcessedEvent=null`인지 확인한다.
-4. 잘못된 token 또는 SSH key로 재검증하면 `reauth_required`로 전환되는지 확인한다.
+2. `remoteUrl` host 또는 `host:port`가 allowlist에 없으면 git 접근 전에 400으로 차단되는지 확인한다.
+3. `/gitlab` 같은 path prefix가 instance subpath가 아니라 project namespace로 저장되는지 확인한다.
+4. `POST /api/repository-connections/{id}/verify`를 호출해 연결 검증이 성공하는지 확인한다.
+5. 상세 조회에서 `status=active`, `provider=gitlab_self_managed`, `lastProcessedEvent=null`인지 확인한다.
+6. 잘못된 token 또는 SSH key로 재검증하면 `reauth_required`로 전환되는지 확인한다.
 
 ### 2. Scope rule 및 초기 snapshot
 
@@ -78,6 +88,7 @@
 
 - Unit
   - GitLab remote URL parser
+  - GitLab host allowlist and custom port enforcement
   - GitLab token verifier
   - GitLab MR `update` -> snapshot/record-only 분기
   - provider delivery id 추출

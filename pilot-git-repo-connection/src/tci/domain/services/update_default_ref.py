@@ -9,9 +9,13 @@ from tci.domain.services.repository_connection_support import (
     RepositoryConnectionProblem,
     bind_git_credential,
     decrypt_secret_from_storage,
+    ensure_gitlab_self_managed_host_allowed,
     parse_default_ref_type,
 )
-from tci.infrastructure.persistence.models import RepositoryConnectionStatus
+from tci.infrastructure.persistence.models import (
+    RepositoryConnectionStatus,
+    RepositoryProvider,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,13 +31,26 @@ def update_default_ref(command, *, dependencies):
         raise RuntimeError("기본 ref를 수정하려면 데이터베이스 세션이 필요합니다.")
 
     default_ref_type = parse_default_ref_type(command.default_ref_type)
-    remote_url, transport, credential_type, credential_secret = _load_connection_context(
+    (
+        provider,
+        provider_instance_url,
+        remote_url,
+        transport,
+        credential_type,
+        credential_secret,
+    ) = _load_connection_context(
         workspace_id=command.workspace_id,
         connection_id=command.connection_id,
         dependencies=dependencies,
     )
 
     try:
+        ensure_gitlab_self_managed_host_allowed(
+            provider=provider,
+            provider_instance_url=provider_instance_url,
+            settings=dependencies.settings,
+            remote_url=remote_url,
+        )
         with bind_git_credential(
             remote_url=remote_url,
             transport=transport,
@@ -46,6 +63,8 @@ def update_default_ref(command, *, dependencies):
                 ref_name=command.default_ref_name,
             )
     except Exception as error:
+        if isinstance(error, RepositoryConnectionProblem):
+            raise
         problem_code = getattr(error, "problem_code", None)
         raise RepositoryConnectionProblem(
             problem_code or ProblemCode.INVALID_INPUT,
@@ -68,12 +87,14 @@ def update_default_ref(command, *, dependencies):
 
 def _load_connection_context(
     *, workspace_id: uuid.UUID, connection_id: uuid.UUID, dependencies
-) -> tuple[object, object, object, str]:
+) -> tuple[RepositoryProvider, str | None, object, object, object, str]:
     with dependencies.session_factory() as session:
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )
-        credential_repository = dependencies.credential_revision_repository_factory(session)
+        credential_repository = dependencies.credential_revision_repository_factory(
+            session
+        )
         connection = connection_repository.get(
             workspace_id=workspace_id,
             connection_id=connection_id,
@@ -89,6 +110,8 @@ def _load_connection_context(
                 "활성 자격 증명을 찾을 수 없습니다.",
             )
         return (
+            connection.provider,
+            connection.provider_instance_url,
             connection.remote_url,
             connection.transport,
             credential_revision.credential_type,

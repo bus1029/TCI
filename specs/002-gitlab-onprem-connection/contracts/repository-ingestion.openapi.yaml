@@ -236,6 +236,10 @@ components:
           enum: [github_cloud, gitlab_self_managed]
         remoteUrl:
           type: string
+          description: >
+            Git remote URL. For gitlab_self_managed, the GitLab instance URL is
+            derived from this value; clients must not send a separate instance
+            URL field. Host allowlisting is enforced by server configuration.
         transport:
           type: string
           enum: [ssh, https]

@@ -10,12 +10,13 @@ from tci.domain.services.repository_connection_support import (
     bind_git_credential,
     encrypt_secret_for_storage,
     derive_fingerprint,
+    ensure_gitlab_self_managed_host_allowed,
     parse_credential_type,
     parse_default_ref_type,
-    parse_github_remote,
     parse_provider,
     parse_transport,
 )
+from tci.infrastructure.git.remote_parsers import parse_repository_remote
 from tci.infrastructure.persistence.credential_revision_repository import (
     CredentialRevisionDraft,
 )
@@ -47,8 +48,8 @@ def create_repository_connection(command, *, dependencies):
         raise RuntimeError("저장소 연결을 생성하려면 데이터베이스 세션이 필요합니다.")
 
     with dependencies.session_factory() as session:
-        planning_input_repository = dependencies.planning_input_reference_repository_factory(
-            session
+        planning_input_repository = (
+            dependencies.planning_input_reference_repository_factory(session)
         )
         planning_input_reference = planning_input_repository.get(
             workspace_id=command.workspace_id,
@@ -64,9 +65,17 @@ def create_repository_connection(command, *, dependencies):
     transport = parse_transport(command.transport)
     default_ref_type = parse_default_ref_type(command.default_ref_type)
     credential_type = parse_credential_type(command.credential_type)
-    parsed_remote = parse_github_remote(
+    parsed_remote = parse_repository_remote(
+        provider=provider,
         remote_url=command.remote_url,
         transport=transport,
+    )
+    ensure_gitlab_self_managed_host_allowed(
+        provider=provider,
+        provider_instance_url=parsed_remote.provider_instance_url,
+        settings=dependencies.settings,
+        remote_url=command.remote_url,
+        remote_port=parsed_remote.provider_remote_port,
     )
     encrypted_secret = encrypt_secret_for_storage(
         command.credential_secret,
@@ -115,25 +124,35 @@ def create_repository_connection(command, *, dependencies):
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )
-        credential_repository = dependencies.credential_revision_repository_factory(session)
-
-        connection = connection_repository.create(
-            RepositoryConnectionDraft(
-                id=connection_id,
-                workspace_id=planning_input_reference.workspace_id,
-                planning_input_reference_id=planning_input_reference.id,
-                provider=provider,
-                remote_url=command.remote_url,
-                transport=transport,
-                repository_owner=parsed_remote.owner,
-                repository_name=parsed_remote.name,
-                default_ref_type=resolved_ref.ref_type,
-                default_ref_name=resolved_ref.ref_name,
-                status=RepositoryConnectionStatus.ACTIVE,
-                mirror_path=mirror.mirror_path,
-                last_verified_at=datetime.now(tz=UTC),
-            )
+        credential_repository = dependencies.credential_revision_repository_factory(
+            session
         )
+
+        try:
+            connection = connection_repository.create(
+                RepositoryConnectionDraft(
+                    id=connection_id,
+                    workspace_id=planning_input_reference.workspace_id,
+                    planning_input_reference_id=planning_input_reference.id,
+                    provider=provider,
+                    remote_url=command.remote_url,
+                    transport=transport,
+                    repository_owner=parsed_remote.owner,
+                    repository_name=parsed_remote.name,
+                    provider_instance_url=parsed_remote.provider_instance_url,
+                    provider_project_path=parsed_remote.provider_project_path,
+                    default_ref_type=resolved_ref.ref_type,
+                    default_ref_name=resolved_ref.ref_name,
+                    status=RepositoryConnectionStatus.ACTIVE,
+                    mirror_path=mirror.mirror_path,
+                    last_verified_at=datetime.now(tz=UTC),
+                )
+            )
+        except ValueError as error:
+            raise RepositoryConnectionProblem(
+                ProblemCode.INVALID_INPUT,
+                str(error),
+            ) from error
         credential_revision = credential_repository.create(
             CredentialRevisionDraft(
                 connection_id=connection.id,

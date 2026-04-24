@@ -9,7 +9,9 @@
 
 - 2026-04-23: explicit human approval 이후 Phase 1 setup 착수
 - 2026-04-23: `delivery-evidence.md`와 GitLab test scaffold 생성 완료
-- 현재 상태: Phase 2 foundational mixed-provider 작업 대기
+- 2026-04-23: Phase 2 foundation 일부 완료 (`T005`, `T006`, `T011`)
+- 2026-04-24: GitLab self-managed remote 파싱, provider metadata 저장, host allowlist, create/verify/default-ref/scope-preview/snapshot 경로의 fail-closed 검증 구현
+- 현재 상태: Phase 2/US1 보안 중심 slice 진행 중. Webhook event normalization과 UI/API detail 확장은 아직 pending
 - 진행 증적: `specs/002-gitlab-onprem-connection/delivery-evidence.md`
 
 ## Design Input Traceability *(mandatory)*
@@ -30,6 +32,13 @@
 - Q: 공식 연결 상태 모델은 어떻게 둘 것인가? → A: GitHub Cloud와 동일하게 공식 연결 상태는 `active`, `reauth_required`, `ref_missing`만 사용하고, webhook 이상은 별도 health로 분리한다.
 - Q: GitLab 연결 식별을 위해 저장소 주소 외 별도 인스턴스 URL 입력 필드를 추가할 것인가? → A: 아니다. 이번 범위에서는 저장소 주소와 기존 연결 메타데이터만 사용하고, 별도 사용자 입력 필드는 추가하지 않는다.
 - Q: webhook secret 회전 유예 기간이나 이전 secret 동시 허용을 이번 범위에 포함할 것인가? → A: 아니다. 이번 범위는 단일 활성 secret 검증과 health 신호 제공까지만 포함한다.
+
+### Session 2026-04-24
+
+- Q: GitLab instance subpath를 `remoteUrl`에서 추정할 것인가? → A: 아니다. `https://gitlab.example.com/gitlab/group/repo.git`의 `/gitlab`도 project namespace 일부로 취급한다.
+- Q: 사용자가 별도 GitLab instance URL을 입력하게 할 것인가? → A: 아니다. `provider_instance_url`은 `remoteUrl`에서 파생된 저장 메타데이터이며 API 입력 필드가 아니다.
+- Q: localhost, private IPv4, 비표준 SSH/HTTPS 포트를 지원할 것인가? → A: 지원한다. 단, outbound git 접근 전 `TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS`에 exact origin이 등록되어 있어야 한다.
+- Q: 어떤 GitLab remote URL을 거부할 것인가? → A: GitHub host, trailing-dot host, IPv6, userinfo, query/fragment, whitespace/control chars, dot path segment, malformed port는 거부한다.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -163,6 +172,8 @@
 - Merge Request action 명칭은 provider별 표현 차이가 있더라도, 의미상 `opened`, `reopened`, `updated/pushed` 계열만 스냅샷 최신화 대상으로 매핑된다고 가정한다.
 - 공식 연결 상태는 `active`, `reauth_required`, `ref_missing`만 사용하고, webhook 및 운영 이상은 별도 health 신호로 노출한다고 가정한다.
 - TCI는 이 기능에서 저장소 데이터를 읽고 스냅샷을 생성하지만, 원격 저장소 코드 수정이나 배포는 수행하지 않는다.
+- 온프레미스 GitLab host allowlist는 운영자가 환경 변수로 관리한다. 기본 포트는 host만 허용하고, 비표준 포트는 `host:port`로 허용한다.
+- IPv6 GitLab remote는 이번 범위에서 지원하지 않는다.
 
 ## Approval Gate
 

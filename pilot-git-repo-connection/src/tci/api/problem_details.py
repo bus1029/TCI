@@ -33,7 +33,7 @@ _PROBLEM_DETAILS = {
     ProblemCode.UNSUPPORTED_PROVIDER: ProblemDetailDefinition(
         code=ProblemCode.UNSUPPORTED_PROVIDER,
         status_code=400,
-        message="v1에서는 GitHub Cloud 저장소만 지원합니다.",
+        message="지원하지 않는 저장소 provider입니다.",
     ),
     ProblemCode.READ_WRITE_CREDENTIAL_NOT_ALLOWED: ProblemDetailDefinition(
         code=ProblemCode.READ_WRITE_CREDENTIAL_NOT_ALLOWED,

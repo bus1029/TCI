@@ -9,8 +9,12 @@ from tci.domain.services.repository_connection_support import (
     RepositoryConnectionProblem,
     bind_git_credential,
     decrypt_secret_from_storage,
+    ensure_gitlab_self_managed_host_allowed,
 )
-from tci.infrastructure.persistence.models import RepositoryConnectionStatus
+from tci.infrastructure.persistence.models import (
+    RepositoryConnectionStatus,
+    RepositoryProvider,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +25,8 @@ class VerifyRepositoryConnectionCommand:
 
 @dataclass(frozen=True, slots=True)
 class VerificationContext:
+    provider: RepositoryProvider
+    provider_instance_url: str | None
     remote_url: str
     transport: object
     default_ref_type: object
@@ -50,6 +56,12 @@ def verify_repository_connection(command, *, dependencies):
         )
 
     try:
+        ensure_gitlab_self_managed_host_allowed(
+            provider=verification_context.provider,
+            provider_instance_url=verification_context.provider_instance_url,
+            settings=dependencies.settings,
+            remote_url=verification_context.remote_url,
+        )
         credential_secret = decrypt_secret_from_storage(
             verification_context.encrypted_secret,
             settings=dependencies.settings,
@@ -104,12 +116,16 @@ def _map_verification_failure_to_status(
     return None
 
 
-def _load_verification_context(*, workspace_id: uuid.UUID, connection_id: uuid.UUID, dependencies):
+def _load_verification_context(
+    *, workspace_id: uuid.UUID, connection_id: uuid.UUID, dependencies
+):
     with dependencies.session_factory() as session:
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )
-        credential_repository = dependencies.credential_revision_repository_factory(session)
+        credential_repository = dependencies.credential_revision_repository_factory(
+            session
+        )
         connection = connection_repository.get(
             workspace_id=workspace_id,
             connection_id=connection_id,
@@ -121,15 +137,21 @@ def _load_verification_context(*, workspace_id: uuid.UUID, connection_id: uuid.U
             connection_id=connection.id
         )
         return VerificationContext(
+            provider=connection.provider,
+            provider_instance_url=connection.provider_instance_url,
             remote_url=connection.remote_url,
             transport=connection.transport,
             default_ref_type=connection.default_ref_type,
             default_ref_name=connection.default_ref_name,
             credential_type=(
-                None if credential_revision is None else credential_revision.credential_type
+                None
+                if credential_revision is None
+                else credential_revision.credential_type
             ),
             encrypted_secret=(
-                None if credential_revision is None else credential_revision.encrypted_secret
+                None
+                if credential_revision is None
+                else credential_revision.encrypted_secret
             ),
         )
 

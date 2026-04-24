@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from ipaddress import ip_address
+import re
 import uuid
 from urllib.parse import urlparse
 
@@ -21,6 +23,15 @@ from tci.infrastructure.persistence.models import (
     WebhookRejectionReason,
     WebhookSecretRevision,
 )
+
+
+_HOSTNAME_PATTERN = re.compile(
+    r"^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$"
+)
+
+
+def _has_whitespace_or_control(value: str) -> bool:
+    return any(character.isspace() or ord(character) < 32 for character in value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,14 +74,9 @@ class RepositoryConnectionRepository:
                 raise ValueError("GitLab connection requires provider_instance_url.")
             if not provider_project_path:
                 raise ValueError("GitLab connection requires provider_project_path.")
-            if (
-                provider_project_path.startswith("/")
-                or provider_project_path.endswith("/")
-                or "//" in provider_project_path
-            ):
-                raise ValueError(
-                    "GitLab connection requires a normalized provider_project_path."
-                )
+            self._validate_gitlab_project_path(
+                provider_project_path=provider_project_path
+            )
             provider_instance_url = self._normalize_gitlab_instance_url(
                 provider_instance_url
             )
@@ -122,6 +128,14 @@ class RepositoryConnectionRepository:
 
     @staticmethod
     def _validate_remote_url_credentials(*, remote_url: str) -> None:
+        if _has_whitespace_or_control(remote_url):
+            raise ValueError(
+                "Repository remote_url must not include whitespace or control characters."
+            )
+        if remote_url.startswith("git@") and ("?" in remote_url or "#" in remote_url):
+            raise ValueError(
+                "Repository remote_url must not include query or fragment."
+            )
         if remote_url.startswith("https://") or remote_url.startswith("ssh://"):
             parsed_remote = urlparse(remote_url)
             if parsed_remote.params or parsed_remote.query or parsed_remote.fragment:
@@ -152,16 +166,18 @@ class RepositoryConnectionRepository:
             parsed_instance.scheme != "https"
             or not parsed_instance.netloc
             or not has_supported_base_url
+            or parsed_instance.path not in ("", "/")
         ):
             raise ValueError(
                 "GitLab connection requires an https provider_instance_url without query or fragment."
             )
-        normalized_host = parsed_instance.hostname or ""
-        normalized_port = (
-            f":{parsed_instance.port}" if parsed_instance.port is not None else ""
+        normalized_host = (parsed_instance.hostname or "").lower()
+        RepositoryConnectionRepository._validate_gitlab_host(hostname=normalized_host)
+        parsed_port = RepositoryConnectionRepository._parse_url_port(
+            parsed_url=parsed_instance
         )
-        normalized_path = parsed_instance.path.rstrip("/")
-        return f"https://{normalized_host}{normalized_port}{normalized_path}"
+        normalized_port = f":{parsed_port}" if parsed_port is not None else ""
+        return f"https://{normalized_host}{normalized_port}"
 
     @staticmethod
     def _canonical_gitlab_project_path(
@@ -170,15 +186,6 @@ class RepositoryConnectionRepository:
         if remote_url.startswith("https://") or remote_url.startswith("ssh://"):
             parsed_remote = urlparse(remote_url)
             project_path = parsed_remote.path.lstrip("/")
-            if remote_url.startswith("https://"):
-                instance_prefix = urlparse(provider_instance_url).path.strip("/")
-                if instance_prefix:
-                    required_prefix = f"{instance_prefix}/"
-                    if not project_path.startswith(required_prefix):
-                        raise ValueError(
-                            "GitLab HTTPS remote_url must include provider_instance_url path prefix."
-                        )
-                    project_path = project_path.removeprefix(required_prefix)
         elif remote_url.startswith("git@"):
             _, separator, project_path = remote_url.partition(":")
             if not separator:
@@ -200,22 +207,34 @@ class RepositoryConnectionRepository:
     @staticmethod
     def _extract_gitlab_remote_location(
         *, remote_url: str
-    ) -> tuple[str, int | None, bool] | None:
+    ) -> tuple[str, int | None, str] | None:
         if remote_url.startswith("https://"):
             parsed_remote = urlparse(remote_url)
             if parsed_remote.hostname is None:
                 return None
-            return parsed_remote.hostname, parsed_remote.port, True
+            return (
+                parsed_remote.hostname,
+                RepositoryConnectionRepository._parse_url_port(
+                    parsed_url=parsed_remote
+                ),
+                "https",
+            )
         if remote_url.startswith("ssh://"):
             parsed_remote = urlparse(remote_url)
-            if parsed_remote.hostname is None:
+            if parsed_remote.hostname is None or parsed_remote.username != "git":
                 return None
-            return parsed_remote.hostname, parsed_remote.port, False
+            return (
+                parsed_remote.hostname,
+                RepositoryConnectionRepository._parse_url_port(
+                    parsed_url=parsed_remote
+                ),
+                "ssh_url",
+            )
         if remote_url.startswith("git@"):
             remote_host = remote_url.partition("@")[2].partition(":")[0]
             if not remote_host:
                 return None
-            return remote_host.lower(), None, False
+            return remote_host.lower(), None, "scp"
         return None
 
     @classmethod
@@ -229,20 +248,65 @@ class RepositoryConnectionRepository:
         remote_location = cls._extract_gitlab_remote_location(remote_url=remote_url)
         if remote_location is None or parsed_instance.hostname is None:
             raise ValueError("GitLab connection requires a supported remote_url.")
-        remote_host, remote_port, require_https_port_match = remote_location
-        if remote_host == "github.com":
+        remote_host, remote_port, remote_scheme = remote_location
+        cls._validate_gitlab_host(hostname=remote_host)
+        remote_host = remote_host.lower()
+        if remote_host.rstrip(".") == "github.com":
             raise ValueError("GitHub remotes cannot be stored as GitLab providers.")
         if parsed_instance.hostname != remote_host:
             raise ValueError(
                 "GitLab connection remote_url must match provider_instance_url host."
             )
-        if require_https_port_match:
+        if remote_scheme == "https":
             instance_port = parsed_instance.port or 443
             expected_remote_port = remote_port or 443
             if instance_port != expected_remote_port:
                 raise ValueError(
                     "GitLab HTTPS remote_url port must match provider_instance_url port."
                 )
+
+    @staticmethod
+    def _validate_gitlab_host(*, hostname: str) -> None:
+        if (
+            not hostname
+            or hostname.startswith("-")
+            or _has_whitespace_or_control(hostname)
+        ):
+            raise ValueError("GitLab connection requires a supported host.")
+        try:
+            parsed_ip = ip_address(hostname)
+        except ValueError:
+            if not _HOSTNAME_PATTERN.fullmatch(hostname):
+                raise ValueError(
+                    "GitLab connection requires a supported host."
+                ) from None
+        else:
+            if parsed_ip.version != 4:
+                raise ValueError("GitLab connection requires a supported host.")
+
+    @staticmethod
+    def _validate_gitlab_project_path(*, provider_project_path: str) -> None:
+        segments = provider_project_path.split("/")
+        if (
+            len(segments) < 2
+            or provider_project_path.startswith("/")
+            or provider_project_path.endswith("/")
+            or "//" in provider_project_path
+            or any(segment in (".", "..") for segment in segments)
+            or _has_whitespace_or_control(provider_project_path)
+        ):
+            raise ValueError(
+                "GitLab connection requires a normalized provider_project_path."
+            )
+
+    @staticmethod
+    def _parse_url_port(*, parsed_url) -> int | None:
+        if parsed_url.netloc.rsplit("@", 1)[-1].endswith(":"):
+            raise ValueError("GitLab connection requires a supported port.")
+        try:
+            return parsed_url.port
+        except ValueError as error:
+            raise ValueError("GitLab connection requires a supported port.") from error
 
     def get(
         self, *, workspace_id: uuid.UUID, connection_id: uuid.UUID
