@@ -7,14 +7,21 @@
 
 ## Implementation Status
 
-- 2026-04-23: explicit human approval 이후 Phase 1 setup 착수
-- 2026-04-23: `delivery-evidence.md`와 GitLab test scaffold 생성 완료
-- 2026-04-23: Phase 2 foundation 일부 완료 (`T005`, `T006`, `T011`)
-- 2026-04-24: GitLab self-managed remote 파싱, provider metadata 저장, host allowlist, create/verify/default-ref/scope-preview/snapshot 경로의 fail-closed 검증 구현
-- 2026-04-24: 기본 ref 변경의 allowlist-before-decrypt 순서, SSH custom-port allowlist control, snapshot allowlist rejection 분류, GitHub/GitLab coexistence 회귀 검증 보강
-- 2026-04-24: 실제 PostgreSQL `tci_test`에서 Alembic migration smoke, 실DB bootstrap, live constraint name regression 검증 완료
-- 현재 상태: Phase 2/US1 보안 중심 slice와 DB migration 검증 완료. Webhook event normalization과 UI/API detail 확장은 아직 pending
-- 진행 증적: `specs/002-gitlab-onprem-connection/delivery-evidence.md`
+- Phase 2 foundation과 US1 보안 중심 slice가 구현됐다.
+- 구현된 범위:
+  - GitLab self-managed remote 파싱과 provider metadata 저장
+  - host allowlist 기반 fail-closed 검증
+  - create/verify/default-ref/scope-preview/snapshot build 경로의 공통 allowlist 적용
+  - 기본 ref 변경의 allowlist-before-decrypt 순서
+  - SSH custom-port allowlist control
+  - snapshot allowlist rejection의 `MIRROR_SYNC_FAILED` 분류
+  - GitHub/GitLab coexistence 회귀 검증
+  - 실제 PostgreSQL migration smoke, 실DB bootstrap, live constraint name regression
+- 아직 pending인 범위:
+  - GitLab webhook event normalization
+  - UI/API detail 확장
+  - US1 route/detail/evidence 마감 작업
+- 상세 증적은 `specs/002-gitlab-onprem-connection/delivery-evidence.md`를 기준으로 한다.
 
 ## Design Input Traceability *(mandatory)*
 
@@ -23,9 +30,7 @@
 - **Scope baseline**: 온프레미스 GitLab 저장소 연결, SSH/HTTPS 접근, 분석 대상 브랜치 또는 태그 선택, 포함/제외 경로 및 파일 타입 규칙, Commit/Push/Merge Request 이벤트 감지, webhook 기반 실시간 이벤트 수신, 분석 가능한 코드 스냅샷 생성, 기존 GitHub Cloud 흐름과의 호환성 유지
 - **Out of scope**: Git 이외 형상 관리 시스템 지원, 저장소 쓰기 작업, CI/CD 파이프라인 실행, 코드 품질 평가 로직 자체, GitHub Cloud 기능 재설계, 다른 GitLab 배포 형태에 대한 신규 범위 확장, 저장소 주소와 별도로 GitLab 인스턴스 URL 입력 필드 추가, webhook secret 이중 허용 또는 회전 유예 기간 운영
 
-## Clarifications
-
-### Session 2026-04-23
+## Closed Clarifications
 
 - Q: GitLab 연결 자격 증명은 어떤 운영 모델로 관리할 것인가? → A: GitHub Cloud와 동일하게 저장소 연결 단위 공유 자격 증명을 사용하고, 읽기 전용 권한만 허용한다.
 - Q: GitLab 연결의 기본 수집 제외 정책은 무엇으로 둘 것인가? → A: GitHub Cloud와 동일하게 텍스트 기반 소스 파일만 기본 수집하고, 바이너리·생성 산출물·5 MiB 초과 파일은 기본 제외한다.
@@ -34,9 +39,6 @@
 - Q: 공식 연결 상태 모델은 어떻게 둘 것인가? → A: GitHub Cloud와 동일하게 공식 연결 상태는 `active`, `reauth_required`, `ref_missing`만 사용하고, webhook 이상은 별도 health로 분리한다.
 - Q: GitLab 연결 식별을 위해 저장소 주소 외 별도 인스턴스 URL 입력 필드를 추가할 것인가? → A: 아니다. 이번 범위에서는 저장소 주소와 기존 연결 메타데이터만 사용하고, 별도 사용자 입력 필드는 추가하지 않는다.
 - Q: webhook secret 회전 유예 기간이나 이전 secret 동시 허용을 이번 범위에 포함할 것인가? → A: 아니다. 이번 범위는 단일 활성 secret 검증과 health 신호 제공까지만 포함한다.
-
-### Session 2026-04-24
-
 - Q: GitLab instance subpath를 `remoteUrl`에서 추정할 것인가? → A: 아니다. `https://gitlab.example.com/gitlab/group/repo.git`의 `/gitlab`도 project namespace 일부로 취급한다.
 - Q: 사용자가 별도 GitLab instance URL을 입력하게 할 것인가? → A: 아니다. `provider_instance_url`은 `remoteUrl`에서 파생된 저장 메타데이터이며 API 입력 필드가 아니다.
 - Q: localhost, private IPv4, 비표준 SSH/HTTPS 포트를 지원할 것인가? → A: 지원한다. 단, outbound git 접근 전 `TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS`에 exact origin이 등록되어 있어야 한다.

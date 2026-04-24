@@ -9,11 +9,16 @@
 
 ## Implementation Progress
 
-- 2026-04-24 기준 GitLab self-managed remote 파싱, provider metadata 저장, host allowlist, create/verify/default-ref/scope-preview/snapshot fail-closed 경로를 구현했다.
-- 2026-04-24 기준 기본 ref 변경은 GitLab allowlist 통과 후에만 credential decrypt를 수행한다.
-- 2026-04-24 기준 snapshot build의 GitLab allowlist rejection은 credential failure로 오분류하지 않고 `MIRROR_SYNC_FAILED`로 기록한다.
-- 2026-04-24 기준 실제 PostgreSQL `tci_test`에서 Alembic migration smoke, 실DB bootstrap, live constraint name regression 검증을 완료했다.
-- 아직 남은 구현 범위는 GitLab webhook event normalization, operator detail/read-model, UI 표시다.
+- 구현됨:
+  - GitLab self-managed remote 파싱, provider metadata 저장, host allowlist
+  - create/verify/default-ref/scope-preview/snapshot fail-closed 검증
+  - 기본 ref 변경의 allowlist-before-decrypt 순서
+  - snapshot allowlist rejection의 `MIRROR_SYNC_FAILED` 분류
+  - 실제 PostgreSQL migration smoke, 실DB bootstrap, live constraint name regression
+- 남은 구현 범위:
+  - GitLab webhook event normalization
+  - operator detail/read-model
+  - UI 표시
 
 ## Change Traceability
 
