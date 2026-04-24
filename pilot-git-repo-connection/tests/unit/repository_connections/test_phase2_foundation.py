@@ -4,8 +4,10 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 import sys
 from types import ModuleType
+from collections.abc import Iterable
 from typing import Any, cast
 
+# mypy: disable-error-code=import-untyped
 from sqlalchemy.orm import configure_mappers
 
 from tci.api.problem_details import ProblemCode, problem_details_for
@@ -37,7 +39,7 @@ def _load_core_revision_module():
 
     module = module_from_spec(spec)
     alembic_stub = ModuleType("alembic")
-    alembic_stub.op = object()
+    setattr(alembic_stub, "op", object())
     previous_alembic = sys.modules.get("alembic")
     sys.modules["alembic"] = alembic_stub
 
@@ -53,14 +55,16 @@ def _load_core_revision_module():
 
 
 def _load_revision_module(filename: str, module_name: str):
-    revision_path = Path(__file__).resolve().parents[3] / "alembic" / "versions" / filename
+    revision_path = (
+        Path(__file__).resolve().parents[3] / "alembic" / "versions" / filename
+    )
     spec = spec_from_file_location(module_name, revision_path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"{filename} Alembic revision 모듈을 불러올 수 없습니다.")
 
     module = module_from_spec(spec)
     alembic_stub = ModuleType("alembic")
-    alembic_stub.op = object()
+    setattr(alembic_stub, "op", object())
     previous_alembic = sys.modules.get("alembic")
     sys.modules["alembic"] = alembic_stub
 
@@ -79,8 +83,8 @@ def _enum_values(column: Any) -> list[str]:
     return list(cast(Any, column.type).enums)
 
 
-def _contains_constraint_name(names: set[str | None], target: str) -> bool:
-    return any(name is not None and name.endswith(target) for name in names)
+def _contains_constraint_name(names: Iterable[object | None], target: str) -> bool:
+    return any(isinstance(name, str) and name.endswith(target) for name in names)
 
 
 def test_phase2_models_configure_sqlalchemy_mappers() -> None:
@@ -132,9 +136,16 @@ def test_phase2_enums_match_spec_language() -> None:
         "planning_brief",
         "imported_note",
     ]
-    assert [member.value for member in RepositoryProvider] == ["github_cloud"]
+    assert [member.value for member in RepositoryProvider] == [
+        "github_cloud",
+        "gitlab_self_managed",
+    ]
     assert [member.value for member in RepositoryTransport] == ["ssh", "https"]
-    assert [member.value for member in RefType] == ["branch", "tag", "pull_request_branch"]
+    assert [member.value for member in RefType] == [
+        "branch",
+        "tag",
+        "pull_request_branch",
+    ]
     assert [member.value for member in RepositoryConnectionStatus] == [
         "active",
         "reauth_required",
@@ -181,11 +192,16 @@ def test_phase2_column_types_preserve_domain_constraints() -> None:
         "manual_refresh",
         "webhook_push",
         "webhook_pull_request",
+        "webhook_merge_request",
     ]
 
 
 def test_core_revision_enums_match_orm_metadata() -> None:
     revision_module = _load_core_revision_module()
+    revision_004 = _load_revision_module(
+        "004_gitlab_self_managed_provider_support.py",
+        "gitlab_self_managed_provider_support_enums",
+    )
     connection_table = Base.metadata.tables["repository_connections"]
     sync_run_table = Base.metadata.tables["repository_sync_runs"]
     snapshot_table = Base.metadata.tables["code_snapshots"]
@@ -193,9 +209,6 @@ def test_core_revision_enums_match_orm_metadata() -> None:
 
     assert revision_module.DEFAULT_REF_TYPE.enums == _enum_values(
         connection_table.c["default_ref_type"]
-    )
-    assert revision_module.SYNC_TRIGGER_TYPE.enums == _enum_values(
-        sync_run_table.c["trigger_type"]
     )
     assert revision_module.REQUESTED_REF_TYPE.enums == _enum_values(
         sync_run_table.c["requested_ref_type"]
@@ -206,16 +219,28 @@ def test_core_revision_enums_match_orm_metadata() -> None:
     assert revision_module.SCOPE_RULE_WARNING_STATE.enums == _enum_values(
         scope_rule_table.c["warning_state"]
     )
+    assert revision_004.REPOSITORY_PROVIDER.enums == _enum_values(
+        connection_table.c["provider"]
+    )
+    assert revision_004.SYNC_TRIGGER_TYPE.enums == _enum_values(
+        sync_run_table.c["trigger_type"]
+    )
 
 
 def test_verified_secret_revision_followup_migration_keeps_002_stable() -> None:
     versions_dir = Path(__file__).resolve().parents[3] / "alembic" / "versions"
     revision_002_path = versions_dir / "002_repository_ingestion_webhooks.py"
-    revision_003_path = versions_dir / "003_repository_event_verified_secret_revision.py"
+    revision_003_path = (
+        versions_dir / "003_repository_event_verified_secret_revision.py"
+    )
 
     assert revision_003_path.exists()
-    assert "verified_secret_revision_id" not in revision_002_path.read_text(encoding="utf-8")
-    assert "verified_secret_revision_id" in revision_003_path.read_text(encoding="utf-8")
+    assert "verified_secret_revision_id" not in revision_002_path.read_text(
+        encoding="utf-8"
+    )
+    assert "verified_secret_revision_id" in revision_003_path.read_text(
+        encoding="utf-8"
+    )
 
     revision_003 = _load_revision_module(
         "003_repository_event_verified_secret_revision.py",
@@ -256,10 +281,15 @@ def test_phase2_revision_ids_fit_alembic_version_column_limit() -> None:
         "003_repository_event_verified_secret_revision.py",
         "repository_event_verified_secret_revision_ids",
     )
+    revision_004 = _load_revision_module(
+        "004_gitlab_self_managed_provider_support.py",
+        "gitlab_self_managed_provider_support_revision_ids",
+    )
 
     assert len(revision_001.revision) <= 32
     assert len(revision_002.revision) <= 32
     assert len(revision_003.revision) <= 32
+    assert len(revision_004.revision) <= 32
 
 
 def test_repository_event_metadata_enforces_secret_revision_same_connection() -> None:
@@ -276,6 +306,7 @@ def test_phase2_explicit_constraint_names_fit_postgresql_limit() -> None:
     assert len("fk_repo_conn_active_cred_id") <= 63
     assert len("fk_repo_conn_active_scope_owner") <= 63
     assert len("fk_repo_conn_active_cred_owner") <= 63
+    assert len("fk_repo_conn_active_webhook_secret_owner") <= 63
     assert len("fk_code_snapshot_sync_owner") <= 63
     assert len("fk_code_snapshot_scope_owner") <= 63
 
@@ -286,7 +317,7 @@ def test_phase2_all_foreign_key_names_fit_postgresql_limit() -> None:
     for table in Base.metadata.tables.values():
         for constraint in table.foreign_key_constraints:
             assert constraint.name is not None
-            assert len(constraint.name) <= 63
+            assert len(cast(str, constraint.name)) <= 63
 
 
 def test_phase2_metadata_includes_connection_ownership_guards() -> None:
@@ -294,12 +325,19 @@ def test_phase2_metadata_includes_connection_ownership_guards() -> None:
     scope_rule_table = Base.metadata.tables["collection_scope_rule_versions"]
     snapshot_table = Base.metadata.tables["code_snapshots"]
 
-    connection_fk_names = {constraint.name for constraint in connection_table.foreign_key_constraints}
-    scope_rule_fk_names = {constraint.name for constraint in scope_rule_table.foreign_key_constraints}
-    snapshot_fk_names = {constraint.name for constraint in snapshot_table.foreign_key_constraints}
+    connection_fk_names = {
+        constraint.name for constraint in connection_table.foreign_key_constraints
+    }
+    scope_rule_fk_names = {
+        constraint.name for constraint in scope_rule_table.foreign_key_constraints
+    }
+    snapshot_fk_names = {
+        constraint.name for constraint in snapshot_table.foreign_key_constraints
+    }
 
     assert "fk_repo_conn_active_scope_owner" in connection_fk_names
     assert "fk_repo_conn_active_cred_owner" in connection_fk_names
+    assert "fk_repo_conn_active_webhook_secret_owner" in connection_fk_names
     assert "fk_repo_conn_plan_input_owner" in connection_fk_names
     assert "fk_scope_rule_plan_input_owner" in scope_rule_fk_names
     assert "fk_code_snapshot_sync_owner" in snapshot_fk_names
@@ -312,18 +350,28 @@ def test_phase2_metadata_includes_storage_and_remote_url_guards() -> None:
     snapshot_table = Base.metadata.tables["code_snapshots"]
     snapshot_file_table = Base.metadata.tables["code_snapshot_files"]
 
-    connection_check_names = {constraint.name for constraint in connection_table.constraints}
-    credential_check_names = {constraint.name for constraint in credential_table.constraints}
-    snapshot_check_names = {constraint.name for constraint in snapshot_table.constraints}
+    connection_check_names = {
+        constraint.name for constraint in connection_table.constraints
+    }
+    credential_check_names = {
+        constraint.name for constraint in credential_table.constraints
+    }
+    snapshot_check_names = {
+        constraint.name for constraint in snapshot_table.constraints
+    }
     snapshot_file_check_names = {
         constraint.name for constraint in snapshot_file_table.constraints
     }
 
-    assert _contains_constraint_name(connection_check_names, "ck_repo_conn_remote_url_host")
+    assert _contains_constraint_name(
+        connection_check_names, "ck_repo_conn_remote_url_host"
+    )
     assert _contains_constraint_name(
         connection_check_names, "ck_repo_conn_remote_url_no_userinfo"
     )
-    assert _contains_constraint_name(connection_check_names, "ck_repo_conn_mirror_path_safe")
+    assert _contains_constraint_name(
+        connection_check_names, "ck_repo_conn_mirror_path_safe"
+    )
     assert _contains_constraint_name(
         credential_check_names, "ck_cred_rev_active_requires_ro"
     )
@@ -344,6 +392,64 @@ def test_phase2_metadata_limits_active_credential_revisions_per_connection() -> 
     index_names = {index.name for index in credential_table.indexes}
 
     assert "ix_cred_rev_one_active" in index_names
+
+
+def test_phase2_metadata_includes_supporting_foreign_key_indexes() -> None:
+    expected_indexes = {
+        "repository_connections": {
+            "ix_repo_conn_active_webhook_secret_revision_id",
+            "ix_repo_conn_active_scope_rule_version_id",
+            "ix_repo_conn_active_credential_revision_id",
+            "ix_repo_conn_last_processed_event_id",
+            "ix_repo_conn_plan_input_ref_id",
+        },
+        "repository_credential_revisions": {"ix_cred_rev_connection_id"},
+        "webhook_secret_revisions": {"ix_webhook_secret_rev_connection_id"},
+        "collection_scope_rule_versions": {"ix_scope_rule_plan_input_ref_id"},
+        "repository_events": {
+            "ix_repository_event_verified_secret_revision_id",
+            "ix_repository_event_sync_run_id",
+            "ix_repository_event_snapshot_id",
+        },
+        "repository_event_cursors": {"ix_repository_event_cursor_latest_event_id"},
+        "repository_sync_runs": {"ix_sync_run_trigger_event_id"},
+        "code_snapshots": {
+            "ix_code_snapshot_scope_rule_version_id",
+            "ix_code_snapshot_connection_id",
+        },
+    }
+    revision_text = (
+        Path(__file__).resolve().parents[3]
+        / "alembic"
+        / "versions"
+        / "004_gitlab_self_managed_provider_support.py"
+    ).read_text(encoding="utf-8")
+
+    for table_name, index_names in expected_indexes.items():
+        table_index_names = {
+            index.name for index in Base.metadata.tables[table_name].indexes
+        }
+        assert index_names <= table_index_names
+        for index_name in index_names:
+            assert index_name in revision_text
+
+
+def test_phase2_migration_keeps_provider_project_path_rollout_safe() -> None:
+    revision_text = (
+        Path(__file__).resolve().parents[3]
+        / "alembic"
+        / "versions"
+        / "004_gitlab_self_managed_provider_support.py"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        'sa.Column("provider_project_path", sa.String(length=512), nullable=True)'
+        in (revision_text)
+    )
+    assert (
+        'op.alter_column("repository_connections", "provider_project_path", nullable=False)'
+        not in revision_text
+    )
 
 
 def test_problem_details_registry_covers_phase2_foundation_failures() -> None:

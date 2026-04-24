@@ -40,16 +40,36 @@
 
 **⚠️ CRITICAL**: 이 단계가 완료되기 전에는 어떤 사용자 스토리도 시작하지 않는다.
 
-- [ ] T005 Extend provider enums, canonical state helpers, and shared persistence models for `gitlab_self_managed`, `provider_instance_url`, delivery-id source, health projection, and `webhook_merge_request` trigger support in `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
-- [ ] T006 Create additive Alembic migration for mixed-provider repository ingestion schema changes in `pilot-git-repo-connection/alembic/versions/004_gitlab_self_managed_provider_support.py`
+- [x] T005 Extend provider enums, canonical state helpers, and shared persistence models for `gitlab_self_managed`, `provider_instance_url`, delivery-id source, health projection, and `webhook_merge_request` trigger support in `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
+- [x] T006 Create additive Alembic migration for mixed-provider repository ingestion schema changes in `pilot-git-repo-connection/alembic/versions/004_gitlab_self_managed_provider_support.py`
 - [ ] T007 [P] Refactor provider parsing and remote validation entry points to support GitHub/GitLab side by side in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py` and `pilot-git-repo-connection/src/tci/infrastructure/git/remote_parsers.py`
 - [ ] T008 [P] Introduce shared provider event types and normalized event DTOs in `pilot-git-repo-connection/src/tci/infrastructure/webhooks/provider_event_types.py` and `pilot-git-repo-connection/src/tci/domain/services/repository_event_processing.py`
 - [ ] T009 [P] Extend repository connection, event, cursor, sync run, and snapshot repositories for mixed-provider reads/writes in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`, `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_repository.py`, `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_cursor_repository.py`, `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_sync_run_repository.py`, and `pilot-git-repo-connection/src/tci/infrastructure/persistence/code_snapshot_repository.py`
 - [ ] T010 [P] Extend shared API schemas for mixed-provider connection detail, webhook health, and traceability fields in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`, `pilot-git-repo-connection/src/tci/api/schemas/repository_scope.py`, and `pilot-git-repo-connection/src/tci/api/schemas/_base.py`
-- [ ] T011 [P] Add foundational unit tests for mixed-provider model invariants, canonical status rules, and additive migration expectations in `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py`
+- [x] T011 [P] Add foundational unit tests for mixed-provider model invariants, canonical status rules, and additive migration expectations in `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py`
 - [ ] T012 Wire new provider routes and shared dependencies into the FastAPI app in `pilot-git-repo-connection/src/tci/app.py`
 
 **Checkpoint**: mixed-provider 공통 기반이 준비되어 GitLab 기능을 스토리 단위로 구현할 수 있다.
+
+**Phase 2 Execution Note**:
+
+- 2026-04-23 기준 부분 완료
+- 완료 작업:
+  - `T005`
+  - `T006`
+  - `T011`
+- 검증 명령:
+  - `python -m pytest pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_git_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_process_github_event.py pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py -q`
+  - `mypy pilot-git-repo-connection/src/tci/domain/services/process_github_event.py pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py`
+  - `ruff check pilot-git-repo-connection/alembic/versions/004_gitlab_self_managed_provider_support.py pilot-git-repo-connection/src/tci/domain/services/process_github_event.py pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_repository.py pilot-git-repo-connection/tests/support/repository_connection_testkit.py pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_process_github_event.py`
+  - `black --check pilot-git-repo-connection/alembic/versions/004_gitlab_self_managed_provider_support.py pilot-git-repo-connection/src/tci/domain/services/process_github_event.py pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_repository.py pilot-git-repo-connection/tests/support/repository_connection_testkit.py pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_process_github_event.py`
+  - `git diff --check`
+- 결과:
+  - `101 passed in 1.83s`
+  - `Success: no issues found in 3 source files`
+  - `ruff check` 통과
+  - `black --check` 통과
+  - `git diff --check` 통과
 
 ---
 

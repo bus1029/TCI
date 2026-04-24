@@ -8,34 +8,58 @@ from tci.domain.services.process_github_event import (
 )
 
 
-def test_evaluate_github_secret_verification_classifies_missing_mismatch_and_invalid() -> None:
-    assert evaluate_github_secret_verification(
-        SecretVerificationInput(
-            has_any_secret=False,
-            matched_secret_status=None,
-            signature_header="sha256=abc123",
-            signature_is_valid=False,
-        )
-    ).signature_status == "secret_missing"
-    assert evaluate_github_secret_verification(
-        SecretVerificationInput(
-            has_any_secret=True,
-            matched_secret_status=None,
-            signature_header="sha256=abc123",
-            signature_is_valid=False,
-        )
-    ).signature_status == "secret_mismatch"
-    assert evaluate_github_secret_verification(
-        SecretVerificationInput(
-            has_any_secret=True,
-            matched_secret_status=None,
-            signature_header="sha256=not-a-valid-hex",
-            signature_is_valid=False,
-        )
-    ).signature_status == "signature_invalid"
+def test_evaluate_github_secret_verification_classifies_missing_mismatch_and_invalid() -> (
+    None
+):
+    assert (
+        evaluate_github_secret_verification(
+            SecretVerificationInput(
+                has_any_secret=False,
+                matched_secret_status=None,
+                signature_header="sha256=abc123",
+                signature_is_valid=False,
+            )
+        ).signature_status
+        == "secret_missing"
+    )
+    assert (
+        evaluate_github_secret_verification(
+            SecretVerificationInput(
+                has_any_secret=True,
+                matched_secret_status=None,
+                signature_header=f"sha256={'a' * 64}",
+                signature_is_valid=False,
+            )
+        ).signature_status
+        == "secret_mismatch"
+    )
+    assert (
+        evaluate_github_secret_verification(
+            SecretVerificationInput(
+                has_any_secret=True,
+                matched_secret_status=None,
+                signature_header="sha256=not-a-valid-hex",
+                signature_is_valid=False,
+            )
+        ).signature_status
+        == "signature_invalid"
+    )
+    assert (
+        evaluate_github_secret_verification(
+            SecretVerificationInput(
+                has_any_secret=True,
+                matched_secret_status=None,
+                signature_header="sha256=abc123",
+                signature_is_valid=False,
+            )
+        ).signature_status
+        == "signature_invalid"
+    )
 
 
-def test_process_github_event_accepts_previous_grace_secret_and_marks_revision_status() -> None:
+def test_process_github_event_accepts_previous_grace_secret_and_marks_revision_status() -> (
+    None
+):
     outcome = evaluate_github_secret_verification(
         SecretVerificationInput(
             has_any_secret=True,
@@ -65,7 +89,9 @@ def test_process_github_event_records_ignored_pr_action_without_queueing_sync() 
     assert decision.should_queue_sync is False
 
 
-def test_process_github_event_marks_duplicate_delivery_duplicate_head_and_stale_head() -> None:
+def test_process_github_event_marks_duplicate_delivery_duplicate_head_and_stale_head() -> (
+    None
+):
     duplicate_delivery = decide_github_event_processing(
         GitHubDecisionInput(
             provider_event_type="push",

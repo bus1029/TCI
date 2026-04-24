@@ -28,7 +28,7 @@
 | Phase | Goal | Status | Evidence |
 |------|------|--------|----------|
 | Phase 1 | 증적 문서 및 테스트 골격 준비 | scaffolded | T001-T004 |
-| Phase 2 | mixed-provider 공통 기반 구축 | pending | - |
+| Phase 2 | mixed-provider 공통 기반 구축 | in_progress | T005, T006, T011 |
 | Phase 3 | US1 GitLab 연결과 초기 snapshot | pending | - |
 | Phase 4 | US2 scope/ref 관리 | pending | - |
 | Phase 5 | US3 webhook 최신화 | pending | - |
@@ -162,15 +162,49 @@
 - T003: GitLab unit/regression 테스트 골격 파일 생성 완료
 - T004: spec/plan/research/data-model/contracts/quickstart trace reference 반영 완료
 
+## Phase 2 Partial Completion Evidence
+
+- T005: mixed-provider foundation metadata 반영 완료
+  - 근거 파일
+    - `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
+  - 검증
+    - `tests/unit/repository_connections/test_phase2_foundation.py`
+    - `tests/unit/repository_connections/test_gitlab_foundation.py`
+- T006: additive GitLab foundation migration 작성 완료
+  - 근거 파일
+    - `pilot-git-repo-connection/alembic/versions/004_gitlab_self_managed_provider_support.py`
+  - 중요 메모
+    - `provider_project_path`는 rollout-safe 하게 migration에서는 nullable 유지
+    - downgrade 시 004-only 인덱스 삭제까지 반영
+- T011: mixed-provider foundation unit test 추가 완료
+  - 근거 파일
+    - `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py`
+    - `pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py`
+  - 실행 결과
+    - `python -m pytest pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_git_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_process_github_event.py pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py -q`
+    - 결과: `101 passed in 1.83s`
+
+## Foundation Verification Snapshot
+
+- 타입/정적 검증
+  - `mypy pilot-git-repo-connection/src/tci/domain/services/process_github_event.py pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py`
+  - 결과: `Success: no issues found in 3 source files`
+- 스타일/포맷 검증
+  - `ruff check` 대상 파일 세트 통과
+  - `black --check` 대상 파일 세트 통과
+- diff hygiene
+  - `git diff --check` 통과
+
 ## Open Evidence Slots
 
 - 실제 pytest 실행 명령과 pass/fail 결과
 - 수동 quickstart 검증 메모
 - latency 측정 결과
 - GitHub regression 실행 결과
-- reviewer / python-reviewer 피드백과 조치 기록
+- reviewer / python-reviewer / database-reviewer 최종 재검토 결과
 - security-reviewer 피드백과 조치 기록
 
 ## 변경 이력
 
 - 2026-04-23: Phase 1 evidence scaffold 생성
+- 2026-04-23: Phase 2 foundation partial evidence 추가 (`T005`, `T006`, `T011`)

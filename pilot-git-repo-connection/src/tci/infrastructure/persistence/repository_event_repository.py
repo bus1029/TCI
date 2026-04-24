@@ -12,6 +12,7 @@ from tci.infrastructure.persistence.models import (
     EventProcessingStatus,
     EventTargetKind,
     ProcessingDecision,
+    ProviderEventIdempotencySource,
     ProviderEventType,
     RepositoryEvent,
     SignatureStatus,
@@ -42,6 +43,9 @@ class RepositoryEventDraft:
     processing_decision: ProcessingDecision
     processing_status: EventProcessingStatus
     payload_hash: str
+    provider_event_idempotency_source: ProviderEventIdempotencySource = (
+        ProviderEventIdempotencySource.DELIVERY_HEADER
+    )
     sync_run_id: uuid.UUID | None = None
     snapshot_id: uuid.UUID | None = None
 
@@ -55,6 +59,7 @@ class RepositoryEventRepository:
             id=draft.id,
             connection_id=draft.connection_id,
             provider_delivery_id=draft.provider_delivery_id,
+            provider_event_idempotency_source=draft.provider_event_idempotency_source,
             provider_event_type=draft.provider_event_type,
             provider_action=draft.provider_action,
             domain_event_type=draft.domain_event_type,
@@ -81,11 +86,17 @@ class RepositoryEventRepository:
         return event
 
     def get_by_delivery_id(
-        self, *, connection_id: uuid.UUID, provider_delivery_id: str
+        self,
+        *,
+        connection_id: uuid.UUID,
+        provider_delivery_id: str,
+        provider_event_idempotency_source: ProviderEventIdempotencySource,
     ) -> RepositoryEvent | None:
         statement = select(RepositoryEvent).where(
             RepositoryEvent.connection_id == connection_id,
             RepositoryEvent.provider_delivery_id == provider_delivery_id,
+            RepositoryEvent.provider_event_idempotency_source
+            == provider_event_idempotency_source,
         )
         return self._session.scalar(statement)
 

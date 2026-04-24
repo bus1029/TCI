@@ -7,19 +7,26 @@ from types import SimpleNamespace
 import uuid
 
 from tci.api.problem_details import ProblemCode
-from tci.domain.services.repository_connection_support import RepositoryConnectionProblem
-from tci.domain.services.repository_connection_support import decrypt_secret_from_storage
-from tci.infrastructure.git.git_ref_resolver import GitConnectionAuthError, GitRefNotFoundError
+from tci.domain.services.repository_connection_support import (
+    RepositoryConnectionProblem,
+)
+from tci.domain.services.repository_connection_support import (
+    decrypt_secret_from_storage,
+)
+from tci.infrastructure.git.git_ref_resolver import (
+    GitConnectionAuthError,
+    GitRefNotFoundError,
+)
 from tci.infrastructure.persistence.models import (
     DefaultRefType,
     DomainEventType,
     EventProcessingStatus,
     EventTargetKind,
     ProcessingDecision,
+    ProviderEventIdempotencySource,
     ProviderEventType,
     SignatureStatus,
     SyncFailureCode,
-    SyncTriggerType,
     WebhookHealthState,
     WebhookRejectionReason,
     WebhookSecretRevisionStatus,
@@ -27,7 +34,9 @@ from tci.infrastructure.persistence.models import (
 from tci.infrastructure.persistence.repository_event_cursor_repository import (
     RepositoryEventCursorDraft,
 )
-from tci.infrastructure.persistence.repository_event_repository import RepositoryEventDraft
+from tci.infrastructure.persistence.repository_event_repository import (
+    RepositoryEventDraft,
+)
 from tci.infrastructure.persistence.repository_sync_run_repository import (
     RepositorySyncRunDraft,
 )
@@ -179,7 +188,9 @@ def _looks_like_github_signature(signature_header: str | None) -> bool:
     if signature_header is None or not signature_header.startswith("sha256="):
         return False
     digest = signature_header.removeprefix("sha256=")
-    return bool(digest) and all(character in "0123456789abcdef" for character in digest)
+    return len(digest) == 64 and all(
+        character in "0123456789abcdef" for character in digest
+    )
 
 
 def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
@@ -188,11 +199,19 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
 
     now = datetime.now(tz=UTC)
     with dependencies.session_factory() as session:
-        connection_repository = dependencies.repository_connection_repository_factory(session)
-        webhook_secret_repository = dependencies.webhook_secret_repository_factory(session)
+        connection_repository = dependencies.repository_connection_repository_factory(
+            session
+        )
+        webhook_secret_repository = dependencies.webhook_secret_repository_factory(
+            session
+        )
         event_repository = dependencies.repository_event_repository_factory(session)
-        event_cursor_repository = dependencies.repository_event_cursor_repository_factory(session)
-        sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
+        event_cursor_repository = (
+            dependencies.repository_event_cursor_repository_factory(session)
+        )
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(
+            session
+        )
 
         connection = connection_repository.get_any(connection_id=command.connection_id)
         if connection is None:
@@ -203,7 +222,9 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
             as_of=now,
         )
         verification_candidates = [
-            _build_verification_candidate(candidate=candidate, dependencies=dependencies)
+            _build_verification_candidate(
+                candidate=candidate, dependencies=dependencies
+            )
             for candidate in secret_candidates
         ]
         signature_verification = verify_github_webhook_signature(
@@ -240,6 +261,7 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
         existing_delivery = event_repository.get_by_delivery_id(
             connection_id=command.connection_id,
             provider_delivery_id=command.provider_delivery_id,
+            provider_event_idempotency_source=ProviderEventIdempotencySource.DELIVERY_HEADER,
         )
         retryable_delivery = _is_retryable_delivery(existing_delivery)
         latest_cursor = event_cursor_repository.get(
@@ -267,6 +289,11 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
                 retryable_delivery=retryable_delivery,
             )
         )
+        verified_secret_status = verification_outcome.verified_secret_revision_status
+        if verified_secret_status is None:
+            raise RuntimeError(
+                "검증된 webhook secret 상태가 누락되어 이벤트를 기록할 수 없습니다."
+            )
         processing_decision = ProcessingDecision(decision.processing_decision)
         processing_status = (
             EventProcessingStatus.QUEUED
@@ -292,7 +319,7 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
                     signature_status=SignatureStatus.VERIFIED,
                     verified_secret_revision_id=verification_outcome.verified_secret_revision_id,
                     verified_secret_revision_status=WebhookSecretRevisionStatus(
-                        verification_outcome.verified_secret_revision_status
+                        verified_secret_status
                     ),
                     rejection_reason=None,
                     processing_decision=processing_decision,
@@ -316,12 +343,12 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
                     verification_outcome.verified_secret_revision_id
                 )
                 existing_delivery.verified_secret_revision_status = (
-                    WebhookSecretRevisionStatus(
-                        verification_outcome.verified_secret_revision_status
-                    )
+                    WebhookSecretRevisionStatus(verified_secret_status)
                 )
                 existing_delivery.rejection_reason = None
-                existing_delivery.payload_hash = hashlib.sha256(command.raw_body).hexdigest()
+                existing_delivery.payload_hash = hashlib.sha256(
+                    command.raw_body
+                ).hexdigest()
             event = event_repository.update_processing(
                 event_id=existing_delivery.id,
                 processing_decision=processing_decision,
@@ -332,13 +359,18 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
 
         sync_run = None
         if decision.should_queue_sync and parsed_event.trigger_type is not None:
+            requested_ref_type = parsed_event.requested_ref_type
+            if requested_ref_type is None:
+                raise RuntimeError(
+                    "queue 대상 이벤트에는 requested_ref_type이 필요합니다."
+                )
             sync_run = sync_run_repository.create_pending(
                 RepositorySyncRunDraft(
                     id=uuid.uuid4(),
                     connection_id=command.connection_id,
                     trigger_event_id=event.id,
                     trigger_type=parsed_event.trigger_type,
-                    requested_ref_type=parsed_event.requested_ref_type,
+                    requested_ref_type=requested_ref_type,
                     requested_ref_name=parsed_event.requested_ref_name or "",
                 )
             )
@@ -382,15 +414,21 @@ def record_webhook_enqueue_failure(
     failure_message: str = "웹훅 동기화 작업 큐에 연결할 수 없습니다.",
 ) -> None:
     if dependencies.session_factory is None:
-        raise RuntimeError("웹훅 큐 실패 상태를 기록하려면 데이터베이스 세션이 필요합니다.")
+        raise RuntimeError(
+            "웹훅 큐 실패 상태를 기록하려면 데이터베이스 세션이 필요합니다."
+        )
 
     failed_at = datetime.now(tz=UTC)
     with dependencies.session_factory() as session:
-        connection_repository = dependencies.repository_connection_repository_factory(session)
-        sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
-        event_repository = dependencies.repository_event_repository_factory(session)
-        event_cursor_repository = dependencies.repository_event_cursor_repository_factory(
+        connection_repository = dependencies.repository_connection_repository_factory(
             session
+        )
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(
+            session
+        )
+        event_repository = dependencies.repository_event_repository_factory(session)
+        event_cursor_repository = (
+            dependencies.repository_event_cursor_repository_factory(session)
         )
         connection = connection_repository.get_any(connection_id=connection_id)
         if connection is None:
@@ -436,14 +474,26 @@ def _is_retryable_delivery(existing_delivery) -> bool:
     if existing_delivery is None:
         return False
     if (
-        getattr(existing_delivery.processing_status, "value", existing_delivery.processing_status)
+        getattr(
+            existing_delivery.processing_status,
+            "value",
+            existing_delivery.processing_status,
+        )
         == EventProcessingStatus.REJECTED.value
     ):
         return True
     return (
-        getattr(existing_delivery.processing_decision, "value", existing_delivery.processing_decision)
+        getattr(
+            existing_delivery.processing_decision,
+            "value",
+            existing_delivery.processing_decision,
+        )
         == ProcessingDecision.QUEUED.value
-        and getattr(existing_delivery.processing_status, "value", existing_delivery.processing_status)
+        and getattr(
+            existing_delivery.processing_status,
+            "value",
+            existing_delivery.processing_status,
+        )
         == EventProcessingStatus.FAILED.value
     )
 
@@ -465,9 +515,13 @@ def _restore_event_cursor_after_failure(
             if candidate.id != failed_event.id
             and candidate.target_key == failed_event.target_key
             and candidate.target_head_sha is not None
-            and getattr(candidate.processing_decision, "value", candidate.processing_decision)
+            and getattr(
+                candidate.processing_decision, "value", candidate.processing_decision
+            )
             == ProcessingDecision.QUEUED.value
-            and getattr(candidate.processing_status, "value", candidate.processing_status)
+            and getattr(
+                candidate.processing_status, "value", candidate.processing_status
+            )
             != EventProcessingStatus.FAILED.value
         ),
         None,
@@ -509,6 +563,7 @@ def _record_rejected_event(
     existing_event = event_repository.get_by_delivery_id(
         connection_id=connection_id,
         provider_delivery_id=command.provider_delivery_id,
+        provider_event_idempotency_source=ProviderEventIdempotencySource.DELIVERY_HEADER,
     )
     should_update_connection_health = True
     if existing_event is None:
@@ -517,7 +572,9 @@ def _record_rejected_event(
                 id=uuid.uuid4(),
                 connection_id=connection_id,
                 provider_delivery_id=command.provider_delivery_id,
-                provider_event_type=_provider_event_type_for(command.provider_event_name),
+                provider_event_type=_provider_event_type_for(
+                    command.provider_event_name
+                ),
                 provider_action=None,
                 domain_event_type=DomainEventType.SIGNATURE_REJECTED,
                 target_kind=_target_kind_for(command.provider_event_name),
@@ -538,7 +595,11 @@ def _record_rejected_event(
         )
     else:
         if (
-            getattr(existing_event.signature_status, "value", existing_event.signature_status)
+            getattr(
+                existing_event.signature_status,
+                "value",
+                existing_event.signature_status,
+            )
             != SignatureStatus.VERIFIED.value
         ):
             existing_event.signature_status = SignatureStatus(
@@ -616,7 +677,8 @@ def _build_verification_candidate(*, candidate, dependencies):
         return candidate
     encrypted_secret = getattr(candidate, "encrypted_secret", "")
     return SimpleNamespace(
-        revision_id=getattr(candidate, "revision_id", None) or getattr(candidate, "id", None),
+        revision_id=getattr(candidate, "revision_id", None)
+        or getattr(candidate, "id", None),
         status=getattr(candidate, "status", None),
         secret=decrypt_secret_from_storage(
             encrypted_secret,

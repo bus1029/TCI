@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import Enum
 import hashlib
 import hmac
 import json
@@ -10,6 +11,7 @@ from pathlib import Path
 from typing import Any
 import uuid
 
+# mypy: ignore-errors
 from fastapi.testclient import TestClient
 
 from tci.app import AppDependencies, create_app
@@ -26,7 +28,9 @@ from tci.infrastructure.git.git_ref_resolver import (
     GitRefNotFoundError,
     ResolvedGitRef,
 )
-from tci.infrastructure.persistence.code_snapshot_repository import CodeSnapshotRepository
+from tci.infrastructure.persistence.code_snapshot_repository import (
+    CodeSnapshotRepository,
+)
 from tci.infrastructure.persistence.credential_revision_repository import (
     CredentialRevisionRepository,
 )
@@ -39,22 +43,24 @@ from tci.infrastructure.persistence.models import (
     DefaultRefType,
     PlanningInputReference,
     PlanningInputSourceType,
+    ProviderReachabilityStatus,
     RefType,
     RepositoryConnection,
     RepositoryConnectionStatus,
     RepositoryCredentialRevision,
     RepositoryProvider,
-    RepositoryTransport,
     RepositorySyncRun,
     ScopeRuleWarningState,
     SnapshotInclusionReason,
     SyncFailureCode,
     SyncRunStatus,
     SyncTriggerType,
+    WebhookAuthMode,
     WebhookHealthState,
     WebhookRejectionReason,
 )
 from tci.infrastructure.persistence.repository_connection_repository import (
+    RepositoryConnectionDraft,
     RepositoryConnectionRepository,
 )
 from tci.infrastructure.persistence.repository_event_cursor_repository import (
@@ -112,6 +118,7 @@ class TestRepositoryEvent:
     id: uuid.UUID
     connection_id: uuid.UUID
     provider_delivery_id: str
+    provider_event_idempotency_source: str
     provider_event_type: str
     provider_action: str | None
     target_key: str
@@ -148,7 +155,9 @@ class InMemoryRepositoryStore:
     webhook_secret_revisions: dict[uuid.UUID, TestWebhookSecretRevision] = field(
         default_factory=dict
     )
-    repository_events: dict[uuid.UUID, TestRepositoryEvent] = field(default_factory=dict)
+    repository_events: dict[uuid.UUID, TestRepositoryEvent] = field(
+        default_factory=dict
+    )
     event_cursors: dict[tuple[uuid.UUID, str], TestRepositoryEventCursor] = field(
         default_factory=dict
     )
@@ -201,41 +210,85 @@ class FakePlanningInputReferenceRepository:
         return self._store.planning_input_references.get(reference_id)
 
 
-@dataclass(frozen=True, slots=True)
-class RepositoryConnectionDraft:
-    id: uuid.UUID
-    workspace_id: uuid.UUID
-    planning_input_reference_id: uuid.UUID
-    provider: RepositoryProvider
-    remote_url: str
-    transport: RepositoryTransport
-    repository_owner: str
-    repository_name: str
-    default_ref_type: DefaultRefType
-    default_ref_name: str
-    status: RepositoryConnectionStatus
-    mirror_path: str
-    last_verified_at: datetime | None
-
-
 class FakeRepositoryConnectionRepository:
     def __init__(self, store: InMemoryRepositoryStore) -> None:
         self._store = store
 
     def create(self, draft: RepositoryConnectionDraft) -> RepositoryConnection:
+        RepositoryConnectionRepository._validate_remote_url_credentials(
+            remote_url=draft.remote_url
+        )
+        provider_instance_url = (
+            None
+            if draft.provider_instance_url is None
+            else draft.provider_instance_url.strip()
+        )
+        provider_project_path = (
+            None
+            if draft.provider_project_path is None
+            else draft.provider_project_path.strip()
+        )
+        if draft.provider is RepositoryProvider.GITLAB_SELF_MANAGED:
+            if not provider_instance_url:
+                raise ValueError("GitLab connection requires provider_instance_url.")
+            if not provider_project_path:
+                raise ValueError("GitLab connection requires provider_project_path.")
+            if (
+                provider_project_path.startswith("/")
+                or provider_project_path.endswith("/")
+                or "//" in provider_project_path
+            ):
+                raise ValueError(
+                    "GitLab connection requires a normalized provider_project_path."
+                )
+            provider_instance_url = (
+                RepositoryConnectionRepository._normalize_gitlab_instance_url(
+                    provider_instance_url
+                )
+            )
+            canonical_project_path = (
+                RepositoryConnectionRepository._canonical_gitlab_project_path(
+                    provider_instance_url=provider_instance_url,
+                    remote_url=draft.remote_url,
+                )
+            )
+            if provider_project_path != canonical_project_path:
+                raise ValueError(
+                    "GitLab connection provider_project_path must match remote_url path."
+                )
+            RepositoryConnectionRepository._validate_gitlab_instance_alignment(
+                provider_instance_url=provider_instance_url,
+                remote_url=draft.remote_url,
+            )
+        elif provider_instance_url is not None:
+            raise ValueError("GitHub connection does not accept provider_instance_url.")
+        if draft.provider is RepositoryProvider.GITHUB_CLOUD:
+            provider_project_path = f"{draft.repository_owner}/{draft.repository_name}"
+        elif provider_project_path is None:
+            provider_project_path = f"{draft.repository_owner}/{draft.repository_name}"
+        webhook_auth_mode = (
+            WebhookAuthMode.SHARED_TOKEN
+            if draft.provider is RepositoryProvider.GITLAB_SELF_MANAGED
+            else WebhookAuthMode.HMAC_SHA256
+        )
         connection = RepositoryConnection(
             id=draft.id,
             workspace_id=draft.workspace_id,
             planning_input_reference_id=draft.planning_input_reference_id,
             provider=draft.provider,
             remote_url=draft.remote_url,
+            provider_instance_url=provider_instance_url,
             transport=draft.transport,
             repository_owner=draft.repository_owner,
             repository_name=draft.repository_name,
+            provider_project_path=provider_project_path,
             default_ref_type=draft.default_ref_type,
             default_ref_name=draft.default_ref_name,
             status=draft.status,
             mirror_path=draft.mirror_path,
+            webhook_auth_mode=webhook_auth_mode,
+            provider_reachability_status=ProviderReachabilityStatus.REACHABLE,
+            last_reachability_failure_code=None,
             last_verified_at=draft.last_verified_at,
             last_successful_snapshot_at=None,
             last_failed_sync_at=None,
@@ -308,7 +361,9 @@ class FakeRepositoryConnectionRepository:
             connection_id=connection_id,
         )
         connection.active_credential_revision_id = credential_revision_id
-        connection.active_credential_revision = self._store.credentials[credential_revision_id]
+        connection.active_credential_revision = self._store.credentials[
+            credential_revision_id
+        ]
         connection.updated_at = now_utc()
         return connection
 
@@ -322,6 +377,9 @@ class FakeRepositoryConnectionRepository:
         connection = self.get(workspace_id=workspace_id, connection_id=connection_id)
         if connection is None:
             raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        revision = self._store.webhook_secret_revisions.get(webhook_secret_revision_id)
+        if revision is None or revision.connection_id != connection_id:
+            raise LookupError("같은 연결에 속한 webhook secret revision이 아닙니다.")
         connection.active_webhook_secret_revision_id = webhook_secret_revision_id
         connection.webhook_health_state = WebhookHealthState.HEALTHY
         connection.last_webhook_rejection_reason = None
@@ -358,7 +416,9 @@ class FakeRepositoryConnectionRepository:
             connection_id=connection_id,
         )
         if connection.active_scope_rule_version_id is not None:
-            return self._store.scope_rule_versions[connection.active_scope_rule_version_id]
+            return self._store.scope_rule_versions[
+                connection.active_scope_rule_version_id
+            ]
 
         scope_rule = CollectionScopeRuleVersion(
             id=uuid.uuid4(),
@@ -578,12 +638,16 @@ class FakeWebhookSecretRepository:
         grace_until: datetime | None = None,
         created_at: datetime | None = None,
     ) -> TestWebhookSecretRevision:
+        if isinstance(status, Enum):
+            status_value = str(status.value)
+        else:
+            status_value = str(status)
         revision = TestWebhookSecretRevision(
             id=uuid.uuid4(),
             connection_id=connection_id,
             secret=None,
             encrypted_secret=encrypted_secret,
-            status=getattr(status, "value", status),
+            status=status_value,
             created_at=created_at or now_utc(),
             grace_until=grace_until,
         )
@@ -600,13 +664,18 @@ class FakeWebhookSecretRepository:
             and (
                 getattr(revision.status, "value", revision.status) == "active"
                 or (
-                    getattr(revision.status, "value", revision.status) == "previous_grace"
+                    getattr(revision.status, "value", revision.status)
+                    == "previous_grace"
                     and revision.grace_until is not None
                     and revision.grace_until >= as_of
                 )
             )
         ]
-        return sorted(candidates, key=lambda revision: (revision.created_at, revision.id), reverse=True)
+        return sorted(
+            candidates,
+            key=lambda revision: (revision.created_at, revision.id),
+            reverse=True,
+        )
 
     def get_active_for_connection(
         self, *, connection_id: uuid.UUID
@@ -664,6 +733,7 @@ class FakeRepositoryEventRepository:
             id=draft.id,
             connection_id=draft.connection_id,
             provider_delivery_id=draft.provider_delivery_id,
+            provider_event_idempotency_source=draft.provider_event_idempotency_source.value,
             provider_event_type=draft.provider_event_type.value,
             provider_action=draft.provider_action,
             domain_event_type=draft.domain_event_type.value,
@@ -684,9 +754,7 @@ class FakeRepositoryEventRepository:
                 else draft.verified_secret_revision_status.value
             ),
             rejection_reason=(
-                None
-                if draft.rejection_reason is None
-                else draft.rejection_reason.value
+                None if draft.rejection_reason is None else draft.rejection_reason.value
             ),
             sync_run_id=draft.sync_run_id,
             snapshot_id=draft.snapshot_id,
@@ -696,12 +764,18 @@ class FakeRepositoryEventRepository:
         return event
 
     def get_by_delivery_id(
-        self, *, connection_id: uuid.UUID, provider_delivery_id: str
+        self,
+        *,
+        connection_id: uuid.UUID,
+        provider_delivery_id: str,
+        provider_event_idempotency_source,
     ) -> TestRepositoryEvent | None:
         for event in self._store.repository_events.values():
             if (
                 event.connection_id == connection_id
                 and event.provider_delivery_id == provider_delivery_id
+                and event.provider_event_idempotency_source
+                == provider_event_idempotency_source.value
             ):
                 return event
         return None
@@ -709,7 +783,9 @@ class FakeRepositoryEventRepository:
     def get(self, *, event_id: uuid.UUID) -> TestRepositoryEvent | None:
         return self._store.repository_events.get(event_id)
 
-    def list_for_connection(self, *, connection_id: uuid.UUID) -> list[TestRepositoryEvent]:
+    def list_for_connection(
+        self, *, connection_id: uuid.UUID
+    ) -> list[TestRepositoryEvent]:
         events = [
             event
             for event in self._store.repository_events.values()
@@ -807,7 +883,9 @@ class FakeGitRefResolver:
         return ResolvedGitRef(
             ref_type=ref_type,
             ref_name=ref_name,
-            commit_sha=self._store.resolved_ref_commits.get(ref_name, self._resolved_sha),
+            commit_sha=self._store.resolved_ref_commits.get(
+                ref_name, self._resolved_sha
+            ),
         )
 
 
@@ -964,7 +1042,9 @@ class FakeRepositorySyncRunRepository:
         sync_run.completed_at = completed_at
         return sync_run
 
-    def delete_pending(self, *, connection_id: uuid.UUID, sync_run_id: uuid.UUID) -> None:
+    def delete_pending(
+        self, *, connection_id: uuid.UUID, sync_run_id: uuid.UUID
+    ) -> None:
         sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
         if sync_run.status is not SyncRunStatus.PENDING:
             raise ValueError("대기 중인 스냅샷 실행만 취소할 수 있습니다.")
@@ -1046,13 +1126,17 @@ class FakeCodeSnapshotRepository:
         self._store.snapshots[snapshot.id] = snapshot
         return snapshot
 
-    def get(self, *, connection_id: uuid.UUID, snapshot_id: uuid.UUID) -> CodeSnapshot | None:
+    def get(
+        self, *, connection_id: uuid.UUID, snapshot_id: uuid.UUID
+    ) -> CodeSnapshot | None:
         snapshot = self._store.snapshots.get(snapshot_id)
         if snapshot is None or snapshot.connection_id != connection_id:
             return None
         return snapshot
 
-    def get_latest_for_connection(self, *, connection_id: uuid.UUID) -> CodeSnapshot | None:
+    def get_latest_for_connection(
+        self, *, connection_id: uuid.UUID
+    ) -> CodeSnapshot | None:
         snapshots = [
             snapshot
             for snapshot in self._store.snapshots.values()
@@ -1183,7 +1267,9 @@ def create_test_client(
             repository_connection_repository_factory=lambda session: FakeRepositoryConnectionRepository(
                 store
             ),
-            scope_rule_repository_factory=lambda session: FakeScopeRuleRepository(store),
+            scope_rule_repository_factory=lambda session: FakeScopeRuleRepository(
+                store
+            ),
             credential_revision_repository_factory=lambda session: FakeCredentialRevisionRepository(
                 store
             ),
@@ -1199,7 +1285,9 @@ def create_test_client(
             repository_sync_run_repository_factory=lambda session: FakeRepositorySyncRunRepository(
                 store
             ),
-            code_snapshot_repository_factory=lambda session: FakeCodeSnapshotRepository(store),
+            code_snapshot_repository_factory=lambda session: FakeCodeSnapshotRepository(
+                store
+            ),
         )
     app = create_app(settings=settings, dependencies=dependencies)
     client = TestClient(app)
@@ -1395,7 +1483,9 @@ def _load_test_settings(tmp_path: Path, *, database_url: str | None = None):
     original_key = os.environ.get("TCI_CREDENTIAL_ENCRYPTION_KEY")
     original_template_root = os.environ.get("TCI_TEMPLATE_ROOT")
     original_database_url = os.environ.get("TCI_DATABASE_URL")
-    template_root = Path(__file__).resolve().parents[2] / "src" / "tci" / "web" / "templates"
+    template_root = (
+        Path(__file__).resolve().parents[2] / "src" / "tci" / "web" / "templates"
+    )
     os.environ["TCI_PROJECT_ROOT"] = str(tmp_path)
     os.environ["TCI_CREDENTIAL_ENCRYPTION_KEY"] = Fernet.generate_key().decode("utf-8")
     os.environ["TCI_TEMPLATE_ROOT"] = str(template_root)

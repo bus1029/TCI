@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import uuid
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -15,8 +16,10 @@ from tci.infrastructure.persistence.models import (
     RepositoryProvider,
     RepositoryTransport,
     ScopeRuleWarningState,
+    WebhookAuthMode,
     WebhookHealthState,
     WebhookRejectionReason,
+    WebhookSecretRevision,
 )
 
 
@@ -35,6 +38,8 @@ class RepositoryConnectionDraft:
     status: RepositoryConnectionStatus
     mirror_path: str
     last_verified_at: datetime | None
+    provider_instance_url: str | None = None
+    provider_project_path: str | None = None
 
 
 class RepositoryConnectionRepository:
@@ -42,25 +47,202 @@ class RepositoryConnectionRepository:
         self._session = session
 
     def create(self, draft: RepositoryConnectionDraft) -> RepositoryConnection:
+        self._validate_remote_url_credentials(remote_url=draft.remote_url)
+        provider_instance_url = (
+            None
+            if draft.provider_instance_url is None
+            else draft.provider_instance_url.strip()
+        )
+        provider_project_path = (
+            None
+            if draft.provider_project_path is None
+            else draft.provider_project_path.strip()
+        )
+        if draft.provider is RepositoryProvider.GITLAB_SELF_MANAGED:
+            if not provider_instance_url:
+                raise ValueError("GitLab connection requires provider_instance_url.")
+            if not provider_project_path:
+                raise ValueError("GitLab connection requires provider_project_path.")
+            if (
+                provider_project_path.startswith("/")
+                or provider_project_path.endswith("/")
+                or "//" in provider_project_path
+            ):
+                raise ValueError(
+                    "GitLab connection requires a normalized provider_project_path."
+                )
+            provider_instance_url = self._normalize_gitlab_instance_url(
+                provider_instance_url
+            )
+            canonical_project_path = self._canonical_gitlab_project_path(
+                provider_instance_url=provider_instance_url, remote_url=draft.remote_url
+            )
+            if provider_project_path != canonical_project_path:
+                raise ValueError(
+                    "GitLab connection provider_project_path must match remote_url path."
+                )
+            self._validate_gitlab_instance_alignment(
+                provider_instance_url=provider_instance_url,
+                remote_url=draft.remote_url,
+            )
+        elif provider_instance_url is not None:
+            raise ValueError("GitHub connection does not accept provider_instance_url.")
+        if draft.provider is RepositoryProvider.GITHUB_CLOUD:
+            provider_project_path = f"{draft.repository_owner}/{draft.repository_name}"
+        elif provider_project_path is None:
+            provider_project_path = f"{draft.repository_owner}/{draft.repository_name}"
+        webhook_auth_mode = (
+            WebhookAuthMode.SHARED_TOKEN
+            if draft.provider is RepositoryProvider.GITLAB_SELF_MANAGED
+            else WebhookAuthMode.HMAC_SHA256
+        )
+
         connection = RepositoryConnection(
             id=draft.id,
             workspace_id=draft.workspace_id,
             planning_input_reference_id=draft.planning_input_reference_id,
             provider=draft.provider,
             remote_url=draft.remote_url,
+            provider_instance_url=provider_instance_url,
             transport=draft.transport,
             repository_owner=draft.repository_owner,
             repository_name=draft.repository_name,
+            provider_project_path=provider_project_path,
             default_ref_type=draft.default_ref_type,
             default_ref_name=draft.default_ref_name,
             status=draft.status,
             mirror_path=draft.mirror_path,
+            webhook_auth_mode=webhook_auth_mode,
             last_verified_at=draft.last_verified_at,
         )
         self._session.add(connection)
         self._session.flush()
         self._session.refresh(connection)
         return connection
+
+    @staticmethod
+    def _validate_remote_url_credentials(*, remote_url: str) -> None:
+        if remote_url.startswith("https://") or remote_url.startswith("ssh://"):
+            parsed_remote = urlparse(remote_url)
+            if parsed_remote.params or parsed_remote.query or parsed_remote.fragment:
+                raise ValueError(
+                    "Repository remote_url must not include query or fragment."
+                )
+            if parsed_remote.password is not None:
+                raise ValueError(
+                    "Repository remote_url must not include credential-bearing userinfo."
+                )
+            if remote_url.startswith("https://") and parsed_remote.username is not None:
+                raise ValueError(
+                    "Repository remote_url must not include credential-bearing userinfo."
+                )
+
+    @staticmethod
+    def _normalize_gitlab_instance_url(provider_instance_url: str) -> str:
+        parsed_instance = urlparse(provider_instance_url)
+        has_supported_base_url = (
+            bool(parsed_instance.hostname)
+            and not parsed_instance.params
+            and not parsed_instance.query
+            and not parsed_instance.fragment
+            and parsed_instance.username is None
+            and parsed_instance.password is None
+        )
+        if (
+            parsed_instance.scheme != "https"
+            or not parsed_instance.netloc
+            or not has_supported_base_url
+        ):
+            raise ValueError(
+                "GitLab connection requires an https provider_instance_url without query or fragment."
+            )
+        normalized_host = parsed_instance.hostname or ""
+        normalized_port = (
+            f":{parsed_instance.port}" if parsed_instance.port is not None else ""
+        )
+        normalized_path = parsed_instance.path.rstrip("/")
+        return f"https://{normalized_host}{normalized_port}{normalized_path}"
+
+    @staticmethod
+    def _canonical_gitlab_project_path(
+        *, provider_instance_url: str, remote_url: str
+    ) -> str:
+        if remote_url.startswith("https://") or remote_url.startswith("ssh://"):
+            parsed_remote = urlparse(remote_url)
+            project_path = parsed_remote.path.lstrip("/")
+            if remote_url.startswith("https://"):
+                instance_prefix = urlparse(provider_instance_url).path.strip("/")
+                if instance_prefix:
+                    required_prefix = f"{instance_prefix}/"
+                    if not project_path.startswith(required_prefix):
+                        raise ValueError(
+                            "GitLab HTTPS remote_url must include provider_instance_url path prefix."
+                        )
+                    project_path = project_path.removeprefix(required_prefix)
+        elif remote_url.startswith("git@"):
+            _, separator, project_path = remote_url.partition(":")
+            if not separator:
+                project_path = ""
+        else:
+            project_path = ""
+
+        canonical_path = project_path.removesuffix(".git")
+        if (
+            not canonical_path
+            or canonical_path.startswith("/")
+            or canonical_path.endswith("/")
+            or "//" in canonical_path
+            or "/" not in canonical_path
+        ):
+            raise ValueError("GitLab connection requires a supported remote_url.")
+        return canonical_path
+
+    @staticmethod
+    def _extract_gitlab_remote_location(
+        *, remote_url: str
+    ) -> tuple[str, int | None, bool] | None:
+        if remote_url.startswith("https://"):
+            parsed_remote = urlparse(remote_url)
+            if parsed_remote.hostname is None:
+                return None
+            return parsed_remote.hostname, parsed_remote.port, True
+        if remote_url.startswith("ssh://"):
+            parsed_remote = urlparse(remote_url)
+            if parsed_remote.hostname is None:
+                return None
+            return parsed_remote.hostname, parsed_remote.port, False
+        if remote_url.startswith("git@"):
+            remote_host = remote_url.partition("@")[2].partition(":")[0]
+            if not remote_host:
+                return None
+            return remote_host.lower(), None, False
+        return None
+
+    @classmethod
+    def _validate_gitlab_instance_alignment(
+        cls,
+        *,
+        provider_instance_url: str,
+        remote_url: str,
+    ) -> None:
+        parsed_instance = urlparse(provider_instance_url)
+        remote_location = cls._extract_gitlab_remote_location(remote_url=remote_url)
+        if remote_location is None or parsed_instance.hostname is None:
+            raise ValueError("GitLab connection requires a supported remote_url.")
+        remote_host, remote_port, require_https_port_match = remote_location
+        if remote_host == "github.com":
+            raise ValueError("GitHub remotes cannot be stored as GitLab providers.")
+        if parsed_instance.hostname != remote_host:
+            raise ValueError(
+                "GitLab connection remote_url must match provider_instance_url host."
+            )
+        if require_https_port_match:
+            instance_port = parsed_instance.port or 443
+            expected_remote_port = remote_port or 443
+            if instance_port != expected_remote_port:
+                raise ValueError(
+                    "GitLab HTTPS remote_url port must match provider_instance_url port."
+                )
 
     def get(
         self, *, workspace_id: uuid.UUID, connection_id: uuid.UUID
@@ -114,7 +296,9 @@ class RepositoryConnectionRepository:
                 joinedload(RepositoryConnection.active_scope_rule_version),
             )
             .where(RepositoryConnection.workspace_id == workspace_id)
-            .order_by(RepositoryConnection.created_at.desc(), RepositoryConnection.id.desc())
+            .order_by(
+                RepositoryConnection.created_at.desc(), RepositoryConnection.id.desc()
+            )
         )
         return list(self._session.scalars(statement).unique())
 
@@ -145,6 +329,14 @@ class RepositoryConnectionRepository:
             workspace_id=workspace_id,
             connection_id=connection_id,
         )
+        owned_revision = self._session.scalar(
+            select(WebhookSecretRevision.id).where(
+                WebhookSecretRevision.id == webhook_secret_revision_id,
+                WebhookSecretRevision.connection_id == connection_id,
+            )
+        )
+        if owned_revision is None:
+            raise LookupError("같은 연결에 속한 webhook secret revision이 아닙니다.")
         connection.active_webhook_secret_revision_id = webhook_secret_revision_id
         connection.webhook_health_state = WebhookHealthState.HEALTHY
         connection.last_webhook_rejection_reason = None
