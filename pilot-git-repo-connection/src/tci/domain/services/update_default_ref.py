@@ -67,6 +67,14 @@ def update_default_ref(command, *, dependencies):
                 ref_name=command.default_ref_name,
             )
     except Exception as error:
+        status = _map_ref_update_failure_to_status(error)
+        if status is not None:
+            _update_connection_status(
+                workspace_id=command.workspace_id,
+                connection_id=command.connection_id,
+                status=status,
+                dependencies=dependencies,
+            )
         if isinstance(error, RepositoryConnectionProblem):
             raise
         problem_code = getattr(error, "problem_code", None)
@@ -85,6 +93,38 @@ def update_default_ref(command, *, dependencies):
             default_ref_type=default_ref_type,
             default_ref_name=command.default_ref_name,
             status=RepositoryConnectionStatus.ACTIVE,
+            last_verified_at=datetime.now(tz=UTC),
+        )
+
+
+def _map_ref_update_failure_to_status(
+    error: Exception,
+) -> RepositoryConnectionStatus | None:
+    if isinstance(error, RepositoryConnectionProblem):
+        return None
+    problem_code = getattr(error, "problem_code", None)
+    if problem_code == ProblemCode.CONNECTION_AUTH_FAILED:
+        return RepositoryConnectionStatus.REAUTH_REQUIRED
+    if problem_code == ProblemCode.DEFAULT_REF_NOT_FOUND:
+        return RepositoryConnectionStatus.REF_MISSING
+    return None
+
+
+def _update_connection_status(
+    *,
+    workspace_id: uuid.UUID,
+    connection_id: uuid.UUID,
+    status: RepositoryConnectionStatus,
+    dependencies,
+) -> None:
+    with dependencies.session_factory() as session:
+        connection_repository = dependencies.repository_connection_repository_factory(
+            session
+        )
+        connection_repository.update_verification(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+            status=status,
             last_verified_at=datetime.now(tz=UTC),
         )
 
@@ -109,6 +149,12 @@ def _load_connection_context(
             connection_id=connection.id
         )
         if credential_revision is None:
+            connection_repository.update_verification(
+                workspace_id=workspace_id,
+                connection_id=connection_id,
+                status=RepositoryConnectionStatus.REAUTH_REQUIRED,
+                last_verified_at=datetime.now(tz=UTC),
+            )
             raise RepositoryConnectionProblem(
                 ProblemCode.CONNECTION_AUTH_FAILED,
                 "활성 자격 증명을 찾을 수 없습니다.",

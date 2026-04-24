@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+from typing import ClassVar
 
 from tci.api.problem_details import ProblemCode
 from tci.infrastructure.git.git_ref_resolver import GitCommandRunner
@@ -15,6 +16,19 @@ class ReadonlyProbeResult:
 
 
 class GitReadonlyValidator:
+    auth_failure_tokens: ClassVar[tuple[str, ...]] = (
+        "authentication failed",
+        "could not read username",
+        "permission denied (publickey)",
+    )
+    read_only_tokens: ClassVar[tuple[str, ...]] = (
+        "write access to repository not granted",
+        "read-only",
+        "does not have write access",
+        "permission to ",
+        "could not read from remote repository",
+    )
+
     def __init__(self, runner: GitCommandRunner) -> None:
         self._runner = runner
 
@@ -39,14 +53,7 @@ class GitReadonlyValidator:
                 or "쓰기 가능한 자격 증명입니다.",
             )
 
-        if any(
-            token in lowered_error
-            for token in (
-                "authentication failed",
-                "could not read username",
-                "permission denied (publickey)",
-            )
-        ):
+        if any(token in lowered_error for token in self.auth_failure_tokens):
             return ReadonlyProbeResult(
                 is_read_only=False,
                 problem_code=ProblemCode.CONNECTION_AUTH_FAILED,
@@ -54,16 +61,7 @@ class GitReadonlyValidator:
                 or "저장소 인증에 실패했습니다.",
             )
 
-        if any(
-            token in lowered_error
-            for token in (
-                "write access to repository not granted",
-                "read-only",
-                "does not have write access",
-                "permission to ",
-                "could not read from remote repository",
-            )
-        ):
+        if any(token in lowered_error for token in self.read_only_tokens):
             # 이 판별은 사전에 ls-remote 같은 읽기 검증이 끝났다는 전제를 둔다.
             # 그 뒤 push만 거부되면 읽기 전용 자격 증명으로 간주하는 것이 운영 의도에 맞다.
             return ReadonlyProbeResult(

@@ -129,3 +129,142 @@ def test_update_default_ref_rejects_unallowlisted_gitlab_ssh_port_before_decrypt
         == "GitLab Self-Managed host는 허용 목록에 등록되어야 합니다."
     )
     assert store.last_resolved_remote_url is None
+
+
+def test_update_default_ref_marks_ref_missing_and_preserves_prior_ref(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com/group/sample-repo.git",
+        ),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    store.missing_ref_names.add("release/2026.04")
+
+    with pytest.raises(RepositoryConnectionProblem) as error_info:
+        update_default_ref(
+            UpdateDefaultRefCommand(
+                workspace_id=workspace_id,
+                connection_id=connection_id,
+                default_ref_type="branch",
+                default_ref_name="release/2026.04",
+            ),
+            dependencies=_dependencies(client),
+        )
+
+    assert error_info.value.problem_code.value == "DEFAULT_REF_NOT_FOUND"
+    connection = store.connections[connection_id]
+    assert connection.status.value == "ref_missing"
+    assert connection.default_ref_name == "main"
+
+
+def test_update_default_ref_marks_reauth_required_and_preserves_prior_ref(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com/group/sample-repo.git",
+        ),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    store.auth_failure_ref_names.add("release/2026.04")
+
+    with pytest.raises(RepositoryConnectionProblem) as error_info:
+        update_default_ref(
+            UpdateDefaultRefCommand(
+                workspace_id=workspace_id,
+                connection_id=connection_id,
+                default_ref_type="branch",
+                default_ref_name="release/2026.04",
+            ),
+            dependencies=_dependencies(client),
+        )
+
+    assert error_info.value.problem_code.value == "CONNECTION_AUTH_FAILED"
+    connection = store.connections[connection_id]
+    assert connection.status.value == "reauth_required"
+    assert connection.default_ref_name == "main"
+
+
+def test_update_default_ref_does_not_mark_reauth_required_on_local_decrypt_failure(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com/group/sample-repo.git",
+        ),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    active_revision_id = store.connections[connection_id].active_credential_revision_id
+    assert active_revision_id is not None
+    store.credentials[active_revision_id].encrypted_secret = "legacy-hash-value"
+
+    with pytest.raises(RepositoryConnectionProblem) as error_info:
+        update_default_ref(
+            UpdateDefaultRefCommand(
+                workspace_id=workspace_id,
+                connection_id=connection_id,
+                default_ref_type="branch",
+                default_ref_name="release/2026.04",
+            ),
+            dependencies=_dependencies(client),
+        )
+
+    assert error_info.value.problem_code.value == "CONNECTION_AUTH_FAILED"
+    connection = store.connections[connection_id]
+    assert connection.status.value == "active"
+    assert connection.default_ref_name == "main"
+
+
+def test_update_default_ref_marks_reauth_required_when_active_credential_is_missing(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com/group/sample-repo.git",
+        ),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    store.connections[connection_id].active_credential_revision_id = None
+    store.connections[connection_id].active_credential_revision = None
+
+    with pytest.raises(RepositoryConnectionProblem) as error_info:
+        update_default_ref(
+            UpdateDefaultRefCommand(
+                workspace_id=workspace_id,
+                connection_id=connection_id,
+                default_ref_type="branch",
+                default_ref_name="release/2026.04",
+            ),
+            dependencies=_dependencies(client),
+        )
+
+    assert error_info.value.problem_code.value == "CONNECTION_AUTH_FAILED"
+    connection = store.connections[connection_id]
+    assert connection.status.value == "reauth_required"
+    assert connection.default_ref_name == "main"

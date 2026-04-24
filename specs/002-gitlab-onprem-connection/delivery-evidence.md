@@ -28,8 +28,8 @@
 | Phase | Goal | Status | Evidence |
 |------|------|--------|----------|
 | Phase 1 | 증적 문서 및 테스트 골격 준비 | scaffolded | T001-T004 |
-| Phase 2 | mixed-provider 공통 기반 구축 | in_progress | T005, T006, T007, T011 |
-| Phase 3 | US1 GitLab 연결과 초기 snapshot | in_progress | T013, T016, create/verify/default-ref/snapshot allowlist slice |
+| Phase 2 | mixed-provider 공통 기반 구축 | US1-ready | T005-T007, T009-T012; T008 deferred to US3 |
+| Phase 3 | US1 GitLab 연결과 초기 snapshot | backend_complete | T013-T021, T023; T022 UI optional remains |
 | Phase 4 | US2 scope/ref 관리 | in_progress | scope preview allowlist rejection slice |
 | Phase 5 | US3 webhook 최신화 | pending | - |
 | Phase 6 | polish, quickstart, latency 검증 | pending | - |
@@ -38,7 +38,7 @@
 
 ### User Story 1
 
-- 상태: in_progress
+- 상태: backend_complete
 - 범위
   - GitLab self-managed 저장소 연결 생성
   - verify 성공 및 `reauth_required` / `ref_missing` 전이
@@ -206,6 +206,16 @@
   - 실행 결과
     - `python -m pytest pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_git_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_process_github_event.py pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py -q`
     - 결과: `101 passed in 1.83s`
+- T009/T010/T012: US1에 필요한 mixed-provider repository read/write, API detail schema, FastAPI dependency wiring 완료
+  - 근거 파일
+    - `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
+    - `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_sync_run_repository.py`
+    - `pilot-git-repo-connection/src/tci/infrastructure/persistence/code_snapshot_repository.py`
+    - `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
+    - `pilot-git-repo-connection/src/tci/app.py`
+  - 중요 메모
+    - `T008` provider event normalization은 US3 webhook 구현 전 완료할 선행 작업으로 defer한다.
+    - US1 lifecycle gate는 `T005`, `T006`, `T007`, `T009`, `T010`, `T011`, `T012`로 충족한다.
 
 ## Phase 2/US1 Security Slice Evidence
 
@@ -328,6 +338,83 @@
   - `python-reviewer`: findings 없음
   - `database-reviewer`: findings 없음
   - 로컬 destructive Alembic round-trip은 실제 `tci_test` PostgreSQL DB에서 통과했다.
+
+## 2026-04-24 US1 Backend Completion Evidence
+
+- RED: GitLab read-only validator module/wiring
+  - 추가 테스트:
+    - `tests/unit/repository_connections/test_gitlab_readonly_validator.py`
+    - `tests/unit/repository_connections/test_app.py::test_build_app_dependencies_uses_gitlab_aware_readonly_validator`
+  - 명령: `pytest tests/unit/repository_connections/test_gitlab_readonly_validator.py -q`
+  - 결과: `ModuleNotFoundError: No module named 'tci.infrastructure.git.gitlab_readonly_validator'`
+  - 명령: `pytest tests/unit/repository_connections/test_app.py::test_build_app_dependencies_uses_gitlab_aware_readonly_validator -q`
+  - 결과: generic `GitReadonlyValidator` wiring으로 실패
+- GREEN: GitLab-specific read-only probe
+  - 구현:
+    - `src/tci/infrastructure/git/gitlab_readonly_validator.py`
+    - `src/tci/infrastructure/git/git_readonly_validator.py`
+    - `src/tci/app.py`
+  - 검증:
+    - `pytest tests/unit/repository_connections/test_app.py::test_build_app_dependencies_uses_gitlab_aware_readonly_validator tests/unit/repository_connections/test_gitlab_readonly_validator.py -q`
+    - 결과: `3 passed in 0.79s`
+- RED: GitLab detail metadata와 default-ref failure status transition
+  - 추가 테스트:
+    - `tests/contract/repository_ingestion/test_repository_connection_contract.py::test_get_connection_detail_preserves_shared_shape_for_gitlab_connection`
+    - `tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_snapshot_returns_conflict_for_ref_missing_connection`
+    - `tests/unit/repository_connections/test_update_default_ref.py::test_update_default_ref_marks_ref_missing_and_preserves_prior_ref`
+    - `tests/unit/repository_connections/test_update_default_ref.py::test_update_default_ref_marks_reauth_required_and_preserves_prior_ref`
+  - 결과: `providerInstanceUrl` missing, default-ref failure 후 status가 `active`로 남아 의도 실패
+- GREEN: GitLab metadata serialization과 failed default-ref transition
+  - 구현:
+    - `src/tci/api/schemas/repository_connection.py`
+    - `src/tci/domain/services/update_default_ref.py`
+  - 검증:
+    - `pytest tests/unit/repository_connections/test_update_default_ref.py::test_update_default_ref_marks_ref_missing_and_preserves_prior_ref tests/unit/repository_connections/test_update_default_ref.py::test_update_default_ref_marks_reauth_required_and_preserves_prior_ref tests/contract/repository_ingestion/test_repository_connection_contract.py::test_get_connection_detail_preserves_shared_shape_for_gitlab_connection tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_snapshot_returns_conflict_for_ref_missing_connection -q`
+    - 결과: `4 passed in 0.95s`
+- Focused US1 regression
+  - 명령: `pytest tests/unit/repository_connections/test_app.py tests/unit/repository_connections/test_gitlab_readonly_validator.py tests/unit/repository_connections/test_git_foundation.py tests/unit/repository_connections/test_verify_repository_connection.py tests/unit/repository_connections/test_update_default_ref.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
+  - 결과: `86 passed, 3 skipped in 2.54s`
+- 전체 변경 범위
+  - 명령: `pytest tests/unit/repository_connections tests/contract/repository_ingestion tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
+  - 결과: `264 passed, 12 skipped in 7.36s`
+- 정적 검증
+  - 명령: `mypy src/tci/app.py src/tci/infrastructure/git/git_readonly_validator.py src/tci/infrastructure/git/gitlab_readonly_validator.py src/tci/api/schemas/repository_connection.py src/tci/domain/services/update_default_ref.py tests/unit/repository_connections/test_gitlab_readonly_validator.py tests/unit/repository_connections/test_app.py tests/unit/repository_connections/test_update_default_ref.py`
+  - 결과: `Success: no issues found in 8 source files`
+  - 명령: `ruff check src/tci/app.py src/tci/infrastructure/git/git_readonly_validator.py src/tci/infrastructure/git/gitlab_readonly_validator.py src/tci/api/schemas/repository_connection.py src/tci/domain/services/update_default_ref.py tests/unit/repository_connections/test_gitlab_readonly_validator.py tests/unit/repository_connections/test_app.py tests/unit/repository_connections/test_update_default_ref.py tests/contract/repository_ingestion/test_repository_connection_contract.py`
+  - 결과: `All checks passed!`
+  - 명령: `black --check src/tci/app.py src/tci/infrastructure/git/git_readonly_validator.py src/tci/infrastructure/git/gitlab_readonly_validator.py src/tci/api/schemas/repository_connection.py src/tci/domain/services/update_default_ref.py tests/unit/repository_connections/test_gitlab_readonly_validator.py tests/unit/repository_connections/test_app.py tests/unit/repository_connections/test_update_default_ref.py tests/contract/repository_ingestion/test_repository_connection_contract.py`
+  - 결과: `9 files would be left unchanged`
+  - 명령: `git diff --check`
+  - 결과: 통과
+- Package sanity
+  - 명령: `python -m pip check`
+  - 결과: `No broken requirements found.`
+  - 명령: `python -m pip_audit`
+  - 결과: `/opt/anaconda3/bin/python: No module named pip_audit`
+  - 명령: `command -v pip-audit && pip-audit || true`
+  - 결과: executable 없음
+  - 남은 gap: package vulnerability scanner는 로컬 설치 도구 부재로 미실행
+- Reviewer loop follow-up
+  - security-reviewer 지적:
+    - GitLab-specific `401/403` auth heuristic이 모든 provider에 적용될 수 있음
+    - `webhookAuthMode` 응답 노출
+    - local decrypt/config fault가 `reauth_required`로 오분류될 수 있음
+  - 조치:
+    - generic `401 unauthorized` / `403 forbidden` token을 GitLab readonly validator에서 제거
+    - `webhookAuthMode`를 general connection serializer에서 제거
+    - local decrypt failure는 connection status를 변경하지 않도록 regression 추가
+  - python-reviewer 지적:
+    - active credential missing default-ref update가 status transition을 우회
+    - runtime validator behavior coverage 부족
+    - create/patch response metadata coverage 부족
+  - 조치:
+    - active credential missing 시 `reauth_required`로 전환
+    - `build_app_dependencies` test에서 GitLab-aware validator behavior sample까지 검증
+    - GitLab create/patch/detail response metadata와 `webhookAuthMode` 비노출 contract 보강
+  - 최종 재리뷰:
+    - `reviewer`: findings 없음, approve
+    - `python-reviewer`: findings 없음, approve
+    - `security-reviewer`: findings 없음, previous issues remediated
 
 ## Foundation Verification Snapshot
 

@@ -390,6 +390,9 @@ def test_create_connection_accepts_gitlab_provider_and_derives_provider_metadata
         == "https://gitlab.example.com/group/subgroup/sample-repo.git"
     )
     assert payload["transport"] == "https"
+    assert payload["providerInstanceUrl"] == "https://gitlab.example.com"
+    assert payload["providerProjectPath"] == "group/subgroup/sample-repo"
+    assert "webhookAuthMode" not in payload
     connection = store.connections[uuid.UUID(payload["id"])]
     assert connection.provider_instance_url == "https://gitlab.example.com"
     assert connection.provider_project_path == "group/subgroup/sample-repo"
@@ -640,11 +643,13 @@ def test_get_connection_detail_preserves_shared_shape_for_gitlab_connection(
     detail_response = client.get(f"/api/repository-connections/{connection_id}")
 
     assert detail_response.status_code == 200
-    assert detail_response.json()["provider"] == "gitlab_self_managed"
-    assert detail_response.json()["status"] == "active"
-    assert detail_response.json()["traceability"]["planningInputReference"][
-        "id"
-    ] == str(reference.id)
+    payload = detail_response.json()
+    assert payload["provider"] == "gitlab_self_managed"
+    assert payload["status"] == "active"
+    assert payload["providerInstanceUrl"] == "https://gitlab.example.com"
+    assert payload["providerProjectPath"] == "group/subgroup/sample-repo"
+    assert "webhookAuthMode" not in payload
+    assert payload["traceability"]["planningInputReference"]["id"] == str(reference.id)
 
 
 def test_get_connection_detail_exposes_webhook_rotation_projection(
@@ -847,6 +852,82 @@ def test_patch_connection_rejects_unallowlisted_gitlab_before_git_access(
         "message": "GitLab Self-Managed host는 허용 목록에 등록되어야 합니다.",
     }
     assert store.last_resolved_remote_url is None
+
+
+def test_patch_gitlab_connection_response_includes_provider_metadata_without_webhook_auth_mode(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com/group/sample-repo.git",
+        ),
+    )
+    connection_id = create_response.json()["id"]
+
+    patch_response = client.patch(
+        f"/api/repository-connections/{connection_id}",
+        json={
+            "defaultRefType": "branch",
+            "defaultRefName": "release/2026.04",
+        },
+    )
+
+    assert patch_response.status_code == 200
+    payload = patch_response.json()
+    assert payload["defaultRefName"] == "release/2026.04"
+    assert payload["providerInstanceUrl"] == "https://gitlab.example.com"
+    assert payload["providerProjectPath"] == "group/sample-repo"
+    assert "webhookAuthMode" not in payload
+
+
+def test_patch_missing_gitlab_ref_persists_ref_missing_and_blocks_later_snapshot(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com/group/sample-repo.git",
+        ),
+    )
+    connection_id = create_response.json()["id"]
+    store.missing_ref_names.add("release/2026.04")
+
+    patch_response = client.patch(
+        f"/api/repository-connections/{connection_id}",
+        json={
+            "defaultRefType": "branch",
+            "defaultRefName": "release/2026.04",
+        },
+    )
+    detail_response = client.get(f"/api/repository-connections/{connection_id}")
+    snapshot_response = client.post(
+        f"/api/repository-connections/{connection_id}/snapshots",
+        json={"reason": "manual_initial"},
+    )
+
+    assert patch_response.status_code == 400
+    assert patch_response.json()["code"] == "DEFAULT_REF_NOT_FOUND"
+    assert detail_response.status_code == 200
+    assert detail_response.json()["status"] == "ref_missing"
+    assert detail_response.json()["defaultRefName"] == "main"
+    assert snapshot_response.status_code == 409
+    assert snapshot_response.json() == {
+        "code": "DEFAULT_REF_NOT_FOUND",
+        "message": "기본 ref가 유효하지 않아 새 스냅샷을 시작할 수 없습니다.",
+    }
 
 
 def test_verify_connection_returns_accepted_response(tmp_path) -> None:
@@ -1112,4 +1193,34 @@ def test_create_snapshot_returns_conflict_for_reauth_required_connection(
     assert snapshot_response.json() == {
         "code": "CONNECTION_AUTH_FAILED",
         "message": "재인증이 필요한 연결은 새 스냅샷을 시작할 수 없습니다.",
+    }
+
+
+def test_create_snapshot_returns_conflict_for_ref_missing_connection(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com/group/sample-repo.git",
+        ),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    store.connections[connection_id].status = RepositoryConnectionStatus.REF_MISSING
+
+    snapshot_response = client.post(
+        f"/api/repository-connections/{connection_id}/snapshots",
+        json={"reason": "manual_initial"},
+    )
+
+    assert snapshot_response.status_code == 409
+    assert snapshot_response.json() == {
+        "code": "DEFAULT_REF_NOT_FOUND",
+        "message": "기본 ref가 유효하지 않아 새 스냅샷을 시작할 수 없습니다.",
     }

@@ -19,9 +19,15 @@ from tci.api.routes.repository_snapshots import router as repository_snapshots_r
 from tci.domain.services.build_traceability_reference import (
     build_snapshot_traceability_reference,
 )
-from tci.infrastructure.persistence.code_snapshot_repository import CodeSnapshotRepository
-from tci.infrastructure.git.git_mirror_manager import GitMirrorManager, _subprocess_git_runner
+from tci.infrastructure.persistence.code_snapshot_repository import (
+    CodeSnapshotRepository,
+)
+from tci.infrastructure.git.git_mirror_manager import (
+    GitMirrorManager,
+    _subprocess_git_runner,
+)
 from tci.infrastructure.git.git_readonly_validator import GitReadonlyValidator
+from tci.infrastructure.git.gitlab_readonly_validator import GitLabReadonlyValidator
 from tci.infrastructure.git.git_ref_resolver import GitRefResolver
 from tci.infrastructure.persistence.credential_revision_repository import (
     CredentialRevisionRepository,
@@ -98,7 +104,7 @@ def build_app_dependencies(settings: Settings) -> AppDependencies:
     return AppDependencies(
         settings=settings,
         git_ref_resolver=GitRefResolver(runner=git_runner),
-        git_readonly_validator=GitReadonlyValidator(runner=git_runner),
+        git_readonly_validator=GitLabReadonlyValidator(runner=git_runner),
         git_mirror_manager=GitMirrorManager(settings=settings),
         snapshot_archive_store=SnapshotArchiveStore(settings=settings),
         snapshot_manifest_writer=SnapshotManifestWriter(),

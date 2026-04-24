@@ -36,19 +36,20 @@
 - [x] T005 Extend provider enums, canonical state helpers, and shared persistence models for `gitlab_self_managed`, `provider_instance_url`, delivery-id source, health projection, and `webhook_merge_request` trigger support in `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
 - [x] T006 Create additive Alembic migration for mixed-provider repository ingestion schema changes in `pilot-git-repo-connection/alembic/versions/004_gitlab_self_managed_provider_support.py`
 - [x] T007 [P] Refactor provider parsing and remote validation entry points to support GitHub/GitLab side by side in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py` and `pilot-git-repo-connection/src/tci/infrastructure/git/remote_parsers.py`
-- [ ] T008 [P] Introduce shared provider event types and normalized event DTOs in `pilot-git-repo-connection/src/tci/infrastructure/webhooks/provider_event_types.py` and `pilot-git-repo-connection/src/tci/domain/services/repository_event_processing.py`
-- [ ] T009 [P] Extend repository connection, event, cursor, sync run, and snapshot repositories for mixed-provider reads/writes in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`, `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_repository.py`, `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_cursor_repository.py`, `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_sync_run_repository.py`, and `pilot-git-repo-connection/src/tci/infrastructure/persistence/code_snapshot_repository.py`
-- [ ] T010 [P] Extend shared API schemas for mixed-provider connection detail, webhook health, and traceability fields in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`, `pilot-git-repo-connection/src/tci/api/schemas/repository_scope.py`, and `pilot-git-repo-connection/src/tci/api/schemas/_base.py`
+- [ ] T008 [P] Introduce shared provider event types and normalized event DTOs in `pilot-git-repo-connection/src/tci/infrastructure/webhooks/provider_event_types.py` and `pilot-git-repo-connection/src/tci/domain/services/repository_event_processing.py` *(deferred to US3 webhook implementation; not required for US1 lifecycle completion)*
+- [x] T009 [P] Extend repository connection, event, cursor, sync run, and snapshot repositories for mixed-provider reads/writes in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`, `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_repository.py`, `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_cursor_repository.py`, `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_sync_run_repository.py`, and `pilot-git-repo-connection/src/tci/infrastructure/persistence/code_snapshot_repository.py`
+- [x] T010 [P] Extend shared API schemas for mixed-provider connection detail, webhook health, and traceability fields in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`, `pilot-git-repo-connection/src/tci/api/schemas/repository_scope.py`, and `pilot-git-repo-connection/src/tci/api/schemas/_base.py`
 - [x] T011 [P] Add foundational unit tests for mixed-provider model invariants, canonical status rules, and additive migration expectations in `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py`
-- [ ] T012 Wire new provider routes and shared dependencies into the FastAPI app in `pilot-git-repo-connection/src/tci/app.py`
+- [x] T012 Wire new provider routes and shared dependencies into the FastAPI app in `pilot-git-repo-connection/src/tci/app.py`
 
 **Checkpoint**: mixed-provider 공통 기반이 준비되어 GitLab 기능을 스토리 단위로 구현할 수 있다.
 
 **Current Progress Note**:
 
 - 완료 체크가 현재 작업 상태의 기준이다. 상세 실행 로그와 리뷰 이력은 `delivery-evidence.md`와 `next-session-handoff.md`를 본다.
-- `T009`, `T019`, `T020`은 일부 경로가 보강됐지만 전체 task 범위가 끝나지 않아 미완료로 유지한다.
-- 다음 우선순위는 `T017` 또는 `T018`~`T023` 중 하나를 골라 US1 구현을 마감하는 것이다.
+- 2026-04-24 결정: `T008`은 US3 webhook event normalization 선행 작업으로 defer한다.
+- US1 진행 gate는 `T005`, `T006`, `T007`, `T009`, `T010`, `T011`, `T012` 완료로 충족한다.
+- 다음 우선순위는 US2 scope/ref 관리 또는 US3 webhook normalization이다.
 
 ---
 
@@ -67,13 +68,13 @@
 ### Implementation for User Story 1
 
 - [x] T016 [P] [US1] Implement GitLab remote URL parser and namespace/project extraction in `pilot-git-repo-connection/src/tci/infrastructure/git/remote_parsers.py`
-- [ ] T017 [P] [US1] Implement GitLab credential scope validation and read-only token probing in `pilot-git-repo-connection/src/tci/infrastructure/git/gitlab_readonly_validator.py`
-- [ ] T018 [US1] Extend repository connection creation service for GitLab read-only credential validation, repository-address-based provider detection, and mixed-provider error mapping in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
-- [ ] T019 [US1] Extend repository connection verify and default-ref update services for GitLab `reauth_required`/`ref_missing` transitions in `pilot-git-repo-connection/src/tci/domain/services/verify_repository_connection.py` and `pilot-git-repo-connection/src/tci/domain/services/update_default_ref.py`
-- [ ] T020 [US1] Extend manual snapshot trigger and snapshot build services for GitLab provider provenance and `reauth_required`/`ref_missing` collection blocking in `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py` and `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`
-- [ ] T021 [US1] Implement GitLab-capable repository connection API handlers in `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
+- [x] T017 [P] [US1] Implement GitLab credential scope validation and read-only token probing in `pilot-git-repo-connection/src/tci/infrastructure/git/gitlab_readonly_validator.py`
+- [x] T018 [US1] Extend repository connection creation service for GitLab read-only credential validation, repository-address-based provider detection, and mixed-provider error mapping in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
+- [x] T019 [US1] Extend repository connection verify and default-ref update services for GitLab `reauth_required`/`ref_missing` transitions in `pilot-git-repo-connection/src/tci/domain/services/verify_repository_connection.py` and `pilot-git-repo-connection/src/tci/domain/services/update_default_ref.py`
+- [x] T020 [US1] Extend manual snapshot trigger and snapshot build services for GitLab provider provenance and `reauth_required`/`ref_missing` collection blocking in `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py` and `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`
+- [x] T021 [US1] Implement GitLab-capable repository connection API handlers in `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
 - [ ] T022 [US1] Extend connection detail query service and operator detail template for mixed-provider summaries and traceability in `pilot-git-repo-connection/src/tci/domain/services/get_repository_connection_detail.py`, `pilot-git-repo-connection/src/tci/web/routes/repository_connection_detail.py`, and `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
-- [ ] T023 [US1] Capture User Story 1 verification evidence for GitLab MVP and GitHub regression in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
+- [x] T023 [US1] Capture User Story 1 verification evidence for GitLab MVP and GitHub regression in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
 
 **Checkpoint**: GitLab 연결과 초기 snapshot이 독립적으로 동작하고 GitHub 기존 흐름도 유지되어야 한다.
 
