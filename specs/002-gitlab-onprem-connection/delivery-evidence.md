@@ -251,9 +251,83 @@
   - `python-reviewer`: findings 없음
   - `security-reviewer`: findings 없음
 - Residual risks
-  - 실제 PostgreSQL Alembic migration 적용 검증은 아직 미실행
-  - `update_default_ref.py`는 outbound git 접근 전 차단되지만 credential decrypt가 allowlist check보다 먼저 발생한다.
-  - stored SSH custom-port가 scope preview와 snapshot build를 모두 통과하는 직접 E2E는 아직 없다.
+  - 해소됨: 실제 PostgreSQL Alembic migration 적용 검증은 2026-04-24 DB follow-up에서 완료했다.
+  - 해소됨: `update_default_ref.py` decrypt-before-allowlist 순서는 2026-04-24 US1 follow-up에서 allowlist-before-decrypt로 수정했다.
+  - 해소됨: stored SSH custom-port의 scope preview와 snapshot build 직접 검증은 2026-04-24 US1 follow-up에서 positive/negative control로 추가했다.
+
+## 2026-04-24 US1 Follow-up TDD Evidence
+
+- 사전 점검
+  - `git status --short`
+  - 결과: clean
+  - tracked `.pyc` 확인 결과:
+    - `pilot-git-repo-connection/alembic/__pycache__/env.cpython-313.pyc`
+    - `pilot-git-repo-connection/alembic/versions/__pycache__/001_repository_ingestion_core.cpython-313.pyc`
+- 실제 PostgreSQL Alembic 검증 사전 상태
+  - `PYTHONDONTWRITEBYTECODE=1 alembic current`
+  - 결과: `TCI_DATABASE_URL` 또는 `alembic.ini`의 `sqlalchemy.url` 미설정으로 실행 불가
+  - 상태: 당시에는 residual risk였으나, 2026-04-24 DB follow-up에서 해소했다.
+- RED
+  - 추가 테스트: `tests/unit/repository_connections/test_update_default_ref.py`
+  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections/test_update_default_ref.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py -q`
+  - 결과: `test_update_default_ref_rejects_unallowlisted_gitlab_before_credential_decrypt` 실패
+  - 의도한 실패 이유: `update_default_ref.py`가 GitLab allowlist 검사 전에 credential decrypt를 수행함
+- GREEN
+  - 구현: `update_default_ref.py`에서 encrypted secret만 context로 로드하고, GitLab allowlist 통과 후 decrypt하도록 순서 변경
+  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections/test_update_default_ref.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py -q`
+  - 결과: `4 passed in 0.95s`
+- 추가 US1/T015 회귀 고정
+  - 추가 테스트:
+    - `tests/integration/repository_connections/test_gitlab_connection_lifecycle.py`
+    - `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+  - 검증 범위:
+    - SSH custom-port GitLab remote가 `host:port` allowlist로 verify, scope preview, snapshot build 경로를 통과
+    - SSH custom-port GitLab remote가 host-only allowlist에서는 verify, scope preview, snapshot build 경로에서 git 접근 전 거부
+    - SSH custom-port default-ref update가 host-only allowlist에서 credential decrypt 전 거부
+    - snapshot build allowlist rejection은 credential failure/`reauth_required`로 오분류하지 않고 `MIRROR_SYNC_FAILED`와 기존 connection status 유지로 기록
+    - `reauth_required` / `ref_missing` GitLab 연결의 manual snapshot 차단
+    - GitHub/GitLab connection verify와 snapshot flow coexistence, credential revision/mirror/snapshot ownership 분리
+  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections/test_update_default_ref.py tests/unit/repository_connections/test_verify_repository_connection.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
+  - 결과: `15 passed, 3 skipped in 1.09s`
+- Python/security reviewer follow-up
+  - 지적: snapshot allowlist rejection이 `AUTH_FAILED`/`reauth_required`로 오분류될 수 있음
+  - 조치: `build_code_snapshot.py`의 `ProblemCode.INVALID_INPUT` 분류를 `MIRROR_SYNC_FAILED`, connection status unchanged로 변경하고 테스트 보강
+  - 재검증:
+    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections tests/contract/repository_ingestion tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
+    - 결과: `253 passed, 12 skipped in 7.31s`
+
+## 2026-04-24 DB Migration Follow-up Evidence
+
+- 실제 PostgreSQL 연결
+  - compose: `specs/001-git-repo-connection/docker-compose/docker-compose-test.yaml`
+  - DSN: `postgresql+psycopg://tci:tci@127.0.0.1:5433/tci_test`
+  - 결과: `('tci_test', 'tci')`
+- RED
+  - 명령: `TCI_TEST_DATABASE_URL='postgresql+psycopg://tci:tci@127.0.0.1:5433/tci_test' TCI_ALLOW_DESTRUCTIVE_MIGRATION_TESTS=1 PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_phase2_migration_smoke.py -q`
+  - 결과: 실패
+  - 실패 원인: `004_gitlab_self_managed_provider_support.py` downgrade가 raw SQL `NOT VALID` constraint를 삭제할 때 naming convention이 적용되어 `ck_repository_events_ck_repo_event_verified_secret_pair` 삭제를 시도함
+- GREEN
+  - 구현: raw SQL `NOT VALID` check constraint 생성/검증/삭제를 SQLAlchemy naming convention 및 PostgreSQL identifier truncation/hash 규칙과 일치하도록 수정
+  - 명령: `TCI_TEST_DATABASE_URL='postgresql+psycopg://tci:tci@127.0.0.1:5433/tci_test' TCI_ALLOW_DESTRUCTIVE_MIGRATION_TESTS=1 PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_phase2_migration_smoke.py -q`
+  - 결과: `1 passed in 2.74s`
+- Database-reviewer follow-up
+  - 지적: immediate downgrade failure는 고쳤지만 live DB constraint name과 SQLAlchemy metadata naming convention drift가 남을 수 있음
+  - 조치: `test_phase2_migration_smoke.py`에 live PostgreSQL check constraint name이 metadata의 PostgreSQL-rendered name을 포함하는지 검증하는 regression 추가
+  - 재검증: `1 passed in 2.74s`
+- 실DB bootstrap 검증
+  - 명령: `TCI_MIGRATION_TEST_DATABASE_URL='postgresql+psycopg://tci:tci@127.0.0.1:5433/tci_test' TCI_MIGRATION_TEST_DATABASE_URL_ACK='postgresql+psycopg://tci:tci@127.0.0.1:5433/tci_test' TCI_MIGRATION_TEST_DATABASE_NAME='tci_test' TCI_ALLOW_DESTRUCTIVE_MIGRATION_TESTS=1 PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_planning_input_reference_create_bootstraps_connection_creation_with_real_db -q`
+  - 결과: `1 passed in 2.08s`
+- 전체 변경 범위 재검증
+  - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections tests/contract/repository_ingestion tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py tests/integration/repository_connections/test_phase2_migration_smoke.py -q`
+  - 결과: `253 passed, 13 skipped in 7.38s`
+  - focused `mypy`: `Success: no issues found in 8 source files`
+  - focused `ruff check`: `All checks passed!`
+  - focused `black --check`: `8 files would be left unchanged`
+- 최종 reviewer loop
+  - `reviewer`: findings 없음
+  - `python-reviewer`: findings 없음
+  - `database-reviewer`: findings 없음
+  - 로컬 destructive Alembic round-trip은 실제 `tci_test` PostgreSQL DB에서 통과했다.
 
 ## Foundation Verification Snapshot
 
@@ -271,7 +345,6 @@
 - 수동 quickstart 검증 메모
 - latency 측정 결과
 - GitHub regression 실행 결과
-- 실제 PostgreSQL migration 적용 검증 결과
 - GitLab webhook flow 구현 후 reviewer / python-reviewer / security-reviewer 최종 재검토 결과
 
 ## 변경 이력
@@ -279,3 +352,4 @@
 - 2026-04-23: Phase 1 evidence scaffold 생성
 - 2026-04-23: Phase 2 foundation partial evidence 추가 (`T005`, `T006`, `T011`)
 - 2026-04-24: GitLab remote parser, allowlist, localhost/private-IP/custom-port, fail-closed outbound guard evidence 추가 (`T007`, `T013`, `T016` 및 security slice)
+- 2026-04-24: 실제 PostgreSQL migration smoke와 실DB bootstrap 검증 완료, 004 downgrade/check constraint naming bug 수정

@@ -11,7 +11,9 @@
 - 2026-04-23: `delivery-evidence.md`와 GitLab test scaffold 생성 완료
 - 2026-04-23: Phase 2 foundation 일부 완료 (`T005`, `T006`, `T011`)
 - 2026-04-24: GitLab self-managed remote 파싱, provider metadata 저장, host allowlist, create/verify/default-ref/scope-preview/snapshot 경로의 fail-closed 검증 구현
-- 현재 상태: Phase 2/US1 보안 중심 slice 진행 중. Webhook event normalization과 UI/API detail 확장은 아직 pending
+- 2026-04-24: 기본 ref 변경의 allowlist-before-decrypt 순서, SSH custom-port allowlist control, snapshot allowlist rejection 분류, GitHub/GitLab coexistence 회귀 검증 보강
+- 2026-04-24: 실제 PostgreSQL `tci_test`에서 Alembic migration smoke, 실DB bootstrap, live constraint name regression 검증 완료
+- 현재 상태: Phase 2/US1 보안 중심 slice와 DB migration 검증 완료. Webhook event normalization과 UI/API detail 확장은 아직 pending
 - 진행 증적: `specs/002-gitlab-onprem-connection/delivery-evidence.md`
 
 ## Design Input Traceability *(mandatory)*

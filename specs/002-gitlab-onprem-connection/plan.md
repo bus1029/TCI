@@ -7,6 +7,14 @@
 
 이 계획은 기존 `pilot-git-repo-connection` Python 런타임에 GitLab Self-Managed provider를 추가해, GitHub Cloud와 동일한 canonical contract 아래에서 저장소 연결, ref 선택, scope rule, Push/Merge Request 기반 snapshot 최신화, operator traceability를 함께 제공한다. 핵심 전략은 기존 GitHub 구현을 유지한 채 provider-specific webhook/security/parser 경계만 adapter로 분리하고, connection/snapshot/event/health/read-model은 공통 core로 재사용하는 것이다.
 
+## Implementation Progress
+
+- 2026-04-24 기준 GitLab self-managed remote 파싱, provider metadata 저장, host allowlist, create/verify/default-ref/scope-preview/snapshot fail-closed 경로를 구현했다.
+- 2026-04-24 기준 기본 ref 변경은 GitLab allowlist 통과 후에만 credential decrypt를 수행한다.
+- 2026-04-24 기준 snapshot build의 GitLab allowlist rejection은 credential failure로 오분류하지 않고 `MIRROR_SYNC_FAILED`로 기록한다.
+- 2026-04-24 기준 실제 PostgreSQL `tci_test`에서 Alembic migration smoke, 실DB bootstrap, live constraint name regression 검증을 완료했다.
+- 아직 남은 구현 범위는 GitLab webhook event normalization, operator detail/read-model, UI 표시다.
+
 ## Change Traceability
 
 **Planning Input**: 2026-04-23 사용자 요청 "코드 저장소 연동 기능의 기술 계획 작성", 제약 "clarify에서 추가 구체화가 필요한 사항은 plan에서 명확히 구체화", "기존 GitHub Cloud 연동 기능 관련 코드와의 호환성 고려"  

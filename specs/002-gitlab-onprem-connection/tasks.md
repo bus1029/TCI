@@ -100,8 +100,39 @@
   - `python-reviewer`: findings 없음
   - `security-reviewer`: findings 없음
 - 남은 리스크:
-  - 실제 PostgreSQL Alembic migration 적용 검증은 아직 미실행
-  - `update_default_ref.py`는 outbound 접근 전 차단되지만 credential decrypt가 allowlist check보다 먼저 발생해 least-exposure 개선 여지가 있다.
+  - 해소됨: 실제 PostgreSQL Alembic migration 적용 검증은 DB follow-up에서 완료했다.
+  - 해소됨: `update_default_ref.py` decrypt-before-allowlist 순서는 Phase 3 follow-up에서 allowlist-before-decrypt로 수정했다.
+  - 해소됨: stored SSH custom-port의 scope preview/snapshot build 검증 공백은 Phase 3 follow-up에서 positive/negative control로 보강했다.
+
+**Phase 3 Follow-up Execution Note**:
+
+- 2026-04-24 US1 보안/검증 보강 작업:
+  - `T014` 완료: `tests/integration/repository_connections/test_gitlab_connection_lifecycle.py` 추가
+    - SSH custom-port GitLab remote가 `host:port` allowlist로 verify, scope preview, snapshot build 경로를 통과하는지 검증
+    - SSH custom-port GitLab remote가 host-only allowlist에서는 verify, scope preview, snapshot build 경로에서 git 접근 전 거부되는지 검증
+    - snapshot build allowlist rejection이 credential failure/`reauth_required`로 오분류되지 않는지 검증
+    - `reauth_required` / `ref_missing` 상태에서 manual snapshot 시작이 차단되는지 검증
+  - `T015` 완료: `tests/integration/repository_connections/test_github_gitlab_compatibility.py`에 GitHub/GitLab verify/snapshot coexistence와 credential/mirror/snapshot ownership 분리 회귀 검증 추가
+  - `T019` 일부: `update_default_ref.py`에서 GitLab allowlist check를 credential decrypt보다 먼저 수행하도록 least-exposure 개선하고, HTTPS/SSH custom-port default-ref rejection을 테스트로 고정
+- 검증 명령:
+  - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections/test_update_default_ref.py tests/unit/repository_connections/test_verify_repository_connection.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
+- 결과:
+  - `15 passed, 3 skipped in 1.09s`
+- reviewer follow-up:
+  - `build_code_snapshot.py`에서 `ProblemCode.INVALID_INPUT` allowlist rejection을 `AUTH_FAILED`가 아닌 `MIRROR_SYNC_FAILED`로 기록하고 connection status를 유지하도록 수정
+  - 집중 suite 재검증 결과: `253 passed, 12 skipped in 7.31s`
+- DB migration follow-up:
+  - `004_gitlab_self_managed_provider_support.py`에서 raw SQL `NOT VALID` check constraint 생성/검증/삭제가 SQLAlchemy naming convention 및 PostgreSQL identifier truncation/hash 규칙과 일치하도록 수정
+  - live PostgreSQL check constraint name이 metadata의 PostgreSQL-rendered name을 포함하는지 regression 추가
+  - 실제 PostgreSQL migration smoke 결과: `1 passed in 2.74s`
+  - 실DB bootstrap 테스트 결과: `1 passed in 2.08s`
+  - 전체 변경 범위 재검증 결과: `253 passed, 13 skipped in 7.38s`
+- 최종 reviewer loop:
+  - `reviewer`: findings 없음
+  - `python-reviewer`: findings 없음
+  - `database-reviewer`: 최초 naming drift finding 해소 후 findings 없음
+- 남은 리스크:
+  - GitLab read-only credential probing 전용 구현(`T017`)과 US1 route/detail/evidence 마감 작업(`T018`~`T023`)은 아직 완료 전
 
 ---
 
@@ -114,8 +145,8 @@
 ### Tests for User Story 1
 
 - [x] T013 [P] [US1] Add contract tests for GitLab repository connection create/get/patch/verify flows and provider validation in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
-- [ ] T014 [P] [US1] Add integration tests for GitLab connection verify, `reauth_required`, `ref_missing`, blocked manual collection, and initial snapshot creation in `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_connection_lifecycle.py`
-- [ ] T015 [P] [US1] Add GitHub compatibility regression tests for connection create/verify/manual snapshot in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+- [x] T014 [P] [US1] Add integration tests for GitLab connection verify, `reauth_required`, `ref_missing`, blocked manual collection, and initial snapshot creation in `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_connection_lifecycle.py`
+- [x] T015 [P] [US1] Add GitHub compatibility regression tests for connection create/verify/manual snapshot in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
 
 ### Implementation for User Story 1
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Any, cast
 import uuid
 
 import pytest
@@ -29,6 +30,14 @@ from tests.support.repository_connection_testkit import (
 )
 
 
+def _settings(client) -> Any:
+    return cast(Any, client.app).state.settings
+
+
+def _dependencies(client) -> Any:
+    return cast(Any, client.app).state.dependencies
+
+
 def test_build_code_snapshot_rejects_unallowlisted_gitlab_before_git_access(
     tmp_path,
 ) -> None:
@@ -49,11 +58,11 @@ def test_build_code_snapshot_rejects_unallowlisted_gitlab_before_git_access(
             workspace_id=workspace_id,
             connection_id=connection_id,
         ),
-        dependencies=client.app.state.dependencies,
+        dependencies=_dependencies(client),
     )
     store.last_resolved_remote_url = None
     object.__setattr__(
-        client.app.state.settings,
+        _settings(client),
         "gitlab_self_managed_allowed_hosts",
         (),
     )
@@ -65,7 +74,7 @@ def test_build_code_snapshot_rejects_unallowlisted_gitlab_before_git_access(
                 connection_id=connection_id,
                 sync_run_id=sync_run.id,
             ),
-            dependencies=client.app.state.dependencies,
+            dependencies=_dependencies(client),
         )
     except RepositoryConnectionProblem as error:
         assert (
@@ -75,7 +84,9 @@ def test_build_code_snapshot_rejects_unallowlisted_gitlab_before_git_access(
         raise AssertionError("GitLab snapshot should reject unallowlisted hosts")
 
     assert store.sync_runs[sync_run.id].status.value == "failed"
-    assert store.sync_runs[sync_run.id].failure_code.value == "AUTH_FAILED"
+    failure_code = store.sync_runs[sync_run.id].failure_code
+    assert failure_code is not None
+    assert failure_code.value == "MIRROR_SYNC_FAILED"
     assert store.last_resolved_remote_url is None
 
 
@@ -94,7 +105,7 @@ def test_run_webhook_sync_task_marks_event_failed_when_snapshot_build_fails(
         store, connection_id=connection_id, secret="webhook-secret"
     )
     store.resolved_ref_commits["main"] = "b" * 40
-    object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
+    object.__setattr__(_settings(client), "redis_url", "redis://example")
     monkeypatch.setattr(
         "tci.api.routes.github_webhooks.create_celery_app",
         lambda settings: SimpleNamespace(send_task=lambda name, kwargs: None),
@@ -120,7 +131,7 @@ def test_run_webhook_sync_task_marks_event_failed_when_snapshot_build_fails(
 
     monkeypatch.setattr(
         "tci.infrastructure.queue.repository_ingestion_tasks._build_snapshot_dependencies",
-        lambda: client.app.state.dependencies,
+        lambda: _dependencies(client),
     )
     monkeypatch.setattr(
         "tci.infrastructure.queue.repository_ingestion_tasks._load_build_snapshot_service",
@@ -141,7 +152,9 @@ def test_run_webhook_sync_task_marks_event_failed_when_snapshot_build_fails(
 
     assert store.repository_events[event_id].processing_status == "failed"
     assert store.sync_runs[sync_run_id].status.value == "failed"
-    assert store.sync_runs[sync_run_id].failure_code.value == "SNAPSHOT_WRITE_FAILED"
+    failure_code = store.sync_runs[sync_run_id].failure_code
+    assert failure_code is not None
+    assert failure_code.value == "SNAPSHOT_WRITE_FAILED"
     assert store.event_cursors == {}
 
 
@@ -160,7 +173,7 @@ def test_run_webhook_sync_task_does_not_overwrite_retried_event_state(
         store, connection_id=connection_id, secret="webhook-secret"
     )
     store.resolved_ref_commits["main"] = "c" * 40
-    object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
+    object.__setattr__(_settings(client), "redis_url", "redis://example")
     monkeypatch.setattr(
         "tci.api.routes.github_webhooks.create_celery_app",
         lambda settings: SimpleNamespace(send_task=lambda name, kwargs: None),
@@ -185,7 +198,7 @@ def test_run_webhook_sync_task_does_not_overwrite_retried_event_state(
 
     monkeypatch.setattr(
         "tci.infrastructure.queue.repository_ingestion_tasks._build_snapshot_dependencies",
-        lambda: client.app.state.dependencies,
+        lambda: _dependencies(client),
     )
     monkeypatch.setattr(
         "tci.infrastructure.queue.repository_ingestion_tasks._load_build_snapshot_service",

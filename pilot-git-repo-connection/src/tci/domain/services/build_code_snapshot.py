@@ -396,6 +396,12 @@ def _classify_snapshot_failure(
             RepositoryConnectionStatus.REF_MISSING,
             str(error) or "기본 분석 대상 ref를 찾을 수 없습니다.",
         )
+    if problem_code == ProblemCode.INVALID_INPUT:
+        return (
+            SyncFailureCode.MIRROR_SYNC_FAILED,
+            None,
+            str(error) or "스냅샷 생성 요청이 유효하지 않습니다.",
+        )
     if isinstance(error, RepositoryConnectionProblem):
         return (
             SyncFailureCode.AUTH_FAILED,

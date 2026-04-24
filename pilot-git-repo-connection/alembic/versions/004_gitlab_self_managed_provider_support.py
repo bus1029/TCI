@@ -10,6 +10,7 @@ from __future__ import annotations
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql.elements import conv
 
 
 revision = "004_gitlab_provider_support"
@@ -110,14 +111,24 @@ def _count_rows(query: str) -> int:
     return int(bind.execute(sa.text(query)).scalar_one())
 
 
+def _check_constraint_name(*, table_name: str, constraint_name: str) -> str:
+    metadata_name = conv(f"ck_{table_name}_{constraint_name}")
+    return postgresql.dialect().identifier_preparer.truncate_and_render_constraint_name(
+        metadata_name
+    )
+
+
 def _add_not_valid_check(
     *, table_name: str, constraint_name: str, condition: str
 ) -> None:
+    effective_constraint_name = _check_constraint_name(
+        table_name=table_name, constraint_name=constraint_name
+    )
     op.execute(
         sa.text(
             f"""
             ALTER TABLE {table_name}
-            ADD CONSTRAINT {constraint_name}
+            ADD CONSTRAINT {effective_constraint_name}
             CHECK {condition} NOT VALID
             """
         )
@@ -147,8 +158,30 @@ def _add_not_valid_foreign_key(
 
 
 def _validate_constraint(*, table_name: str, constraint_name: str) -> None:
+    effective_constraint_name = (
+        _check_constraint_name(table_name=table_name, constraint_name=constraint_name)
+        if constraint_name.startswith("ck_")
+        else constraint_name
+    )
     op.execute(
-        sa.text(f"ALTER TABLE {table_name} VALIDATE CONSTRAINT {constraint_name}")
+        sa.text(
+            f"ALTER TABLE {table_name} VALIDATE CONSTRAINT {effective_constraint_name}"
+        )
+    )
+
+
+def _drop_check_constraint_if_exists(*, table_name: str, constraint_name: str) -> None:
+    effective_constraint_name = _check_constraint_name(
+        table_name=table_name, constraint_name=constraint_name
+    )
+    op.execute(
+        sa.text(
+            f"ALTER TABLE {table_name} "
+            f"DROP CONSTRAINT IF EXISTS {effective_constraint_name}"
+        )
+    )
+    op.execute(
+        sa.text(f"ALTER TABLE {table_name} DROP CONSTRAINT IF EXISTS {constraint_name}")
     )
 
 
@@ -583,8 +616,9 @@ def downgrade() -> None:
     ):
         raise RuntimeError(SYNC_RUN_DOWNGRADE_BLOCKED_MESSAGE)
 
-    op.drop_constraint(
-        "ck_repo_event_verified_secret_pair", "repository_events", type_="check"
+    _drop_check_constraint_if_exists(
+        table_name="repository_events",
+        constraint_name="ck_repo_event_verified_secret_pair",
     )
     op.drop_index("ix_code_snapshot_connection_id", table_name="code_snapshots")
     op.drop_index("ix_code_snapshot_scope_rule_version_id", table_name="code_snapshots")
@@ -640,7 +674,7 @@ def downgrade() -> None:
     op.drop_column("repository_events", "provider_event_idempotency_source")
 
     op.drop_constraint(
-        "fk_repo_conn_active_webhook_secret_owner",
+        op.f("fk_repo_conn_active_webhook_secret_owner"),
         "repository_connections",
         type_="foreignkey",
     )
@@ -648,45 +682,37 @@ def downgrade() -> None:
         "ix_repo_conn_active_webhook_secret_revision_id",
         table_name="repository_connections",
     )
-    op.drop_constraint(
-        "ck_repo_conn_gitlab_project_path_match",
-        "repository_connections",
-        type_="check",
+    _drop_check_constraint_if_exists(
+        table_name="repository_connections",
+        constraint_name="ck_repo_conn_gitlab_project_path_match",
     )
-    op.drop_constraint(
-        "ck_repo_conn_provider_project_path",
-        "repository_connections",
-        type_="check",
+    _drop_check_constraint_if_exists(
+        table_name="repository_connections",
+        constraint_name="ck_repo_conn_provider_project_path",
     )
-    op.drop_constraint(
-        "ck_repo_conn_gitlab_https_port_match",
-        "repository_connections",
-        type_="check",
+    _drop_check_constraint_if_exists(
+        table_name="repository_connections",
+        constraint_name="ck_repo_conn_gitlab_https_port_match",
     )
-    op.drop_constraint(
-        "ck_repo_conn_gitlab_instance_host_match",
-        "repository_connections",
-        type_="check",
+    _drop_check_constraint_if_exists(
+        table_name="repository_connections",
+        constraint_name="ck_repo_conn_gitlab_instance_host_match",
     )
-    op.drop_constraint(
-        "ck_repo_conn_gitlab_instance_url_https",
-        "repository_connections",
-        type_="check",
+    _drop_check_constraint_if_exists(
+        table_name="repository_connections",
+        constraint_name="ck_repo_conn_gitlab_instance_url_https",
     )
-    op.drop_constraint(
-        "ck_repo_conn_provider_metadata",
-        "repository_connections",
-        type_="check",
+    _drop_check_constraint_if_exists(
+        table_name="repository_connections",
+        constraint_name="ck_repo_conn_provider_metadata",
     )
-    op.drop_constraint(
-        "ck_repo_conn_remote_url_host",
-        "repository_connections",
-        type_="check",
+    _drop_check_constraint_if_exists(
+        table_name="repository_connections",
+        constraint_name="ck_repo_conn_remote_url_host",
     )
-    op.drop_constraint(
-        "ck_repo_conn_remote_url_no_userinfo",
-        "repository_connections",
-        type_="check",
+    _drop_check_constraint_if_exists(
+        table_name="repository_connections",
+        constraint_name="ck_repo_conn_remote_url_no_userinfo",
     )
     op.drop_column("repository_connections", "last_reachability_failure_code")
     op.drop_column("repository_connections", "provider_reachability_status")

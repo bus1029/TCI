@@ -37,7 +37,7 @@ def update_default_ref(command, *, dependencies):
         remote_url,
         transport,
         credential_type,
-        credential_secret,
+        encrypted_secret,
     ) = _load_connection_context(
         workspace_id=command.workspace_id,
         connection_id=command.connection_id,
@@ -50,6 +50,10 @@ def update_default_ref(command, *, dependencies):
             provider_instance_url=provider_instance_url,
             settings=dependencies.settings,
             remote_url=remote_url,
+        )
+        credential_secret = decrypt_secret_from_storage(
+            encrypted_secret,
+            settings=dependencies.settings,
         )
         with bind_git_credential(
             remote_url=remote_url,
@@ -115,8 +119,5 @@ def _load_connection_context(
             connection.remote_url,
             connection.transport,
             credential_revision.credential_type,
-            decrypt_secret_from_storage(
-                credential_revision.encrypted_secret,
-                settings=dependencies.settings,
-            ),
+            credential_revision.encrypted_secret,
         )

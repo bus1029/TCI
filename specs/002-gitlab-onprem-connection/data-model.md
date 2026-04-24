@@ -14,6 +14,8 @@
 
 - 2026-04-23 기준 Phase 2 foundation의 ORM/migration 일부가 구현됐다.
 - 2026-04-24 기준 GitLab self-managed connection metadata와 remote validation은 실제 코드에 반영됐다.
+- 2026-04-24 DB follow-up 기준 실제 PostgreSQL `tci_test`에서 Alembic migration smoke와 실DB bootstrap 검증을 완료했다.
+- 2026-04-24 US1 follow-up 기준 GitLab allowlist 정책은 create/verify/default-ref/scope-preview/snapshot build 경로에 동일하게 적용된다.
 - 현재 구현 완료 또는 반영 중인 항목:
   - `RepositoryConnection.provider`
   - `provider_instance_url`
@@ -21,7 +23,12 @@
   - `provider_event_idempotency_source`
   - `webhook_merge_request` trigger support
   - health projection persistence fields
-- 아직 pending인 항목은 GitLab webhook event normalization, detail/read-model 확장, UI 표시, 실제 PostgreSQL migration 적용 검증이다.
+- 구현 보강 완료 항목:
+  - GitLab allowlist-before-credential-decrypt ordering
+  - SSH custom-port allowlist positive/negative control
+  - snapshot allowlist rejection의 `MIRROR_SYNC_FAILED` 분류
+  - live PostgreSQL check constraint name과 SQLAlchemy metadata naming 일치 검증
+- 아직 pending인 항목은 GitLab webhook event normalization, detail/read-model 확장, UI 표시다.
 - 따라서 이 문서는 “구현된 foundation + 남은 목표 모델”로 해석한다.
 
 ## Core Entities

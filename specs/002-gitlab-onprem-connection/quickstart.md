@@ -8,6 +8,8 @@
 
 - 2026-04-23 기준 Phase 1 setup 완료
 - 2026-04-24 기준 GitLab self-managed 연결 생성, remote metadata 파싱, host allowlist, verify/default-ref/scope-preview/snapshot fail-closed 경로가 구현됐다.
+- 2026-04-24 기준 실제 PostgreSQL `tci_test`에서 Alembic migration smoke와 실DB bootstrap 검증이 완료됐다.
+- 2026-04-24 기준 GitLab SSH custom-port allowlist, GitHub/GitLab coexistence, snapshot allowlist rejection 분류 회귀 검증이 추가됐다.
 - 전체 webhook quickstart는 아직 실행 가능한 제품 동작이 아니라, 이후 구현과 검증이 따라야 할 기준선이다.
 - 현재 준비된 자동화 표면:
   - `tests/contract/repository_ingestion/test_gitlab_connection_contract.py`
@@ -15,10 +17,22 @@
   - `tests/contract/repository_ingestion/test_repository_connection_contract.py`
   - `tests/contract/repository_ingestion/test_repository_scope_contract.py`
   - `tests/integration/repository_connections/test_gitlab_provider_flows.py`
+  - `tests/integration/repository_connections/test_gitlab_connection_lifecycle.py`
   - `tests/unit/repository_connections/test_gitlab_provider_parsing.py`
   - `tests/unit/repository_connections/test_process_gitlab_event.py`
+  - `tests/unit/repository_connections/test_update_default_ref.py`
   - `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+  - `tests/integration/repository_connections/test_phase2_migration_smoke.py`
 - 전체 quickstart 검증은 Phase 3 이후부터 실제 구현 상태에 맞춰 채워진다.
+
+## 현재 자동화 검증 스냅샷
+
+- `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections tests/contract/repository_ingestion tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py tests/integration/repository_connections/test_phase2_migration_smoke.py -q`
+  - 결과: `253 passed, 13 skipped in 7.38s`
+- `TCI_TEST_DATABASE_URL='postgresql+psycopg://tci:tci@127.0.0.1:5433/tci_test' TCI_ALLOW_DESTRUCTIVE_MIGRATION_TESTS=1 PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_phase2_migration_smoke.py -q`
+  - 결과: `1 passed in 2.74s`
+- `TCI_MIGRATION_TEST_DATABASE_URL='postgresql+psycopg://tci:tci@127.0.0.1:5433/tci_test' TCI_MIGRATION_TEST_DATABASE_URL_ACK='postgresql+psycopg://tci:tci@127.0.0.1:5433/tci_test' TCI_MIGRATION_TEST_DATABASE_NAME='tci_test' TCI_ALLOW_DESTRUCTIVE_MIGRATION_TESTS=1 PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_planning_input_reference_create_bootstraps_connection_creation_with_real_db -q`
+  - 결과: `1 passed in 2.08s`
 
 ## 사전 조건
 
