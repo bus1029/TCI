@@ -7,7 +7,7 @@
 
 ## Implementation Status
 
-- Phase 2 foundation과 US1 보안 중심 slice가 구현됐다.
+- Phase 2 foundation과 US1 연결/초기 snapshot/operator detail 경로가 구현됐다.
 - 구현된 범위:
   - GitLab self-managed remote 파싱과 provider metadata 저장
   - host allowlist 기반 fail-closed 검증
@@ -17,10 +17,12 @@
   - snapshot allowlist rejection의 `MIRROR_SYNC_FAILED` 분류
   - GitHub/GitLab coexistence 회귀 검증
   - 실제 PostgreSQL migration smoke, 실DB bootstrap, live constraint name regression
+  - GitLab operator detail의 instance URL, project path, active scope traceability 표시
+  - webhook health 렌더링 상태에서 `shared_token` / `webhookAuthMode` 비노출 회귀 검증
 - 아직 pending인 범위:
   - GitLab webhook event normalization
-  - UI/API detail 확장
-  - US1 route/detail/evidence 마감 작업
+  - US2 scope/ref 관리
+  - US3 webhook 수신/처리
 - 상세 증적은 `specs/002-gitlab-onprem-connection/delivery-evidence.md`를 기준으로 한다.
 
 ## Design Input Traceability *(mandatory)*

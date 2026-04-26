@@ -15,10 +15,12 @@
   - 기본 ref 변경의 allowlist-before-decrypt 순서
   - snapshot allowlist rejection의 `MIRROR_SYNC_FAILED` 분류
   - 실제 PostgreSQL migration smoke, 실DB bootstrap, live constraint name regression
+  - operator detail/read-model/UI의 GitLab instance/project/traceability 표시
+  - webhook health 렌더링 상태에서 `shared_token` / `webhookAuthMode` 비노출 검증
 - 남은 구현 범위:
+  - US2 scope/ref 관리
   - GitLab webhook event normalization
-  - operator detail/read-model
-  - UI 표시
+  - US3 webhook 수신/처리
 
 ## Change Traceability
 

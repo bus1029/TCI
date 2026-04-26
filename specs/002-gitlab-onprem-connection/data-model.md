@@ -24,8 +24,10 @@
   - SSH custom-port allowlist positive/negative control
   - snapshot allowlist rejection의 `MIRROR_SYNC_FAILED` 분류
   - live PostgreSQL check constraint name과 SQLAlchemy metadata naming 일치 검증
-- 아직 pending인 항목은 GitLab webhook event normalization, detail/read-model 확장, UI 표시다.
-- 따라서 이 문서는 “구현된 foundation + 남은 목표 모델”로 해석한다.
+  - operator detail/read-model/UI의 GitLab instance/project/traceability 표시
+  - webhook health 렌더링 상태에서 `shared_token` / `webhookAuthMode` 비노출 검증
+- 아직 pending인 항목은 US2 scope/ref 관리와 GitLab webhook event normalization/수신/처리다.
+- 따라서 이 문서는 “구현된 US1 baseline + 남은 목표 모델”로 해석한다.
 
 ## Core Entities
 

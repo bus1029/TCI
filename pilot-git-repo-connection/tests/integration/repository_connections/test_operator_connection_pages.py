@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any, cast
 import uuid
 
 from tci.domain.services.build_code_snapshot import (
@@ -13,8 +14,13 @@ from tci.domain.services.create_initial_snapshot import (
 from tests.support.repository_connection_testkit import (
     create_connection_payload,
     create_test_client,
+    seed_active_webhook_secret,
     seed_planning_input_reference,
 )
+
+
+def _dependencies(client) -> Any:
+    return cast(Any, client.app).state.dependencies
 
 
 def test_connections_page_renders_empty_state_and_create_form(tmp_path) -> None:
@@ -45,7 +51,7 @@ def test_connections_page_renders_existing_connection_summary(tmp_path) -> None:
     assert response.status_code == 200
     assert "acme/sample-repo" in response.text
     assert "기본 ref: branch main" in response.text
-    assert f'/connections/{connection_id}?workspaceId={workspace_id}' in response.text
+    assert f"/connections/{connection_id}?workspaceId={workspace_id}" in response.text
 
 
 def test_connections_create_route_redirects_to_detail_page(tmp_path) -> None:
@@ -102,7 +108,7 @@ def test_connection_detail_page_renders_summary_guidance_and_traceability(
             workspace_id=workspace_id,
             connection_id=connection_id,
         ),
-        dependencies=client.app.state.dependencies,
+        dependencies=_dependencies(client),
     )
     snapshot = build_code_snapshot(
         BuildCodeSnapshotCommand(
@@ -110,7 +116,7 @@ def test_connection_detail_page_renders_summary_guidance_and_traceability(
             connection_id=connection_id,
             sync_run_id=sync_run.id,
         ),
-        dependencies=client.app.state.dependencies,
+        dependencies=_dependencies(client),
     )
 
     response = client.get(f"/connections/{connection_id}?workspaceId={workspace_id}")
@@ -123,6 +129,58 @@ def test_connection_detail_page_renders_summary_guidance_and_traceability(
     assert str(snapshot.id) in response.text
     assert "승인된 스펙" in response.text
     assert "승인된 계획" in response.text
+
+
+def test_connection_detail_page_renders_gitlab_provider_summary_without_auth_mode(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com/group/subgroup/sample-repo.git",
+        ),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    seed_active_webhook_secret(
+        store,
+        connection_id=connection_id,
+        secret="gitlab-webhook-secret",
+    )
+    sync_run = create_initial_snapshot(
+        CreateInitialSnapshotCommand(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        ),
+        dependencies=_dependencies(client),
+    )
+    snapshot = build_code_snapshot(
+        BuildCodeSnapshotCommand(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+            sync_run_id=sync_run.id,
+        ),
+        dependencies=_dependencies(client),
+    )
+
+    response = client.get(f"/connections/{connection_id}?workspaceId={workspace_id}")
+
+    assert response.status_code == 200
+    assert "GitLab 인스턴스" in response.text
+    assert "https://gitlab.example.com" in response.text
+    assert "GitLab 프로젝트 경로" in response.text
+    assert "group/subgroup/sample-repo" in response.text
+    assert "활성 수집 규칙" in response.text
+    assert str(snapshot.scope_rule_version_id) in response.text
+    assert "Webhook 상태" in response.text
+    assert "healthy" in response.text
+    assert "shared_token" not in response.text
+    assert "webhookAuthMode" not in response.text
 
 
 def test_connection_detail_page_returns_404_for_unknown_connection(tmp_path) -> None:

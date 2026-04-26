@@ -29,7 +29,7 @@
 |------|------|--------|----------|
 | Phase 1 | 증적 문서 및 테스트 골격 준비 | scaffolded | T001-T004 |
 | Phase 2 | mixed-provider 공통 기반 구축 | US1-ready | T005-T007, T009-T012; T008 deferred to US3 |
-| Phase 3 | US1 GitLab 연결과 초기 snapshot | backend_complete | T013-T021, T023; T022 UI optional remains |
+| Phase 3 | US1 GitLab 연결과 초기 snapshot | complete | T013-T023 |
 | Phase 4 | US2 scope/ref 관리 | in_progress | scope preview allowlist rejection slice |
 | Phase 5 | US3 webhook 최신화 | pending | - |
 | Phase 6 | polish, quickstart, latency 검증 | pending | - |
@@ -38,7 +38,7 @@
 
 ### User Story 1
 
-- 상태: backend_complete
+- 상태: complete
 - 범위
   - GitLab self-managed 저장소 연결 생성
   - verify 성공 및 `reauth_required` / `ref_missing` 전이
@@ -58,9 +58,15 @@
     - Phase 1 scaffold: `tests/integration/repository_connections/test_gitlab_provider_flows.py`
     - Phase 1 scaffold: `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
     - Planned follow-up split in `T014`: `tests/integration/repository_connections/test_gitlab_connection_lifecycle.py`
+    - Operator detail coverage: `tests/integration/repository_connections/test_operator_connection_pages.py`
+      - GitLab instance URL and project path rendered in connection detail
+      - active scope rule traceability rendered for operator audit
+      - `webhookAuthMode` / `shared_token` not exposed in operator detail HTML
   - 실행 결과
     - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections tests/contract/repository_ingestion`
     - 결과: `244 passed, 9 skipped in 7.52s`
+    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_operator_connection_pages.py -q`
+    - 결과: `9 passed in 0.98s`
 
 ### User Story 2
 
@@ -427,6 +433,51 @@
 - diff hygiene
   - `git diff --check` 통과
 
+## 2026-04-26 US1 Operator Detail Completion Evidence
+
+- RED: GitLab operator detail summary
+  - 추가 테스트:
+    - `tests/integration/repository_connections/test_operator_connection_pages.py::test_connection_detail_page_renders_gitlab_provider_summary_without_auth_mode`
+  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_operator_connection_pages.py::test_connection_detail_page_renders_gitlab_provider_summary_without_auth_mode -q`
+  - 결과: 실패
+  - 의도한 실패 이유: operator detail template이 GitLab instance URL, provider project path, active scope traceability label을 렌더링하지 않음
+- GREEN: mixed-provider operator detail template
+  - 구현:
+    - `src/tci/web/templates/connections/detail.html`
+    - `src/tci/py.typed`
+  - 검증:
+    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_operator_connection_pages.py -q`
+    - 결과: `9 passed in 1.12s`
+  - 보안 확인:
+    - webhook health가 렌더링되는 GitLab operator detail HTML에서도 `shared_token` 및 `webhookAuthMode` 비노출
+- Focused regression
+  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_operator_connection_pages.py tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
+  - 결과: `57 passed, 3 skipped in 1.49s`
+- 정적 검증
+  - 명령: `PYTHONDONTWRITEBYTECODE=1 mypy src/tci/web/routes/repository_connection_detail.py src/tci/api/schemas/repository_connection.py src/tci/domain/services/get_repository_connection_detail.py`
+  - 결과: `Success: no issues found in 3 source files`
+  - 명령: `PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 mypy tests/integration/repository_connections/test_operator_connection_pages.py`
+  - 결과: `Success: no issues found in 1 source file`
+  - 명령: `ruff check tests/integration/repository_connections/test_operator_connection_pages.py`
+  - 결과: `All checks passed!`
+  - 명령: `black --check tests/integration/repository_connections/test_operator_connection_pages.py`
+  - 결과: `1 file would be left unchanged`
+  - 명령: `git diff --check`
+  - 결과: 통과
+  - 명령: `python -m pip check`
+  - 결과: `No broken requirements found.`
+- Reviewer loop follow-up
+  - `python-reviewer` 지적:
+    - webhook health가 없는 branch에서만 auth-mode 비노출을 확인해 assertion 실효성이 약함
+    - 새 테스트가 `client.app.state.dependencies` 직접 접근으로 mypy noise를 늘림
+  - 조치:
+    - GitLab connection에 active webhook secret을 seed하고 webhook health 렌더링 상태에서 `shared_token` / `webhookAuthMode` 비노출 검증
+    - `_dependencies()` helper와 `src/tci/py.typed` 추가로 test-target mypy 통과
+  - 최종 재리뷰:
+    - `reviewer`: findings 없음, approve
+    - `python-reviewer`: findings 없음, approve
+    - `security-reviewer`: findings 없음, approve
+
 ## Open Evidence Slots
 
 - 수동 quickstart 검증 메모
@@ -440,3 +491,4 @@
 - 2026-04-23: Phase 2 foundation partial evidence 추가 (`T005`, `T006`, `T011`)
 - 2026-04-24: GitLab remote parser, allowlist, localhost/private-IP/custom-port, fail-closed outbound guard evidence 추가 (`T007`, `T013`, `T016` 및 security slice)
 - 2026-04-24: 실제 PostgreSQL migration smoke와 실DB bootstrap 검증 완료, 004 downgrade/check constraint naming bug 수정
+- 2026-04-26: US1 operator detail/read-model/UI polish 완료 (`T022`)

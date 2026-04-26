@@ -13,6 +13,12 @@
       <p>{{ connection.remoteUrl }}</p>
       <p>상태: {{ connection.status }}</p>
       <p>기본 ref: {{ connection.defaultRefType }} {{ connection.defaultRefName }}</p>
+      {% if connection.providerInstanceUrl %}
+      <p>GitLab 인스턴스: {{ connection.providerInstanceUrl }}</p>
+      {% endif %}
+      {% if connection.providerProjectPath %}
+      <p>GitLab 프로젝트 경로: {{ connection.providerProjectPath }}</p>
+      {% endif %}
       <p>
         <a href="/connections/{{ connection.id }}/scope?workspaceId={{ workspace_id }}"
           >수집 범위 설정</a
@@ -88,7 +94,7 @@
         <p>승인된 스펙: {{ connection.traceability.planningInputReference.approvedSpecPath }}</p>
         <p>승인된 계획: {{ connection.traceability.planningInputReference.approvedPlanPath }}</p>
         <p>계획 입력 참조: {{ connection.traceability.planningInputReference.id }}</p>
-        <p>활성 규칙 버전: {{ connection.traceability.activeScopeRuleVersionId or "없음" }}</p>
+        <p>활성 수집 규칙: {{ connection.traceability.activeScopeRuleVersionId or "없음" }}</p>
         <p>최신 스냅샷: {{ connection.traceability.latestSnapshotId or "없음" }}</p>
       </section>
     </main>

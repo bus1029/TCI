@@ -15,7 +15,10 @@
   - GitLab SSH custom-port allowlist
   - GitHub/GitLab coexistence
   - snapshot allowlist rejection 분류 회귀 검증
-- 전체 webhook quickstart는 아직 실행 가능한 제품 동작이 아니라, 이후 구현과 검증이 따라야 할 기준선이다.
+  - GitLab operator detail의 instance URL, project path, active scope traceability 표시
+  - webhook health 렌더링 상태에서 `shared_token` / `webhookAuthMode` 비노출 검증
+- GitLab 연결부터 초기 snapshot 및 operator detail까지는 자동화 검증 기준선이 준비됐다.
+- scope/ref 전체 흐름과 webhook quickstart는 아직 실행 가능한 제품 동작이 아니라, 이후 구현과 검증이 따라야 할 기준선이다.
 - 현재 준비된 자동화 표면:
   - `tests/contract/repository_ingestion/test_gitlab_connection_contract.py`
   - `tests/contract/repository_ingestion/test_gitlab_webhook_contract.py`
@@ -23,12 +26,13 @@
   - `tests/contract/repository_ingestion/test_repository_scope_contract.py`
   - `tests/integration/repository_connections/test_gitlab_provider_flows.py`
   - `tests/integration/repository_connections/test_gitlab_connection_lifecycle.py`
+  - `tests/integration/repository_connections/test_operator_connection_pages.py`
   - `tests/unit/repository_connections/test_gitlab_provider_parsing.py`
   - `tests/unit/repository_connections/test_process_gitlab_event.py`
   - `tests/unit/repository_connections/test_update_default_ref.py`
   - `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
   - `tests/integration/repository_connections/test_phase2_migration_smoke.py`
-- 전체 quickstart 검증은 Phase 3 이후부터 실제 구현 상태에 맞춰 채워진다.
+- 전체 quickstart 검증은 US2/US3 이후 실제 구현 상태에 맞춰 채워진다.
 - 최신 실행 결과는 `delivery-evidence.md`를 기준으로 확인한다.
 
 ## 사전 조건
@@ -56,8 +60,9 @@
 2. `remoteUrl` host 또는 `host:port`가 allowlist에 없으면 git 접근 전에 400으로 차단되는지 확인한다.
 3. `/gitlab` 같은 path prefix가 instance subpath가 아니라 project namespace로 저장되는지 확인한다.
 4. `POST /api/repository-connections/{id}/verify`를 호출해 연결 검증이 성공하는지 확인한다.
-5. 상세 조회에서 `status=active`, `provider=gitlab_self_managed`, `lastProcessedEvent=null`인지 확인한다.
-6. 잘못된 token 또는 SSH key로 재검증하면 `reauth_required`로 전환되는지 확인한다.
+5. 상세 조회에서 `status=active`, `provider=gitlab_self_managed`, `providerInstanceUrl`, `providerProjectPath`, `lastProcessedEvent=null`인지 확인한다.
+6. Operator detail page에서 GitLab instance URL, project path, active scope traceability가 보이고 `shared_token` / `webhookAuthMode`가 보이지 않는지 확인한다.
+7. 잘못된 token 또는 SSH key로 재검증하면 `reauth_required`로 전환되는지 확인한다.
 
 ### 2. Scope rule 및 초기 snapshot
 

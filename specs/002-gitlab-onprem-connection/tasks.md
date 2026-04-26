@@ -49,7 +49,7 @@
 - 완료 체크가 현재 작업 상태의 기준이다. 상세 실행 로그와 리뷰 이력은 `delivery-evidence.md`와 `next-session-handoff.md`를 본다.
 - 2026-04-24 결정: `T008`은 US3 webhook event normalization 선행 작업으로 defer한다.
 - US1 진행 gate는 `T005`, `T006`, `T007`, `T009`, `T010`, `T011`, `T012` 완료로 충족한다.
-- 다음 우선순위는 US2 scope/ref 관리 또는 US3 webhook normalization이다.
+- 다음 우선순위는 US2 scope/ref 관리(`T024`~`T031`)다. US3를 시작하려면 먼저 `T008` webhook normalization을 진행한다.
 
 ---
 
@@ -73,7 +73,7 @@
 - [x] T019 [US1] Extend repository connection verify and default-ref update services for GitLab `reauth_required`/`ref_missing` transitions in `pilot-git-repo-connection/src/tci/domain/services/verify_repository_connection.py` and `pilot-git-repo-connection/src/tci/domain/services/update_default_ref.py`
 - [x] T020 [US1] Extend manual snapshot trigger and snapshot build services for GitLab provider provenance and `reauth_required`/`ref_missing` collection blocking in `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py` and `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`
 - [x] T021 [US1] Implement GitLab-capable repository connection API handlers in `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
-- [ ] T022 [US1] Extend connection detail query service and operator detail template for mixed-provider summaries and traceability in `pilot-git-repo-connection/src/tci/domain/services/get_repository_connection_detail.py`, `pilot-git-repo-connection/src/tci/web/routes/repository_connection_detail.py`, and `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
+- [x] T022 [US1] Extend connection detail query service and operator detail template for mixed-provider summaries and traceability in `pilot-git-repo-connection/src/tci/domain/services/get_repository_connection_detail.py`, `pilot-git-repo-connection/src/tci/web/routes/repository_connection_detail.py`, and `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
 - [x] T023 [US1] Capture User Story 1 verification evidence for GitLab MVP and GitHub regression in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
 
 **Checkpoint**: GitLab 연결과 초기 snapshot이 독립적으로 동작하고 GitHub 기존 흐름도 유지되어야 한다.
