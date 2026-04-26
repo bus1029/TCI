@@ -108,13 +108,12 @@ def create_repository_connection(command, *, dependencies):
             mirror = dependencies.git_mirror_manager.ensure_synced_mirror(
                 connection_id=connection_id,
                 remote_url=credential_bound_remote_url,
+                restore_remote_url=(
+                    None
+                    if credential_bound_remote_url == command.remote_url
+                    else command.remote_url
+                ),
             )
-            if credential_bound_remote_url != command.remote_url:
-                # 인증용 URL은 동기화 순간에만 사용하고, mirror 설정에는 원래 원격 주소만 남긴다.
-                dependencies.git_mirror_manager.reset_origin_url(
-                    mirror=mirror,
-                    remote_url=command.remote_url,
-                )
     except Exception as error:
         if isinstance(error, RepositoryConnectionProblem):
             raise

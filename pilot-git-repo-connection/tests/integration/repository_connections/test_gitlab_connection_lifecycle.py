@@ -8,6 +8,7 @@ import pytest
 from tests.support.repository_connection_testkit import (
     create_connection_payload,
     create_test_client,
+    create_test_ssh_private_key,
     seed_planning_input_reference,
 )
 from tci.domain.services.build_code_snapshot import (
@@ -59,11 +60,7 @@ def test_gitlab_ssh_custom_port_scope_preview_and_snapshot_build_share_allowlist
             remote_url="ssh://git@192.168.10.20:2222/group/sample-repo.git",
             transport="ssh",
             credential_type="ssh_private_key",
-            credential_secret=(
-                "-----BEGIN OPENSSH PRIVATE KEY-----\n"
-                "key\n"
-                "-----END OPENSSH PRIVATE KEY-----"
-            ),
+            credential_secret=create_test_ssh_private_key(tmp_path),
             credential_fingerprint="ssh-custom-port",
         ),
     )
@@ -129,11 +126,7 @@ def test_gitlab_ssh_custom_port_requires_port_allowlist_for_each_git_access_path
             remote_url="ssh://git@192.168.10.20:2222/group/sample-repo.git",
             transport="ssh",
             credential_type="ssh_private_key",
-            credential_secret=(
-                "-----BEGIN OPENSSH PRIVATE KEY-----\n"
-                "key\n"
-                "-----END OPENSSH PRIVATE KEY-----"
-            ),
+            credential_secret=create_test_ssh_private_key(tmp_path),
             credential_fingerprint="ssh-custom-port",
         ),
     )
@@ -238,11 +231,7 @@ def test_gitlab_ssh_custom_port_snapshot_failure_records_failed_sync_run(
             remote_url="ssh://git@192.168.10.20:2222/group/sample-repo.git",
             transport="ssh",
             credential_type="ssh_private_key",
-            credential_secret=(
-                "-----BEGIN OPENSSH PRIVATE KEY-----\n"
-                "key\n"
-                "-----END OPENSSH PRIVATE KEY-----"
-            ),
+            credential_secret=create_test_ssh_private_key(tmp_path),
             credential_fingerprint="ssh-custom-port",
         ),
     )

@@ -7,7 +7,7 @@
 
 ## Implementation Status
 
-- Phase 2 foundation과 US1 연결/초기 snapshot/operator detail 경로가 구현됐다.
+- Phase 2 foundation, US1 연결/초기 snapshot/operator detail, US2 scope/ref 관리 경로가 구현됐다.
 - 구현된 범위:
   - GitLab self-managed remote 파싱과 provider metadata 저장
   - host allowlist 기반 fail-closed 검증
@@ -19,9 +19,13 @@
   - 실제 PostgreSQL migration smoke, 실DB bootstrap, live constraint name regression
   - GitLab operator detail의 instance URL, project path, active scope traceability 표시
   - webhook health 렌더링 상태에서 `shared_token` / `webhookAuthMode` 비노출 회귀 검증
+  - GitLab scope rule 저장/detail projection, `excludeBinary`, `preview_failed`, auto-default scope provenance
+  - GitLab scoped snapshot의 active scope version stamping, default-ref carry-forward, prior history preservation
+  - empty-result snapshot의 `NO_INCLUDED_FILES` 실패 처리와 connection status 보존
+  - HTTPS PAT URL embedding 제거, askpass token handshake, isolated SSH agent, ambient Git config/agent 상속 차단
+  - scope filtering 전 raw Git tree entry cap과 blob read 전 prefiltering
 - 아직 pending인 범위:
   - GitLab webhook event normalization
-  - US2 scope/ref 관리
   - US3 webhook 수신/처리
 - 상세 증적은 `specs/002-gitlab-onprem-connection/delivery-evidence.md`를 기준으로 한다.
 

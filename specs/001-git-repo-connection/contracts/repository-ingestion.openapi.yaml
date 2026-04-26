@@ -391,7 +391,11 @@ components:
         maxFileSizeBytes:
           type: integer
           minimum: 1
+          maximum: 5242880
           default: 5242880
+        excludeBinary:
+          type: boolean
+          default: true
     RepositoryConnectionResponse:
       type: object
       required: [id, provider, remoteUrl, transport, defaultRefType, defaultRefName, status]
@@ -422,7 +426,9 @@ components:
         - type: object
           properties:
             latestScopeRule:
-              $ref: '#/components/schemas/ScopeRuleResponse'
+              anyOf:
+                - $ref: '#/components/schemas/ScopeRuleResponse'
+                - type: 'null'
             webhookHealth:
               $ref: '#/components/schemas/WebhookHealth'
             lastSuccessfulSnapshotAt:
@@ -474,9 +480,11 @@ components:
             type: string
         maxFileSizeBytes:
           type: integer
+        excludeBinary:
+          type: boolean
         warningState:
           type: string
-          enum: [ok, empty_result_risk, over_broad_include]
+          enum: [ok, empty_result_risk, preview_failed, over_broad_include]
     WebhookHealth:
       type: object
       properties:

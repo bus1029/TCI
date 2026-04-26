@@ -456,12 +456,20 @@ class RepositoryConnectionRepository:
         connection_id: uuid.UUID,
         created_by: uuid.UUID,
     ) -> CollectionScopeRuleVersion:
-        connection = self._require(
+        connection = self.get_for_update(
             workspace_id=workspace_id,
             connection_id=connection_id,
         )
-        if connection.active_scope_rule_version is not None:
-            return connection.active_scope_rule_version
+        if connection is None:
+            raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        if connection.active_scope_rule_version_id is not None:
+            scope_rule = self._session.get(
+                CollectionScopeRuleVersion,
+                connection.active_scope_rule_version_id,
+            )
+            if scope_rule is None:
+                raise LookupError("활성 범위 규칙을 찾을 수 없습니다.")
+            return scope_rule
 
         scope_rule = CollectionScopeRuleVersion(
             connection_id=connection.id,
@@ -472,6 +480,7 @@ class RepositoryConnectionRepository:
             blocked_file_types=[],
             max_file_size_bytes=5 * 1024 * 1024,
             exclude_binary=True,
+            is_auto_default=True,
             warning_state=ScopeRuleWarningState.OK,
             created_by=created_by,
         )

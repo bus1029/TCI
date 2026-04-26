@@ -26,8 +26,11 @@
   - live PostgreSQL check constraint name과 SQLAlchemy metadata naming 일치 검증
   - operator detail/read-model/UI의 GitLab instance/project/traceability 표시
   - webhook health 렌더링 상태에서 `shared_token` / `webhookAuthMode` 비노출 검증
-- 아직 pending인 항목은 US2 scope/ref 관리와 GitLab webhook event normalization/수신/처리다.
-- 따라서 이 문서는 “구현된 US1 baseline + 남은 목표 모델”로 해석한다.
+  - GitLab scope/ref 관리, `exclude_binary`, `preview_failed`, auto-default scope provenance
+  - snapshot materialization의 active scope stamping, scope-change retry, empty-result failure handling
+  - credentialed Git subprocess 환경 격리와 raw tree entry cap
+- 아직 pending인 항목은 GitLab webhook event normalization/수신/처리다.
+- 따라서 이 문서는 “구현된 US1/US2 baseline + 남은 US3 목표 모델”로 해석한다.
 
 ## Core Entities
 
@@ -93,7 +96,7 @@
 |-------|------|-------|
 | `id` | UUID | PK |
 | `connection_id` | UUID | FK -> RepositoryConnection |
-| `credential_type` | enum | `ssh_private_key`, `https_access_token` |
+| `credential_type` | enum | `ssh_private_key`, `https_pat` |
 | `encrypted_secret` | bytes/text | 암호화 저장 |
 | `display_fingerprint` | string | 운영자 표시용 |
 | `read_only_validated` | boolean | 읽기 전용 검증 결과 |
@@ -130,11 +133,23 @@
 
 기존과 동일하되 GitLab에서도 같은 의미를 유지한다.
 
+**Additional Fields**:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `max_file_size_bytes` | integer | provider-neutral hard cap. 현재 최대 `5 MiB` |
+| `exclude_binary` | boolean | 기본 `true`. `false`면 binary opt-in 가능 |
+| `is_auto_default` | boolean | 시스템이 생성한 default scope rule 여부 |
+| `warning_state` | enum | `ok`, `empty_result_risk`, `preview_failed`, `over_broad_include` |
+
 **Additional Rules**:
 
 - 기본 정책은 텍스트 기반 소스 파일만 수집
 - 바이너리, 생성 산출물, `5 MiB` 초과 파일은 provider와 무관하게 기본 제외
 - `empty_result_risk` 계산 로직은 provider와 무관해야 한다
+- `preview_failed`는 preview 실행 자체가 실패했음을 나타내며 allowlist rejection은 이 상태로 삼키지 않는다
+- `is_auto_default = true`인 scope rule은 연결 생성/스냅샷 시작 시 누락된 기본 rule을 보정하기 위한 provenance다
+- `exclude_binary = false`라도 hard-excluded path와 `5 MiB` 초과 파일은 포함하지 않는다
 
 ### 6. RepositoryEvent
 

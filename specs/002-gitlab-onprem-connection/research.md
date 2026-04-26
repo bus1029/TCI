@@ -86,6 +86,7 @@
 - HTTPS는 `read_repository` 범위를 가진 access token 계열만 허용한다.
 - SSH는 저장소 읽기 전용 검증을 통과한 key만 허용한다.
 - 연결 검증은 기존 `git ls-remote` 기반 validator를 재사용하되, provider별 URL 규칙과 인증 실패 메시지 매핑만 분기한다.
+- 런타임 credential binding은 secret을 remote URL, Git config, process argv에 남기지 않는 방식을 사용한다.
 
 **Rationale**:
 - spec은 GitHub와 동일하게 연결 단위 공유 읽기 전용 credential만 허용하라고 고정했다.
@@ -178,6 +179,26 @@
 - 사용자가 instance URL을 직접 입력: 명시성은 높지만 mismatch 검증과 UX 복잡도가 커진다.
 - `/gitlab`을 instance subpath로 자동 추정: 실제 namespace가 `gitlab/...`인 저장소와 충돌한다.
 - localhost/private IP를 일괄 차단: 보안은 단순하지만 온프레미스 검증과 사설 GitLab 운영을 지원하기 어렵다.
+
+## 결정 12: Credentialed Git subprocess는 격리된 Git 환경에서 실행한다
+
+**Decision**:
+- Git subprocess는 service-user `HOME`, `XDG_CONFIG_HOME`, ambient `GIT_CONFIG_*`, ambient `GIT_SSH_COMMAND`, ambient `SSH_AUTH_SOCK`을 상속하지 않는다.
+- `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_SYSTEM=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_TERMINAL_PROMPT=0`을 강제한다.
+- HTTPS PAT는 remote URL에 삽입하지 않고, `GIT_ASKPASS` helper가 per-session token으로 인증된 local request에만 PAT를 제공한다.
+- SSH private key는 temporary key file에 쓰지 않고 isolated `ssh-agent`에 stdin으로 등록한다. Git child에는 `SSH_AUTH_SOCK`/`SSH_AGENT_PID`를 노출하지 않고 `GIT_SSH_COMMAND`의 explicit `IdentityAgent`만 전달한다.
+- SSH agent cleanup 실패는 본 Git 작업의 성공/실패 결과를 덮어쓰지 않고 best-effort warning으로 처리한다.
+
+**Rationale**:
+- Credentialed Git 명령이 host-level `.gitconfig`, credential helper, `url.*.insteadOf`, ambient SSH agent를 신뢰하면 secret exfiltration 또는 의도하지 않은 remote redirect가 가능하다.
+- PAT를 remote URL에 넣으면 command, config, log, mirror metadata에 노출될 수 있다.
+- SSH private key temp file은 cleanup 실패나 filesystem inspection 리스크를 키운다.
+- Cleanup failure가 본 작업 오류를 덮어쓰면 운영자가 auth/ref/mirror 문제를 잘못 해석한다.
+
+**Alternatives considered**:
+- 기존 환경을 그대로 상속: 구현은 단순하지만 credentialed Git 경계에서 신뢰 범위가 과도하게 넓다.
+- PAT를 HTTPS URL userinfo로 전달: Git 표준 동작은 쉽지만 secret이 URL 형태로 퍼질 수 있다.
+- SSH key temp file 유지: 호환성은 좋지만 local disk secret exposure가 남는다.
 
 ## Sources Used
 

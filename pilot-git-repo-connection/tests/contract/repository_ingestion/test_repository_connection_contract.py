@@ -14,6 +14,7 @@ from tests.support.repository_connection_testkit import (
     create_connection_payload,
     create_planning_input_reference_payload,
     create_test_client,
+    create_test_ssh_private_key,
     seed_rotated_webhook_secret_with_grace,
     seed_planning_input_reference,
     serialize_github_webhook_payload,
@@ -478,7 +479,7 @@ def test_create_connection_rejects_unallowlisted_gitlab_ssh_port_before_git_acce
             remote_url="ssh://git@192.168.10.20:2222/group/sample-repo.git",
             transport="ssh",
             credential_type="ssh_private_key",
-            credential_secret="-----BEGIN OPENSSH PRIVATE KEY-----\nkey\n-----END OPENSSH PRIVATE KEY-----",
+            credential_secret=create_test_ssh_private_key(tmp_path),
             credential_fingerprint="ssh-key-private-ip",
         ),
     )
@@ -530,7 +531,7 @@ def test_create_connection_treats_gitlab_path_prefix_as_project_namespace_for_ss
             remote_url="git@gitlab.example.com:gitlab/group/sample-repo.git",
             transport="ssh",
             credential_type="ssh_private_key",
-            credential_secret="-----BEGIN OPENSSH PRIVATE KEY-----\nkey\n-----END OPENSSH PRIVATE KEY-----",
+            credential_secret=create_test_ssh_private_key(tmp_path),
             credential_fingerprint="ssh-key-01",
         ),
     )
@@ -558,7 +559,7 @@ def test_create_connection_treats_gitlab_path_prefix_as_project_namespace_for_ss
             remote_url="ssh://git@gitlab.example.com/gitlab/group/sample-repo.git",
             transport="ssh",
             credential_type="ssh_private_key",
-            credential_secret="-----BEGIN OPENSSH PRIVATE KEY-----\nkey\n-----END OPENSSH PRIVATE KEY-----",
+            credential_secret=create_test_ssh_private_key(tmp_path),
             credential_fingerprint="ssh-key-02",
         ),
     )
@@ -586,7 +587,7 @@ def test_create_connection_accepts_private_ip_gitlab_ssh_remote_with_custom_port
             remote_url="ssh://git@192.168.10.20:2222/group/sample-repo.git",
             transport="ssh",
             credential_type="ssh_private_key",
-            credential_secret="-----BEGIN OPENSSH PRIVATE KEY-----\nkey\n-----END OPENSSH PRIVATE KEY-----",
+            credential_secret=create_test_ssh_private_key(tmp_path),
             credential_fingerprint="ssh-key-private-ip",
         ),
     )

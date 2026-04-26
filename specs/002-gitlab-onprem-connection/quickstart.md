@@ -17,22 +17,32 @@
   - snapshot allowlist rejection 분류 회귀 검증
   - GitLab operator detail의 instance URL, project path, active scope traceability 표시
   - webhook health 렌더링 상태에서 `shared_token` / `webhookAuthMode` 비노출 검증
+  - GitLab scope/ref 관리, `excludeBinary`, filtered snapshot, empty-result failure
+  - HTTPS/SSH credential binding hardening과 Git subprocess 환경 격리
+  - snapshot raw tree entry cap과 blob read 전 scope prefiltering
 - GitLab 연결부터 초기 snapshot 및 operator detail까지는 자동화 검증 기준선이 준비됐다.
-- scope/ref 전체 흐름과 webhook quickstart는 아직 실행 가능한 제품 동작이 아니라, 이후 구현과 검증이 따라야 할 기준선이다.
+- scope/ref 전체 흐름은 자동화 검증 기준선이 준비됐다.
+- webhook quickstart는 아직 실행 가능한 제품 동작이 아니라, 이후 US3 구현과 검증이 따라야 할 기준선이다.
 - 현재 준비된 자동화 표면:
   - `tests/contract/repository_ingestion/test_gitlab_connection_contract.py`
   - `tests/contract/repository_ingestion/test_gitlab_webhook_contract.py`
   - `tests/contract/repository_ingestion/test_repository_connection_contract.py`
   - `tests/contract/repository_ingestion/test_repository_scope_contract.py`
+  - `tests/contract/repository_ingestion/test_gitlab_scope_contract.py`
   - `tests/integration/repository_connections/test_gitlab_provider_flows.py`
   - `tests/integration/repository_connections/test_gitlab_connection_lifecycle.py`
+  - `tests/integration/repository_connections/test_gitlab_scoped_snapshot.py`
   - `tests/integration/repository_connections/test_operator_connection_pages.py`
+  - `tests/integration/repository_connections/test_operator_scope_pages.py`
   - `tests/unit/repository_connections/test_gitlab_provider_parsing.py`
+  - `tests/unit/repository_connections/test_gitlab_scope_rules.py`
+  - `tests/unit/repository_connections/test_git_foundation.py`
+  - `tests/unit/repository_connections/test_git_mirror_manager.py`
   - `tests/unit/repository_connections/test_process_gitlab_event.py`
   - `tests/unit/repository_connections/test_update_default_ref.py`
   - `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
   - `tests/integration/repository_connections/test_phase2_migration_smoke.py`
-- 전체 quickstart 검증은 US2/US3 이후 실제 구현 상태에 맞춰 채워진다.
+- 전체 webhook quickstart 검증은 US3 이후 실제 구현 상태에 맞춰 채워진다.
 - 최신 실행 결과는 `delivery-evidence.md`를 기준으로 확인한다.
 
 ## 사전 조건
@@ -67,9 +77,20 @@
 ### 2. Scope rule 및 초기 snapshot
 
 1. `POST /api/repository-connections/{id}/scope-rules`에 include/exclude/file type 규칙을 저장한다.
-2. 바이너리, 생성 산출물, `5 MiB` 초과 파일이 기본 제외되는지 확인한다.
-3. `POST /api/repository-connections/{id}/snapshots`로 초기 snapshot을 실행한다.
-4. `RepositorySyncRun`이 `succeeded`, `CodeSnapshot`이 생성되고 traceability block이 채워지는지 확인한다.
+2. 응답과 상세 조회의 `latestScopeRule`에 `excludeBinary`, `maxFileSizeBytes`, `warningState`가 포함되는지 확인한다.
+3. `excludeBinary=false`일 때 binary opt-in은 가능하지만 hard excluded path와 `5 MiB` 초과 파일은 계속 제외되는지 확인한다.
+4. GitLab allowlist에 없는 host/port의 scope preview는 preview failure로 삼키지 않고 400 problem response로 전파되는지 확인한다.
+5. `POST /api/repository-connections/{id}/snapshots`로 초기 snapshot을 실행한다.
+6. `RepositorySyncRun`이 `succeeded`, `CodeSnapshot`이 생성되고 traceability block과 active scope version이 채워지는지 확인한다.
+7. 범위 규칙이 모든 파일을 제외하면 snapshot은 `NO_INCLUDED_FILES`로 실패하고 connection status는 오분류 전환되지 않는지 확인한다.
+
+### 2a. Credentialed Git subprocess hardening
+
+1. HTTPS 연결에서 PAT가 `remoteUrl`, mirror `origin`, Git command argv/config에 포함되지 않는지 확인한다.
+2. HTTPS askpass helper가 per-session token 없는 local socket request에 PAT를 제공하지 않는지 확인한다.
+3. SSH 연결에서 private key가 temporary file로 쓰이지 않고 isolated `ssh-agent`에 등록되는지 확인한다.
+4. Git child env에 ambient `SSH_AUTH_SOCK`, ambient `GIT_SSH_COMMAND`, service-user Git config가 상속되지 않는지 확인한다.
+5. SSH agent cleanup 실패가 성공한 Git 작업 또는 원래 Git 오류를 덮어쓰지 않는지 확인한다.
 
 ### 3. GitLab Push webhook
 

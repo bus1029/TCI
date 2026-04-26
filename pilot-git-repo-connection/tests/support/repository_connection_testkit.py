@@ -4,11 +4,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
+from fnmatch import fnmatchcase
 import hashlib
 import hmac
 import json
 from pathlib import Path
-from typing import Any
+import subprocess
+from typing import Any, Sequence
 import uuid
 
 # mypy: ignore-errors
@@ -18,10 +20,12 @@ from tci.app import AppDependencies, create_app
 from tci.domain.services.build_traceability_reference import (
     build_snapshot_traceability_reference,
 )
+from tci.domain.services.default_scope_policy import is_hard_excluded_path
 from tci.infrastructure.git.git_mirror_manager import (
     ManagedGitMirror,
     MaterializedGitSnapshot,
 )
+from tci.infrastructure.git.git_command_env import current_git_command_environment
 from tci.infrastructure.git.git_readonly_validator import ReadonlyProbeResult
 from tci.infrastructure.git.git_ref_resolver import (
     GitConnectionAuthError,
@@ -430,6 +434,7 @@ class FakeRepositoryConnectionRepository:
             blocked_file_types=[],
             max_file_size_bytes=5 * 1024 * 1024,
             exclude_binary=True,
+            is_auto_default=True,
             warning_state=ScopeRuleWarningState.OK,
             created_at=now_utc(),
             created_by=created_by,
@@ -569,6 +574,7 @@ class FakeScopeRuleRepository:
             blocked_file_types=list(draft.blocked_file_types),
             max_file_size_bytes=draft.max_file_size_bytes,
             exclude_binary=draft.exclude_binary,
+            is_auto_default=False,
             warning_state=draft.warning_state,
             created_at=now_utc(),
             created_by=draft.created_by,
@@ -873,7 +879,7 @@ class FakeGitRefResolver:
         self._store.last_resolved_remote_url = remote_url
         if (
             self._store.resolver_requires_bound_credential
-            and "x-access-token:" not in remote_url
+            and "GIT_ASKPASS" not in current_git_command_environment()
         ):
             raise GitConnectionAuthError()
         if ref_name in self._store.auth_failure_ref_names:
@@ -928,7 +934,16 @@ class FakeGitMirrorManager:
         self._store = store
 
     def read_snapshot_entries(
-        self, *, mirror: ManagedGitMirror, commit_sha: str
+        self,
+        *,
+        mirror: ManagedGitMirror,
+        commit_sha: str,
+        include_binary: bool = False,
+        include_paths: Sequence[str] = (),
+        exclude_paths: Sequence[str] = (),
+        allowed_file_types: Sequence[str] = (),
+        blocked_file_types: Sequence[str] = (),
+        max_file_size_bytes: int = 5 * 1024 * 1024,
     ) -> MaterializedGitSnapshot:
         return MaterializedGitSnapshot(
             tree_sha=self._store.mirror_tree_sha,
@@ -941,6 +956,16 @@ class FakeGitMirrorManager:
                     language_hint=None,
                 )
                 for path, content in self._store.mirror_snapshot_entries
+                if not is_hard_excluded_path(path)
+                and len(content) <= max_file_size_bytes
+                and (include_binary or b"\x00" not in content)
+                and (not include_paths or _matches_any_path(path, include_paths))
+                and not _matches_any_path(path, exclude_paths)
+                and (
+                    not allowed_file_types
+                    or _matches_file_type(path, allowed_file_types)
+                )
+                and not _matches_file_type(path, blocked_file_types)
             ),
         )
 
@@ -1206,6 +1231,7 @@ def seed_active_scope_rule_version(
         blocked_file_types=list(blocked_file_types or []),
         max_file_size_bytes=max_file_size_bytes,
         exclude_binary=exclude_binary,
+        is_auto_default=False,
         warning_state=warning_state,
         created_at=now_utc(),
         created_by=created_by or workspace_id,
@@ -1319,6 +1345,25 @@ def create_connection_payload(
             "fingerprint": credential_fingerprint,
         },
     }
+
+
+def create_test_ssh_private_key(tmp_path: Path) -> str:
+    key_path = tmp_path / f"tci-test-key-{uuid.uuid4().hex}"
+    subprocess.run(
+        (
+            "ssh-keygen",
+            "-t",
+            "ed25519",
+            "-N",
+            "",
+            "-f",
+            str(key_path),
+        ),
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return key_path.read_text(encoding="utf-8")
 
 
 def create_planning_input_reference_payload(
@@ -1477,6 +1522,21 @@ def seed_repository_event_cursor(
 
 def serialize_github_webhook_payload(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
+def _matches_any_path(path: str, patterns: Sequence[str]) -> bool:
+    return any(fnmatchcase(path, pattern) for pattern in patterns)
+
+
+def _matches_file_type(path: str, file_types: Sequence[str]) -> bool:
+    lowered_path = path.lower()
+    for file_type in file_types:
+        normalized = file_type.lower()
+        if normalized.startswith(".") and lowered_path.endswith(normalized):
+            return True
+        if not normalized.startswith(".") and lowered_path.endswith(f".{normalized}"):
+            return True
+    return False
 
 
 def _load_test_settings(tmp_path: Path, *, database_url: str | None = None):

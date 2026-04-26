@@ -17,8 +17,10 @@
   - 실제 PostgreSQL migration smoke, 실DB bootstrap, live constraint name regression
   - operator detail/read-model/UI의 GitLab instance/project/traceability 표시
   - webhook health 렌더링 상태에서 `shared_token` / `webhookAuthMode` 비노출 검증
+  - US2 scope/ref 관리, `excludeBinary`, scope preview warning, filtered snapshot
+  - HTTPS/SSH credential binding hardening과 credentialed Git subprocess 환경 격리
+  - snapshot raw tree entry cap과 blob read 전 scope prefiltering
 - 남은 구현 범위:
-  - US2 scope/ref 관리
   - GitLab webhook event normalization
   - US3 webhook 수신/처리
 
@@ -69,6 +71,7 @@
 | GitLab MR update 세분화 | `action=update` 중 `oldrev` 존재 또는 `last_commit.id` 변경이 감지된 경우만 snapshot 후보로 인정한다. reviewer/label/title 변경만 있는 update는 `record_only`다. |
 | GitLab 서버 unreachable | canonical status는 유지하고 health projection에 `providerReachabilityStatus=unreachable_recently`로 기록한다. auth 실패일 때만 `reauth_required`로 전환한다. |
 | GitLab credential 허용 범위 | HTTPS는 `read_repository` scope 토큰만, SSH는 read-only 검증을 통과한 key만 허용한다. |
+| Credential runtime binding | HTTPS PAT는 remote URL에 넣지 않고 askpass token handshake로 전달한다. SSH private key는 temp file에 쓰지 않고 isolated `ssh-agent`에 등록한다. Git subprocess는 ambient Git config/SSH agent를 상속하지 않는다. |
 | GitHub 호환 전략 | GitHub route와 contract는 유지하고, provider adapter 계층을 추가하는 additive refactor만 허용한다. |
 | Event cursor 의미 | `default_ref`, `pr:{number}`, `mr:{iid}` 단위 cursor를 유지해 stale event를 provider-neutral하게 거른다. |
 | Operator summary | connection detail은 provider와 무관하게 `lastSuccessfulSnapshotAt`, `lastFailedSyncAt`, `lastProcessedEvent`, `webhookHealth`, `traceability`를 동일 shape로 제공한다. |
@@ -172,6 +175,10 @@ pilot-git-repo-connection/
 
 - scope rule, file filtering, snapshot archive, traceability block은 기존 공통 구현을 유지한다.
 - GitLab 연결도 동일한 scope precedence와 hard exclude를 적용한다.
+- scope rule response/detail은 `excludeBinary`, `maxFileSizeBytes`, `warningState`를 provider-neutral하게 노출한다.
+- `preview_failed`는 scope preview 실패만 나타내며 GitLab allowlist rejection은 problem response로 전파한다.
+- snapshot materialization은 active scope rule version을 stamp하고, scope 변경 race가 감지되면 재시도한다.
+- raw Git tree entry 수는 scope/hard-exclude 필터 전에 제한하고, blob read 전 path/file-type/size prefilter를 적용한다.
 - `RepositorySyncRun`과 `CodeSnapshot`은 provider-neutral로 유지하고, trigger type에 `webhook_merge_request`만 추가한다.
 - snapshot detail과 operator UI는 provider 값만 추가하고 structure는 바꾸지 않는다.
 

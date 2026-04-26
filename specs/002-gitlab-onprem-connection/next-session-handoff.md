@@ -2,164 +2,183 @@
 
 ## 1. 짧은 요약
 
-GitLab self-managed 저장소 연결의 US1 경로를 완료했다.
+GitLab self-managed 저장소 연결의 `US1`과 `US2`는 완료됐다.
 
-완료 기준:
+- 완료: `T013`~`T023` GitLab 연결/verify/초기 snapshot
+- 완료: `T024`~`T031` scope/ref 관리와 filtered snapshot
+- 완료: reviewer loop findings 전부 해소
+- 아직 미구현: `T008`, `T032`~`T043` US3 webhook 수신/처리
 
-- Phase 2의 US1 필요분: `T009`, `T010`, `T012`
-- US1 구현/검증: `T017`~`T023`
-- 이번 세션에서 `T022` operator detail/read-model/UI polish 완료
-- `T008`은 US3 webhook event normalization 선행 작업으로 계속 defer
-
-다음 우선순위는 US2 scope/ref 관리(`T024`~`T031`)다.
+다음 세션은 US3 시작 전 `T008` provider event normalization부터 TDD로 진행하면 된다.
 
 ## 2. 현재 상태
 
 - 코드 변경은 아직 커밋되지 않았다.
-- 현재 `git status --short` 기준 변경 파일:
-  - `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
-  - `pilot-git-repo-connection/src/tci/py.typed` 신규
-  - `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_connection_pages.py`
-  - `specs/002-gitlab-onprem-connection/delivery-evidence.md`
-  - `specs/002-gitlab-onprem-connection/tasks.md`
-  - `specs/002-gitlab-onprem-connection/next-session-handoff.md`
-- `tasks.md`는 `T022` 완료로 갱신됐다.
-- `delivery-evidence.md`는 `T022` RED/GREEN, 정적 검증, reviewer loop 결과까지 갱신됐다.
-- 최종 `reviewer`, `python-reviewer`, `security-reviewer` 재리뷰는 모두 findings 없음이다.
-- `python -m pip check`는 통과했다.
-- `pip-audit` / `python -m pip_audit`는 이번 세션에서 실행하지 않았다. 이전 기록상 로컬 도구 미설치 gap이 남아 있다.
+- `git status --short` 기준 다수의 수정 파일과 신규 파일이 있다.
+- `tasks.md`는 `T024`~`T031` 완료, 다음 우선순위 `T008`/US3로 갱신됐다.
+- `delivery-evidence.md`는 US2 RED/GREEN, reviewer loop, security hardening, 전체 Python suite 결과까지 갱신됐다.
+- `reviewer`, `python-reviewer`, `security-reviewer`는 모두 blocking findings 없음으로 종료됐다.
+- 실행 중인 subagent는 없다.
+
+중요 신규 파일:
+
+- `pilot-git-repo-connection/src/tci/infrastructure/git/git_command_env.py`
+- `pilot-git-repo-connection/alembic/versions/005_scope_rule_preview_failed_warning.py`
+- `pilot-git-repo-connection/alembic/versions/006_scope_rule_auto_default_flag.py`
+- `pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_scope_contract.py`
+- `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_scope_rules.py`
+- `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_scoped_snapshot.py`
 
 ## 3. 이번 세션에서 바뀐 것
 
-- Operator detail page가 GitLab self-managed 연결의 `providerInstanceUrl`, `providerProjectPath`를 표시한다.
-- Operator detail page의 traceability label을 `활성 수집 규칙`으로 정리했다.
-- GitLab operator detail 테스트가 active webhook secret을 seed해 `webhookHealth` 렌더링 경로를 실제로 탄다.
-- `webhookHealth`가 렌더링되는 HTML에서도 `shared_token` 및 `webhookAuthMode`가 노출되지 않음을 회귀 테스트로 고정했다.
-- `src/tci/py.typed`를 추가해 test-target `mypy`가 local `tci` package를 typed package로 해석하게 했다.
-- `next-session-handoff.md`는 US1 완료와 US2 착수 기준으로 정리했다.
+- Scope rule API/HTML이 `excludeBinary`를 request, response, detail projection, operator form에 포함한다.
+- GitLab scope save/detail contract와 scoped snapshot integration 테스트가 추가됐다.
+- Scope rule persistence에 `preview_failed` 경고 상태와 auto-default provenance가 추가됐다.
+- Snapshot build는 active/default scope version을 확정한 뒤 materialize하고, scope 변경 race를 retry한다.
+- Empty-result snapshot은 `NO_INCLUDED_FILES`로 실패하되 connection status를 잘못 전환하지 않는다.
+- Git mirror materialization은 scope/hard-exclude/file-type 필터를 blob read 전에 적용한다.
+- Snapshot tree walk는 raw tree entry count도 제한한다.
+- HTTPS PAT는 remote URL에 넣지 않고 askpass Unix socket + per-session token + request budget으로 처리한다.
+- SSH private key는 temp file에 쓰지 않고 isolated `ssh-agent`에 stdin으로 등록한다.
+- Git subprocess env는 ambient Git config, service-user home config, ambient SSH agent, ambient `GIT_SSH_COMMAND`를 상속하지 않는다.
+- Operator scope page가 GitLab instance URL, project path, binary policy warning을 표시한다.
+- `webhookAuthMode`, `shared_token`, secret 값은 general API/detail/operator HTML에 노출하지 않는다.
 
 ## 4. 다음 에이전트가 먼저 봐야 할 파일
+
+현재 상태 확인:
 
 - `specs/002-gitlab-onprem-connection/tasks.md`
 - `specs/002-gitlab-onprem-connection/delivery-evidence.md`
 - `specs/002-gitlab-onprem-connection/spec.md`
 - `specs/002-gitlab-onprem-connection/plan.md`
-- `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
-- `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_connection_pages.py`
-- `pilot-git-repo-connection/src/tci/py.typed`
-- US2 시작 시:
-  - `pilot-git-repo-connection/src/tci/domain/services/default_scope_policy.py`
-  - `pilot-git-repo-connection/src/tci/domain/services/scope_filter_engine.py`
-  - `pilot-git-repo-connection/src/tci/domain/services/evaluate_scope_rule_warning.py`
-  - `pilot-git-repo-connection/src/tci/infrastructure/persistence/scope_rule_repository.py`
-  - `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`
-  - `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py`
-  - `pilot-git-repo-connection/src/tci/api/routes/repository_scope.py`
-  - `pilot-git-repo-connection/src/tci/web/routes/repository_scope.py`
-  - `pilot-git-repo-connection/src/tci/web/templates/connections/scope.html`
+
+US2 구현/회귀 맥락:
+
+- `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`
+- `pilot-git-repo-connection/src/tci/domain/services/repository_connection_support.py`
+- `pilot-git-repo-connection/src/tci/infrastructure/git/git_command_env.py`
+- `pilot-git-repo-connection/src/tci/infrastructure/git/git_mirror_manager.py`
+- `pilot-git-repo-connection/tests/unit/repository_connections/test_git_foundation.py`
+- `pilot-git-repo-connection/tests/unit/repository_connections/test_git_mirror_manager.py`
+- `pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_scope_contract.py`
+- `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_scope_rules.py`
+- `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_scoped_snapshot.py`
+
+US3 시작 파일:
+
+- `pilot-git-repo-connection/src/tci/infrastructure/webhooks/provider_event_types.py`
+- `pilot-git-repo-connection/src/tci/domain/services/repository_event_processing.py`
+- `pilot-git-repo-connection/src/tci/infrastructure/webhooks/gitlab_token_verifier.py`
+- `pilot-git-repo-connection/src/tci/infrastructure/webhooks/gitlab_delivery_id.py`
+- `pilot-git-repo-connection/src/tci/infrastructure/webhooks/gitlab_event_parser.py`
+- `pilot-git-repo-connection/src/tci/domain/services/process_gitlab_event.py`
+- `pilot-git-repo-connection/src/tci/api/routes/gitlab_webhooks.py`
+- `pilot-git-repo-connection/src/tci/infrastructure/queue/repository_ingestion_tasks.py`
 
 ## 5. 꼭 유지해야 할 기준
 
 - GitLab self-managed outbound git 접근 전에는 반드시 allowlist 검사를 통과해야 한다.
 - Stored credential은 GitLab allowlist 통과 전에 decrypt하지 않는다.
-- Allowlist는 port-sensitive origin 정책이다. 기본 포트는 host만 허용하고, 비표준 포트는 `host:port`가 필요하다.
-- SSH custom port는 `provider_instance_url`에 저장하지 않는다. 저장된 `remote_url`에서 port를 다시 파싱해야 한다.
+- Allowlist는 port-sensitive origin 정책이다. 비표준 포트는 `host:port`가 필요하다.
+- SSH custom port는 `provider_instance_url`에 저장하지 않는다. 저장된 `remote_url`에서 다시 파싱해야 한다.
 - Snapshot allowlist rejection은 credential failure나 `reauth_required`로 오분류하면 안 된다. `MIRROR_SYNC_FAILED`로 기록해야 한다.
-- Scope preview의 allowlist rejection은 preview 실패로 삼키면 안 된다.
-- Generic `401 unauthorized` / `403 forbidden`을 auth failure로 분류하지 않는다. GitLab-specific `HTTP Basic: Access denied` 같은 명확한 메시지만 auth failure로 본다.
-- `webhookAuthMode`는 일반 connection create/patch/detail response와 operator detail HTML에 노출하지 않는다.
-- Webhook secret 값, `shared_token`, `webhookAuthMode`는 operator detail에 노출하지 않는다.
-- local decrypt/config failure는 사용자 credential 문제로 persisted transition하지 않는다.
+- Scope preview의 allowlist rejection은 preview failure로 삼키면 안 된다.
+- Generic `401 unauthorized` / `403 forbidden`은 auth failure로 분류하지 않는다.
+- `webhookAuthMode`, `shared_token`, webhook secret 값은 general response/operator HTML에 노출하지 않는다.
+- Local decrypt/config failure는 사용자 credential 문제로 persisted transition하지 않는다.
 - GitHub 기존 흐름은 GitLab 변경 때문에 깨지면 안 된다.
+- Credentialed Git subprocess는 ambient Git config, ambient `GIT_SSH_COMMAND`, ambient `SSH_AUTH_SOCK`을 상속하면 안 된다.
+- HTTPS askpass socket은 token 없는 local client에 PAT를 제공하면 안 된다.
+- SSH agent cleanup 실패는 본 작업의 성공/실패 결과를 덮어쓰면 안 된다.
+- 대형 저장소는 scope filter 이전 raw tree entry cap으로 worker 점유를 제한해야 한다.
 
 ## 6. 다시 논의하지 말아야 할 결정
 
 - `T008`은 US3 webhook event normalization 선행 작업으로 defer한다.
 - `T022`는 완료됐다.
-- 다음 기본 후보는 US2 scope/ref 관리(`T024`~`T031`)다.
+- `T024`~`T031`은 완료됐다.
+- 다음 기본 후보는 US3 webhook 수신/처리(`T008`, `T032`~`T043`)다.
 - 사용자가 GitLab instance URL을 직접 입력하는 방식은 이번 범위에서 제외한다.
 - GitLab instance subpath는 heuristic으로 추정하지 않는다.
 - `/gitlab` path segment도 namespace/project path로 취급한다.
-- `localhost`, private IPv4, 비표준 SSH/HTTPS 포트는 지원한다. 단, 해당 origin은 `TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS`에 명시되어야 한다.
+- `localhost`, private IPv4, 비표준 SSH/HTTPS 포트는 지원한다. 해당 origin은 `TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS`에 명시되어야 한다.
 - IPv6는 이번 범위에서 거부한다.
 - `github.com`과 trailing-dot host는 GitLab self-managed provider로 받지 않는다.
 - 공식 connection status는 `active`, `reauth_required`, `ref_missing`만 유지한다. Reachability/webhook 문제는 health로 분리한다.
 
 ## 7. 이번 세션에서 얻은 중요한 메모
 
-- `T022`는 API serializer 변경 없이 template/test 중심으로 마감됐다.
-- `serialize_repository_connection_detail()`은 계속 whitelist payload를 만들고, template은 serialized dict만 렌더링한다.
-- `webhookHealth` serialization은 status, rejection reason, timestamp, rotation metadata만 포함한다. secret 값이나 auth mode는 포함하지 않는다.
-- `src/tci/py.typed`는 빈 marker 파일이다. package discovery/typecheck 개선 목적이며 runtime 동작 변경은 없다.
-- `TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS` 예시:
-  - `gitlab.example.com`
-  - `gitlab.example.com:8443`
-  - `localhost:2222`
-  - `192.168.10.20:2222`
-- Repo에는 tracked `.pyc` 파일이 일부 있다. 테스트 실행으로 변경될 수 있으나 소스 변경이 아니면 임의 삭제하지 말고 `git restore -- <tracked .pyc>`로 오염만 제거한다.
+- 기존 scope engine/snapshot pipeline은 이미 provider-neutral이었다.
+- `excludeBinary=false`일 때 binary file은 포함 가능하지만, hard excluded path와 `5 MiB` 초과 파일은 계속 제외된다.
+- Operator scope form에서 checkbox가 누락된 직접 POST는 기존 기본값 유지를 위해 `excludeBinary=true`로 처리한다.
+- GitLab allowlist rejection은 scope preview helper에서 `RepositoryConnectionProblem`으로 전파되어야 한다.
+- Repo에는 tracked `.pyc` 파일이 일부 있다. 테스트 실행으로 변경되면 소스 변경이 아니므로 `git restore -- <tracked .pyc>`로 오염만 제거한다.
+- `pip_audit`는 현재 workspace에 설치되어 있지 않다. `python -m pip check`는 통과했다.
 
 ## 8. 테스트와 검증 상태
 
-- RED:
-  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_operator_connection_pages.py::test_connection_detail_page_renders_gitlab_provider_summary_without_auth_mode -q`
-  - 결과: 실패
-  - 의도한 실패 이유: `detail.html`이 `GitLab 인스턴스`, `GitLab 프로젝트 경로`, active scope traceability label을 렌더링하지 않음
-- GREEN:
-  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_operator_connection_pages.py -q`
-  - 결과: `9 passed in 1.12s`
-- Focused regression:
-  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_operator_connection_pages.py tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
-  - 결과: `57 passed, 3 skipped in 1.54s`
-- Typecheck:
-  - 명령: `PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 mypy tests/integration/repository_connections/test_operator_connection_pages.py`
-  - 결과: `Success: no issues found in 1 source file`
-  - 명령: `PYTHONDONTWRITEBYTECODE=1 mypy src/tci/web/routes/repository_connection_detail.py src/tci/api/schemas/repository_connection.py src/tci/domain/services/get_repository_connection_detail.py`
-  - 결과: `Success: no issues found in 3 source files`
-- Style/format:
-  - 명령: `ruff check tests/integration/repository_connections/test_operator_connection_pages.py src/tci/py.typed`
-  - 결과: `All checks passed!`
-  - 명령: `black --check tests/integration/repository_connections/test_operator_connection_pages.py`
-  - 결과: `1 file would be left unchanged`
-- Diff/package:
-  - 명령: `git diff --check`
-  - 결과: 통과
-  - 명령: `python -m pip check`
-  - 결과: `No broken requirements found.`
-- Reviewer loop:
-  - 1차 `reviewer`: findings 없음
-  - 1차 `python-reviewer`: 2건 지적
-    - auth-mode 비노출 assertion이 webhook health 렌더링 경로를 충분히 타지 않음
-    - `client.app.state.dependencies` 직접 접근으로 test-target mypy noise 증가
-  - 조치:
-    - active webhook secret seed 후 `Webhook 상태` / `healthy` 렌더링 확인
-    - `_dependencies()` helper와 `src/tci/py.typed` 추가
-  - 1차 `security-reviewer`: findings 없음
-  - 최종 `reviewer`: findings 없음, approve
-  - 최종 `python-reviewer`: findings 없음, approve
-  - 최종 `security-reviewer`: findings 없음, approve
+TDD 주요 RED:
+
+- 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py -q`
+- 결과: `2 failed, 6 passed`
+- 의도한 실패: scope projection에 `excludeBinary`가 없고, `excludeBinary=false`가 snapshot filter path에 전달되지 않음
+
+TDD GREEN:
+
+- 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py -q`
+- 결과: `8 passed in 0.93s`
+
+Reviewer finding hardening:
+
+- 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections/test_git_foundation.py -q`
+- 결과: `32 passed in 2.28s`
+- 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections/test_git_mirror_manager.py -q`
+- 결과: `19 passed in 9.66s`
+
+관련 범위 회귀:
+
+- 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/unit/repository_connections/test_git_mirror_manager.py tests/unit/repository_connections/test_git_foundation.py tests/unit/repository_connections/test_phase2_foundation.py tests/unit/repository_connections/test_update_default_ref.py tests/unit/repository_connections/test_verify_repository_connection.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py tests/contract/repository_ingestion/test_repository_connection_contract.py tests/contract/repository_ingestion/test_repository_scope_contract.py tests/integration/repository_connections/test_scoped_snapshot.py tests/integration/repository_connections/test_operator_scope_pages.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py tests/integration/repository_connections/test_phase2_migration_smoke.py -q`
+- 결과: `174 passed, 5 skipped in 15.03s`
+
+전체 Python suite:
+
+- 명령: `PYTHONDONTWRITEBYTECODE=1 pytest -q`
+- 결과: `354 passed, 17 skipped in 16.43s`
+
+정적/패키지 검증:
+
+- focused `mypy`: `Success: no issues found in 22 source files`
+- focused `ruff check`: `All checks passed!`
+- focused `black --check`: `5 files would be left unchanged`
+- `git diff --check`: 통과
+- `python -m pip check`: `No broken requirements found.`
+- `python -m pip_audit`: `/opt/anaconda3/bin/python: No module named pip_audit`
+
+최종 reviewer 결과:
+
+- `reviewer`: blocking findings 없음
+- `python-reviewer`: blocking findings 없음, approve
+- `security-reviewer`: blocking findings 없음, prior security findings addressed
 
 ## 9. 다음 세션의 시작 순서
 
-1. `git status --short`로 현재 diff를 확인한다.
-2. `tasks.md`와 `delivery-evidence.md`에서 `T022` 완료 상태가 유지되는지 확인한다.
-3. US2 scope/ref 관리 테스트부터 시작한다.
-   - `T024`: GitLab scope rule save/detail contract
-   - `T025`: provider-neutral scope precedence, hard excludes, `5 MiB` guard unit tests
-   - `T026`: scoped GitLab snapshots, default-ref change carry-forward, prior history preservation, empty-result blocking, scope traceability integration tests
-4. RED를 실제로 확인한 뒤 `T027`~`T030` 구현으로 넘어간다.
-5. 변경 후 `pytest`, `mypy`, `ruff`, `black --check`, `git diff --check`, `python -m pip check`를 실행한다.
-6. 구현 후 `reviewer`, `python-reviewer`, 보안 민감 변경이면 `security-reviewer`를 다시 돌린다.
+1. `git status --short`로 현재 diff와 tracked `.pyc` 오염 여부를 확인한다.
+2. `specs/002-gitlab-onprem-connection/tasks.md`에서 `T008`과 US3 작업 순서를 확인한다.
+3. `T008` provider event normalization의 RED 테스트를 먼저 작성한다.
+4. 이어서 `T032`~`T035` webhook contract/unit/integration/GitHub regression 테스트를 작성한다.
+5. RED 확인 후 `T036`~`T042` 구현으로 넘어간다.
+6. 구현 후 `reviewer`, `python-reviewer`, `security-reviewer` loop를 다시 돌린다.
 
 ## 10. 마지막 액션과 바로 다음 액션
 
-마지막 액션은 이 handoff를 현재 `T022` diff, 검증 결과, reviewer loop 결과 기준으로 교체한 것이다.
+마지막 액션은 US2 reviewer loop findings 해소, 전체 Python suite 검증, evidence/handoff 갱신이다.
 
-바로 다음 액션은 `git status --short` 확인 후 US2 scope/ref 관리의 RED 테스트(`T024`~`T026`)를 작성하는 것이다.
+바로 다음 액션은 US3 선행 `T008`의 RED 테스트 작성이다.
 
 ## 병렬 작업과 소유권
 
 - 구현 소유권은 parent session이 가졌다.
 - 계획 단계에서 `planner`가 read-only 단계 분해를 보조했다.
-- 구현 후 `reviewer`, `python-reviewer`, `security-reviewer`를 read-only 검증에 사용했다.
-- `python-reviewer` findings 2건은 parent session에서 수정했다.
-- 최종 reviewer loop는 모두 findings 없음이다.
+- reviewer loop에서 `reviewer`, `python-reviewer`, `security-reviewer`가 재검토했다.
+- reviewer loop는 no blocking findings로 종료됐다.

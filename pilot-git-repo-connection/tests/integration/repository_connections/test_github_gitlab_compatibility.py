@@ -114,13 +114,14 @@ def test_github_and_gitlab_connection_verify_and_snapshot_flows_coexist(
         if connection_id == github_id:
             github_sync_run = sync_run
             github_snapshot = snapshot
-            assert "x-access-token:" in (store.last_resolved_remote_url or "")
+            assert store.last_resolved_remote_url == (
+                "https://github.com/acme/sample-repo.git"
+            )
         else:
             gitlab_sync_run = sync_run
             gitlab_snapshot = snapshot
             assert store.last_resolved_remote_url == (
-                "https://x-access-token:readonly-token-value"
-                "@gitlab.example.com/group/sample-repo.git"
+                "https://gitlab.example.com/group/sample-repo.git"
             )
 
     github_detail = client.get(f"/api/repository-connections/{github_id}").json()

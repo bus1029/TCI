@@ -30,7 +30,7 @@
 | Phase 1 | 증적 문서 및 테스트 골격 준비 | scaffolded | T001-T004 |
 | Phase 2 | mixed-provider 공통 기반 구축 | US1-ready | T005-T007, T009-T012; T008 deferred to US3 |
 | Phase 3 | US1 GitLab 연결과 초기 snapshot | complete | T013-T023 |
-| Phase 4 | US2 scope/ref 관리 | in_progress | scope preview allowlist rejection slice |
+| Phase 4 | US2 scope/ref 관리 | complete | T024-T031 |
 | Phase 5 | US3 webhook 최신화 | pending | - |
 | Phase 6 | polish, quickstart, latency 검증 | pending | - |
 
@@ -70,7 +70,7 @@
 
 ### User Story 2
 
-- 상태: in_progress
+- 상태: complete
 - 범위
   - GitLab ref 변경 관리
   - scope rule 저장과 경고
@@ -79,14 +79,36 @@
 - 근거
   - Contract
     - Phase 1 scaffold: `tests/contract/repository_ingestion/test_gitlab_connection_contract.py`
+    - Implemented coverage: `tests/contract/repository_ingestion/test_gitlab_scope_contract.py`
+      - GitLab scope rule save/detail projection
+      - `excludeBinary` request/response/detail projection
+      - GitLab allowlist rejection before preview git access
     - Implemented coverage: `tests/contract/repository_ingestion/test_repository_scope_contract.py`
       - GitLab allowlist rejection is propagated before preview git access
+      - shared scope projection includes `excludeBinary`
+  - Unit
+    - Implemented coverage: `tests/unit/repository_connections/test_gitlab_scope_rules.py`
+      - provider-neutral scope precedence
+      - hard excludes and `5 MiB` guard override explicit includes
+      - binary opt-in when `excludeBinary=false`
   - Integration
     - Phase 1 scaffold: `tests/integration/repository_connections/test_gitlab_provider_flows.py`
     - Phase 1 scaffold: `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+    - Implemented coverage: `tests/integration/repository_connections/test_gitlab_scoped_snapshot.py`
+      - GitLab scoped snapshot stamps active scope version
+      - default-ref change affects future sync without mutating prior history
+      - empty-result snapshot fails with `NO_INCLUDED_FILES` without status transition
+    - Operator coverage: `tests/integration/repository_connections/test_operator_scope_pages.py`
+      - GitLab instance/project summary on scope page
+      - binary policy warning state display
   - 실행 결과
-    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections tests/contract/repository_ingestion`
-    - 결과: `244 passed, 9 skipped in 7.52s`
+    - RED: `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py -q`
+    - 결과: `2 failed, 6 passed`
+    - 의도한 실패 이유: `excludeBinary`가 scope API/detail projection과 snapshot filter path에 전달되지 않음
+    - GREEN: `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py -q`
+    - 결과: `8 passed in 0.93s`
+    - Focused regression: `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py tests/contract/repository_ingestion/test_repository_scope_contract.py tests/integration/repository_connections/test_scoped_snapshot.py tests/integration/repository_connections/test_operator_scope_pages.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
+    - 결과: `26 passed, 3 skipped in 1.15s`
 
 ### User Story 3
 
@@ -149,9 +171,9 @@
 |-----------|--------|------------------|--------|
 | SC-001 | GitLab 연결부터 첫 snapshot 완료까지 15분 이내 | quickstart harness + US1 integration | pending |
 | SC-002 | 유효한 Push/MR 이벤트 95% 이상 1분 이내 처리 상태 반영 | latency harness + webhook integration | pending |
-| SC-003 | snapshot 100% traceability | connection detail + snapshot detail checks | pending |
+| SC-003 | snapshot 100% traceability | connection detail + snapshot detail checks | partial: US1/US2 covered |
 | SC-004 | GitHub 기준선 시나리오 모두 유지 | compatibility regression suite | pending |
-| SC-005 | 스냅샷 100% scope rule 일치 | scope engine + filtered snapshot tests | pending |
+| SC-005 | 스냅샷 100% scope rule 일치 | scope engine + filtered snapshot tests | partial: US2 covered |
 
 ## Test Evidence Index
 
@@ -171,6 +193,9 @@
 
 - Integration
   - `tests/integration/repository_connections/test_gitlab_connection_lifecycle.py` in `T014`
+  - `tests/contract/repository_ingestion/test_gitlab_scope_contract.py` in `T024`
+  - `tests/unit/repository_connections/test_gitlab_scope_rules.py` in `T025`
+  - `tests/integration/repository_connections/test_gitlab_scoped_snapshot.py` in `T026`
 
 ### 2026-04-24 Implemented Coverage
 
@@ -478,6 +503,77 @@
     - `python-reviewer`: findings 없음, approve
     - `security-reviewer`: findings 없음, approve
 
+## 2026-04-26 US2 Scope/Ref Completion Evidence
+
+- RED: GitLab scope binary policy contract
+  - 추가 테스트:
+    - `tests/contract/repository_ingestion/test_gitlab_scope_contract.py`
+    - `tests/unit/repository_connections/test_gitlab_scope_rules.py`
+    - `tests/integration/repository_connections/test_gitlab_scoped_snapshot.py`
+  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py -q`
+  - 결과: `2 failed, 6 passed`
+  - 의도한 실패 이유:
+    - scope rule save response/detail projection에 `excludeBinary`가 없음
+    - `excludeBinary=false`가 snapshot filter path에 전달되지 않아 binary file이 제외됨
+- GREEN: GitLab scope/ref path
+  - 구현:
+    - `src/tci/api/schemas/repository_scope.py`
+    - `src/tci/api/routes/repository_scope.py`
+    - `src/tci/web/routes/repository_scope.py`
+    - `src/tci/web/templates/connections/scope.html`
+  - 검증:
+    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py -q`
+    - 결과: `8 passed in 0.93s`
+  - 보안/노출 확인:
+    - scope/detail response에서 `webhookAuthMode`, `shared_token`, secret 값 비노출 유지
+    - GitLab allowlist rejection은 scope preview failure로 삼키지 않고 400 problem response로 전파
+- Focused regression
+  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py tests/contract/repository_ingestion/test_repository_scope_contract.py tests/integration/repository_connections/test_scoped_snapshot.py tests/integration/repository_connections/test_operator_scope_pages.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
+  - 결과: `26 passed, 3 skipped in 1.15s`
+- 정적 검증
+  - 명령: `PYTHONDONTWRITEBYTECODE=1 mypy src/tci/api/schemas/repository_scope.py src/tci/api/routes/repository_scope.py src/tci/web/routes/repository_scope.py tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py tests/integration/repository_connections/test_operator_scope_pages.py`
+  - 결과: `Success: no issues found in 7 source files`
+  - 명령: `ruff check src/tci/api/schemas/repository_scope.py src/tci/api/routes/repository_scope.py src/tci/web/routes/repository_scope.py tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py tests/integration/repository_connections/test_operator_scope_pages.py`
+  - 결과: `All checks passed!`
+  - 명령: `black --check src/tci/api/schemas/repository_scope.py src/tci/api/routes/repository_scope.py src/tci/web/routes/repository_scope.py tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py tests/integration/repository_connections/test_operator_scope_pages.py`
+  - 결과: `7 files would be left unchanged`
+- Reviewer loop follow-up
+  - 초기 reviewer findings:
+    - HTTPS askpass 서버 시작 race와 startup failure 침묵
+    - SSH agent teardown 실패가 본 작업 오류/성공을 덮어쓰는 문제
+    - credentialed Git subprocess가 ambient Git config/SSH agent를 신뢰하는 문제
+    - scope filter 이전 raw Git tree entry volume 무제한 문제
+    - PAT/SSH credential bind window의 ambient exposure
+  - 조치:
+    - HTTPS PAT는 URL embedding 대신 askpass Unix socket + per-session token + 2회 성공 요청 제한으로 처리
+    - askpass server `ready_event`/`startup_errors` handshake 추가
+    - SSH private key는 temp file 대신 isolated `ssh-agent`에 stdin 등록하고, Git env에는 `GIT_SSH_COMMAND`만 주입
+    - SSH agent cleanup 실패는 best-effort logging으로 처리해 본 작업 결과를 보존
+    - `build_git_env()`에서 ambient `HOME`, `XDG_CONFIG_HOME`, `GIT_CONFIG_*`, `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND` 상속 제거 및 `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_SYSTEM=/dev/null`, `GIT_CONFIG_NOSYSTEM=1` 강제
+    - snapshot materialization에서 scope/hard-exclude 필터 전 raw tree entry cap 추가
+  - 추가 RED/GREEN 검증:
+    - askpass readiness/startup failure, SSH cleanup success/body-error preservation, Git env isolation, raw tree cap 테스트 추가
+    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections/test_git_foundation.py -q`
+    - 결과: `32 passed in 2.28s`
+    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections/test_git_mirror_manager.py -q`
+    - 결과: `19 passed in 9.66s`
+  - 전체 관련 범위 재검증:
+    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/unit/repository_connections/test_git_mirror_manager.py tests/unit/repository_connections/test_git_foundation.py tests/unit/repository_connections/test_phase2_foundation.py tests/unit/repository_connections/test_update_default_ref.py tests/unit/repository_connections/test_verify_repository_connection.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py tests/contract/repository_ingestion/test_repository_connection_contract.py tests/contract/repository_ingestion/test_repository_scope_contract.py tests/integration/repository_connections/test_scoped_snapshot.py tests/integration/repository_connections/test_operator_scope_pages.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py tests/integration/repository_connections/test_phase2_migration_smoke.py -q`
+    - 결과: `174 passed, 5 skipped in 15.03s`
+    - `PYTHONDONTWRITEBYTECODE=1 pytest -q`
+    - 결과: `354 passed, 17 skipped in 16.43s`
+  - 정적/보안 검증:
+    - focused `mypy`: `Success: no issues found in 22 source files`
+    - focused `ruff check`: `All checks passed!`
+    - focused `black --check`: `5 files would be left unchanged`
+    - `git diff --check`: 통과
+    - `python -m pip check`: `No broken requirements found.`
+    - `python -m pip_audit`: `/opt/anaconda3/bin/python: No module named pip_audit`
+  - 최종 재리뷰:
+    - `reviewer`: blocking findings 없음
+    - `python-reviewer`: blocking findings 없음, approve
+    - `security-reviewer`: blocking findings 없음, prior security findings addressed
+
 ## Open Evidence Slots
 
 - 수동 quickstart 검증 메모
@@ -492,3 +588,5 @@
 - 2026-04-24: GitLab remote parser, allowlist, localhost/private-IP/custom-port, fail-closed outbound guard evidence 추가 (`T007`, `T013`, `T016` 및 security slice)
 - 2026-04-24: 실제 PostgreSQL migration smoke와 실DB bootstrap 검증 완료, 004 downgrade/check constraint naming bug 수정
 - 2026-04-26: US1 operator detail/read-model/UI polish 완료 (`T022`)
+- 2026-04-26: US2 scope/ref 관리 완료 (`T024`-`T031`)
+- 2026-04-26: US2 reviewer loop findings 모두 해소, credential/Git subprocess/snapshot tree hardening 후 전체 Python suite 통과

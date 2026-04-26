@@ -256,7 +256,7 @@ components:
       properties:
         type:
           type: string
-          enum: [ssh_private_key, https_access_token]
+          enum: [ssh_private_key, https_pat]
         secret:
           type: string
         fingerprint:
@@ -284,6 +284,14 @@ components:
         blockedFileTypes:
           type: array
           items: { type: string }
+        maxFileSizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 5242880
+          default: 5242880
+        excludeBinary:
+          type: boolean
+          default: true
     ScopeRuleResponse:
       type: object
       properties:
@@ -292,13 +300,23 @@ components:
           format: uuid
         warningState:
           type: string
-          enum: [ok, empty_result_risk, over_broad_include]
+          enum: [ok, empty_result_risk, preview_failed, over_broad_include]
         includePaths:
           type: array
           items: { type: string }
         excludePaths:
           type: array
           items: { type: string }
+        allowedFileTypes:
+          type: array
+          items: { type: string }
+        blockedFileTypes:
+          type: array
+          items: { type: string }
+        maxFileSizeBytes:
+          type: integer
+        excludeBinary:
+          type: boolean
     CreateSnapshotRequest:
       type: object
       properties:
@@ -336,6 +354,10 @@ components:
         - $ref: '#/components/schemas/RepositoryConnectionResponse'
         - type: object
           properties:
+            latestScopeRule:
+              anyOf:
+                - $ref: '#/components/schemas/ScopeRuleResponse'
+                - type: 'null'
             lastSuccessfulSnapshotAt:
               type: string
               format: date-time

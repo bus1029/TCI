@@ -247,8 +247,7 @@ def test_default_ref_change_reuses_stored_credential_for_ref_validation(tmp_path
     )
 
     assert patch_response.status_code == 200
-    assert store.last_resolved_remote_url is not None
-    assert "x-access-token:" in store.last_resolved_remote_url
+    assert store.last_resolved_remote_url == "https://github.com/acme/sample-repo.git"
 
 
 def test_verify_endpoint_accepts_known_connection_for_followup_worker_execution(

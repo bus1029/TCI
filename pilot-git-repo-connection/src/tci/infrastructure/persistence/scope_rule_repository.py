@@ -80,6 +80,7 @@ class ScopeRuleRepository:
                 RepositoryConnection.id == connection_id,
                 RepositoryConnection.workspace_id == workspace_id,
             )
+            .with_for_update()
         )
         connection = self._session.scalar(statement)
         if connection is None:

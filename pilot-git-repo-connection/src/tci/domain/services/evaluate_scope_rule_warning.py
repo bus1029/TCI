@@ -53,7 +53,7 @@ def evaluate_scope_rule_warning(
             connection_id=connection.id
         )
         if credential_revision is None:
-            return ScopeRuleWarningState.OK
+            return ScopeRuleWarningState.PREVIEW_FAILED
 
         try:
             ensure_gitlab_self_managed_host_allowed(
@@ -90,13 +90,21 @@ def evaluate_scope_rule_warning(
                     dependencies.git_mirror_manager.read_snapshot_entries(
                         mirror=mirror,
                         commit_sha=resolved_ref.commit_sha,
+                        include_binary=not command.exclude_binary,
+                        include_paths=command.include_paths,
+                        exclude_paths=command.exclude_paths,
+                        allowed_file_types=command.allowed_file_types,
+                        blocked_file_types=command.blocked_file_types,
+                        max_file_size_bytes=command.max_file_size_bytes,
                     )
                 )
         except RepositoryConnectionProblem:
             raise
-        except Exception:
-            # 미리보기는 저장 보조 정보이므로, 계산 실패가 규칙 저장 자체를 막지 않게 한다.
-            return ScopeRuleWarningState.OK
+        except Exception as error:
+            problem_code = getattr(error, "problem_code", None)
+            if problem_code is not None:
+                raise RepositoryConnectionProblem(problem_code, str(error)) from error
+            return ScopeRuleWarningState.PREVIEW_FAILED
 
     filtered_entries = filter_snapshot_entries(
         entries=materialized_snapshot.entries,

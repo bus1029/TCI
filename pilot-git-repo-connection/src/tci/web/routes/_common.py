@@ -42,7 +42,7 @@ async def parse_simple_form_body(request: Request) -> dict[str, str]:
     # 운영 화면은 단순한 기본 폼만 다루므로 multipart 의존성 없이 urlencoded body만 파싱한다.
     raw_body = (await request.body()).decode("utf-8")
     parsed = parse_qs(raw_body, keep_blank_values=True)
-    return {key: values[0] if values else "" for key, values in parsed.items()}
+    return {key: values[-1] if values else "" for key, values in parsed.items()}
 
 
 def build_template_context(

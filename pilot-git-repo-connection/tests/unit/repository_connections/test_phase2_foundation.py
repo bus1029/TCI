@@ -163,6 +163,7 @@ def test_phase2_enums_match_spec_language() -> None:
     assert [member.value for member in ScopeRuleWarningState] == [
         "ok",
         "empty_result_risk",
+        "preview_failed",
         "over_broad_include",
     ]
     assert [member.value for member in SyncRunStatus] == [
@@ -290,6 +291,24 @@ def test_phase2_revision_ids_fit_alembic_version_column_limit() -> None:
     assert len(revision_002.revision) <= 32
     assert len(revision_003.revision) <= 32
     assert len(revision_004.revision) <= 32
+
+
+def test_scope_rule_auto_default_column_is_owned_by_followup_revision() -> None:
+    versions_dir = Path(__file__).resolve().parents[3] / "alembic" / "versions"
+    revision_001_path = versions_dir / "001_repository_ingestion_core.py"
+    revision_006_path = versions_dir / "006_scope_rule_auto_default_flag.py"
+
+    assert "is_auto_default" not in revision_001_path.read_text(encoding="utf-8")
+    assert "is_auto_default" in revision_006_path.read_text(encoding="utf-8")
+    assert "SET is_auto_default = true" in revision_006_path.read_text(
+        encoding="utf-8"
+    )
+
+    revision_006 = _load_revision_module(
+        "006_scope_rule_auto_default_flag.py",
+        "scope_rule_auto_default_flag_revision_ids",
+    )
+    assert revision_006.down_revision == "005_scope_rule_preview_failed"
 
 
 def test_repository_event_metadata_enforces_secret_revision_same_connection() -> None:

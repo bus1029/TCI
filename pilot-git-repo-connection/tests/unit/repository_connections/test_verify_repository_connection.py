@@ -5,6 +5,7 @@ import uuid
 from tests.support.repository_connection_testkit import (
     create_connection_payload,
     create_test_client,
+    create_test_ssh_private_key,
     seed_planning_input_reference,
 )
 from tci.domain.services.repository_connection_support import (
@@ -122,7 +123,7 @@ def test_verify_repository_connection_rejects_ssh_port_not_in_allowlist_before_g
             remote_url="ssh://git@192.168.10.20:2222/group/sample-repo.git",
             transport="ssh",
             credential_type="ssh_private_key",
-            credential_secret="-----BEGIN OPENSSH PRIVATE KEY-----\nkey\n-----END OPENSSH PRIVATE KEY-----",
+            credential_secret=create_test_ssh_private_key(tmp_path),
             credential_fingerprint="ssh-key-private-ip",
         ),
     )

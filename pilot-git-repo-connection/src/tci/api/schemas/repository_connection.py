@@ -6,7 +6,7 @@ import uuid
 from pydantic import Field
 
 from tci.api.schemas._base import CamelModel
-from tci.api.schemas.repository_scope import serialize_scope_rule
+from tci.api.schemas.repository_scope import ScopeRuleResponse, serialize_scope_rule
 
 
 class CredentialInput(CamelModel):
@@ -42,6 +42,34 @@ class UpdateRepositoryConnectionRequest(CamelModel):
 
 class CreateRepositorySnapshotRequest(CamelModel):
     reason: str = Field(default="manual_initial", min_length=1)
+
+
+class RepositoryConnectionResponse(CamelModel):
+    id: str
+    provider: str
+    remote_url: str = Field(alias="remoteUrl")
+    transport: str
+    default_ref_type: str = Field(alias="defaultRefType")
+    default_ref_name: str = Field(alias="defaultRefName")
+    status: str
+    last_verified_at: str | None = Field(alias="lastVerifiedAt")
+    provider_instance_url: str | None = Field(default=None, alias="providerInstanceUrl")
+    provider_project_path: str | None = Field(default=None, alias="providerProjectPath")
+
+
+class RepositoryConnectionDetailResponse(RepositoryConnectionResponse):
+    latest_scope_rule: ScopeRuleResponse | None = Field(alias="latestScopeRule")
+    last_successful_snapshot_at: str | None = Field(alias="lastSuccessfulSnapshotAt")
+    last_failed_sync_at: str | None = Field(alias="lastFailedSyncAt")
+    last_processed_event_at: str | None = Field(alias="lastProcessedEventAt")
+    last_processed_event: dict[str, object] | None = Field(alias="lastProcessedEvent")
+    latest_snapshot: dict[str, object] | None = Field(alias="latestSnapshot")
+    latest_sync_run: dict[str, object] | None = Field(alias="latestSyncRun")
+    traceability: dict[str, object]
+    additional_ref_guidance: dict[str, object] = Field(alias="additionalRefGuidance")
+    webhook_health: dict[str, object] | None = Field(
+        default=None, alias="webhookHealth"
+    )
 
 
 def serialize_repository_connection(connection) -> dict[str, object]:

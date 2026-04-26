@@ -102,6 +102,7 @@ class ProviderReachabilityStatus(StrEnum):
 class ScopeRuleWarningState(StrEnum):
     OK = "ok"
     EMPTY_RESULT_RISK = "empty_result_risk"
+    PREVIEW_FAILED = "preview_failed"
     OVER_BROAD_INCLUDE = "over_broad_include"
 
 
@@ -711,6 +712,9 @@ class CollectionScopeRuleVersion(Base):
     )
     exclude_binary: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    is_auto_default: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
     )
     warning_state: Mapped[ScopeRuleWarningState] = mapped_column(
         sql_enum(ScopeRuleWarningState, name="scope_rule_warning_state"),

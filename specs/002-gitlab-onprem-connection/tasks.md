@@ -49,7 +49,7 @@
 - 완료 체크가 현재 작업 상태의 기준이다. 상세 실행 로그와 리뷰 이력은 `delivery-evidence.md`와 `next-session-handoff.md`를 본다.
 - 2026-04-24 결정: `T008`은 US3 webhook event normalization 선행 작업으로 defer한다.
 - US1 진행 gate는 `T005`, `T006`, `T007`, `T009`, `T010`, `T011`, `T012` 완료로 충족한다.
-- 다음 우선순위는 US2 scope/ref 관리(`T024`~`T031`)다. US3를 시작하려면 먼저 `T008` webhook normalization을 진행한다.
+- 다음 우선순위는 US3 webhook 수신/처리다. US3를 시작하려면 먼저 `T008` webhook normalization을 진행한다.
 
 ---
 
@@ -88,17 +88,17 @@
 
 ### Tests for User Story 2
 
-- [ ] T024 [P] [US2] Add contract tests for GitLab scope rule save and scope detail projections in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_scope_contract.py`
-- [ ] T025 [P] [US2] Add unit tests for provider-neutral scope precedence, hard excludes, and `5 MiB` guard in `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_scope_rules.py`
-- [ ] T026 [P] [US2] Add integration tests for scoped GitLab snapshots, default-ref change carry-forward, preserved prior history, empty-result blocking, and scope traceability in `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_scoped_snapshot.py`
+- [x] T024 [P] [US2] Add contract tests for GitLab scope rule save and scope detail projections in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_scope_contract.py`
+- [x] T025 [P] [US2] Add unit tests for provider-neutral scope precedence, hard excludes, and `5 MiB` guard in `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_scope_rules.py`
+- [x] T026 [P] [US2] Add integration tests for scoped GitLab snapshots, default-ref change carry-forward, preserved prior history, empty-result blocking, and scope traceability in `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_scoped_snapshot.py`
 
 ### Implementation for User Story 2
 
-- [ ] T027 [P] [US2] Extend default scope policy and scope filter engine for provider-neutral GitLab/GitHub behavior in `pilot-git-repo-connection/src/tci/domain/services/default_scope_policy.py` and `pilot-git-repo-connection/src/tci/domain/services/scope_filter_engine.py`
-- [ ] T028 [US2] Extend scope warning evaluation and scope rule persistence for GitLab connections in `pilot-git-repo-connection/src/tci/domain/services/evaluate_scope_rule_warning.py` and `pilot-git-repo-connection/src/tci/infrastructure/persistence/scope_rule_repository.py`
-- [ ] T029 [US2] Integrate scope version stamping, default-ref change handoff without prior-history mutation, and `NO_INCLUDED_FILES` handling for GitLab manual snapshot flows in `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py` and `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py`
-- [ ] T030 [US2] Extend scope rule API and operator scope page for mixed-provider messaging and warning states in `pilot-git-repo-connection/src/tci/api/routes/repository_scope.py`, `pilot-git-repo-connection/src/tci/web/routes/repository_scope.py`, and `pilot-git-repo-connection/src/tci/web/templates/connections/scope.html`
-- [ ] T031 [US2] Capture User Story 2 verification evidence for GitLab scope control and ref-change trace continuity in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
+- [x] T027 [P] [US2] Extend default scope policy and scope filter engine for provider-neutral GitLab/GitHub behavior in `pilot-git-repo-connection/src/tci/domain/services/default_scope_policy.py` and `pilot-git-repo-connection/src/tci/domain/services/scope_filter_engine.py`
+- [x] T028 [US2] Extend scope warning evaluation and scope rule persistence for GitLab connections in `pilot-git-repo-connection/src/tci/domain/services/evaluate_scope_rule_warning.py` and `pilot-git-repo-connection/src/tci/infrastructure/persistence/scope_rule_repository.py`
+- [x] T029 [US2] Integrate scope version stamping, default-ref change handoff without prior-history mutation, and `NO_INCLUDED_FILES` handling for GitLab manual snapshot flows in `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py` and `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py`
+- [x] T030 [US2] Extend scope rule API and operator scope page for mixed-provider messaging and warning states in `pilot-git-repo-connection/src/tci/api/routes/repository_scope.py`, `pilot-git-repo-connection/src/tci/web/routes/repository_scope.py`, and `pilot-git-repo-connection/src/tci/web/templates/connections/scope.html`
+- [x] T031 [US2] Capture User Story 2 verification evidence for GitLab scope control and ref-change trace continuity in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
 
 **Checkpoint**: GitLab에서도 scope rule과 snapshot 결과가 독립적으로 검증 가능해야 한다.
 
