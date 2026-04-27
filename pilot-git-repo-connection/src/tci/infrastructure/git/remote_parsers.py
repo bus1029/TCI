@@ -55,6 +55,11 @@ def parse_repository_remote(
 def _parse_github_remote(
     *, remote_url: str, transport: RepositoryTransport
 ) -> ParsedRepositoryRemote:
+    if transport is RepositoryTransport.HTTP:
+        raise RepositoryConnectionProblem(
+            ProblemCode.INVALID_INPUT,
+            "remoteUrl은 GitHub Cloud 저장소 주소여야 합니다.",
+        )
     pattern = (
         _GITHUB_HTTPS_PATTERN
         if transport is RepositoryTransport.HTTPS
@@ -84,10 +89,13 @@ def _parse_gitlab_remote(
             ProblemCode.INVALID_INPUT,
             _INVALID_HOST_MESSAGE,
         )
-    if transport is RepositoryTransport.HTTPS:
+    if transport in (RepositoryTransport.HTTPS, RepositoryTransport.HTTP):
         parsed_remote = _parse_url(remote_url)
+        expected_scheme = (
+            "http" if transport is RepositoryTransport.HTTP else "https"
+        )
         if (
-            parsed_remote.scheme != "https"
+            parsed_remote.scheme != expected_scheme
             or _parse_url_hostname(parsed_remote) is None
             or parsed_remote.username is not None
             or parsed_remote.password is not None
@@ -111,7 +119,7 @@ def _parse_gitlab_remote(
                 ProblemCode.INVALID_INPUT,
                 _INVALID_HOST_MESSAGE,
             )
-        instance_url = f"https://{hostname}"
+        instance_url = f"{expected_scheme}://{hostname}"
         parsed_port = _parse_url_port(parsed_remote)
         if parsed_port is not None:
             instance_url = f"{instance_url}:{parsed_port}"

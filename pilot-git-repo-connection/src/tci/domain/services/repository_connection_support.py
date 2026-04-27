@@ -37,7 +37,6 @@ class RepositoryConnectionProblem(RuntimeError):
 
 _SSH_CREDENTIAL_BIND_LOCK = Lock()
 _ASKPASS_READY_TIMEOUT_SECONDS = 1.0
-_ASKPASS_MAX_REQUESTS = 2
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -54,7 +53,7 @@ def parse_transport(raw_value: str) -> RepositoryTransport:
     except ValueError as error:
         raise RepositoryConnectionProblem(
             ProblemCode.INVALID_INPUT,
-            "transport는 ssh 또는 https여야 합니다.",
+            "transport는 ssh, https 또는 http여야 합니다.",
         ) from error
 
 
@@ -113,6 +112,7 @@ def ensure_gitlab_self_managed_host_allowed(
     provider: RepositoryProvider,
     provider_instance_url: str | None,
     settings,
+    transport: RepositoryTransport | None = None,
     remote_url: str | None = None,
     remote_port: int | None = None,
 ) -> None:
@@ -124,6 +124,18 @@ def ensure_gitlab_self_managed_host_allowed(
             "GitLab Self-Managed host는 허용 목록에 등록되어야 합니다.",
         )
     parsed_instance = urlparse(provider_instance_url)
+    uses_http_remote = (
+        parsed_instance.scheme == "http"
+        or transport is RepositoryTransport.HTTP
+        or (remote_url is not None and remote_url.startswith("http://"))
+    )
+    if uses_http_remote and not getattr(
+        settings, "allow_insecure_gitlab_http", False
+    ):
+        raise RepositoryConnectionProblem(
+            ProblemCode.INVALID_INPUT,
+            "GitLab Self-Managed HTTP 연결은 TCI_ALLOW_INSECURE_GITLAB_HTTP=true일 때만 허용됩니다.",
+        )
     hostname = (parsed_instance.hostname or "").lower().rstrip(".")
     effective_port = (
         remote_port
@@ -151,7 +163,11 @@ def ensure_gitlab_self_managed_host_allowed(
 def _extract_remote_port(remote_url: str | None) -> int | None:
     if remote_url is None:
         return None
-    if remote_url.startswith("ssh://") or remote_url.startswith("https://"):
+    if (
+        remote_url.startswith("ssh://")
+        or remote_url.startswith("https://")
+        or remote_url.startswith("http://")
+    ):
         try:
             return urlparse(remote_url).port
         except ValueError:
@@ -167,11 +183,11 @@ def bind_git_credential(
     credential_type: CredentialType,
     credential_secret: str,
 ):
-    if transport is RepositoryTransport.HTTPS:
+    if transport in (RepositoryTransport.HTTPS, RepositoryTransport.HTTP):
         if credential_type is not CredentialType.HTTPS_PAT:
             raise RepositoryConnectionProblem(
                 ProblemCode.INVALID_INPUT,
-                "https 연결에는 https_pat 자격 증명이 필요합니다.",
+                "http 또는 https 연결에는 https_pat 자격 증명이 필요합니다.",
             )
         with _https_askpass_environment(credential_secret=credential_secret) as env:
             with git_command_environment(env):
@@ -285,10 +301,7 @@ def _serve_https_askpass(
             server.listen()
             server.settimeout(0.2)
             ready_event.set()
-            served_requests = 0
             while not stop_event.is_set():
-                if served_requests >= _ASKPASS_MAX_REQUESTS:
-                    break
                 try:
                     connection, _address = server.accept()
                 except TimeoutError:
@@ -307,7 +320,6 @@ def _serve_https_askpass(
                         connection.sendall(response.encode("utf-8"))
                     except OSError:
                         continue
-                    served_requests += 1
     except OSError as error:
         if not ready_event.is_set():
             startup_errors.append(error)

@@ -410,6 +410,169 @@ def test_create_planning_input_reference_rejects_unknown_source_type(tmp_path) -
     }
 
 
+def test_create_gitlab_http_connection_requires_explicit_insecure_opt_in(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="gitlab_self_managed",
+            remote_url="http://192.168.10.20/group/sample-repo.git",
+            transport="http",
+            credential_type="https_pat",
+        ),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "GitLab Self-Managed HTTP 연결은 TCI_ALLOW_INSECURE_GITLAB_HTTP=true일 때만 허용됩니다.",
+    }
+
+
+def test_create_gitlab_http_connection_accepts_pat_when_explicitly_enabled(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("TCI_ALLOW_INSECURE_GITLAB_HTTP", "true")
+    workspace_id = uuid.uuid4()
+    client, _store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference_response = client.post(
+        "/api/planning-input-references",
+        json=create_planning_input_reference_payload(workspace_id=workspace_id),
+    )
+    reference_id = uuid.UUID(reference_response.json()["id"])
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference_id,
+            provider="gitlab_self_managed",
+            remote_url="http://192.168.10.20/group/sample-repo.git",
+            transport="http",
+            credential_type="https_pat",
+        ),
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["provider"] == "gitlab_self_managed"
+    assert payload["remoteUrl"] == "http://192.168.10.20/group/sample-repo.git"
+    assert payload["transport"] == "http"
+    assert payload["providerInstanceUrl"] == "http://192.168.10.20"
+
+
+def test_create_gitlab_http_connection_rejects_ssh_private_key_even_when_enabled(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("TCI_ALLOW_INSECURE_GITLAB_HTTP", "true")
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="gitlab_self_managed",
+            remote_url="http://192.168.10.20/group/sample-repo.git",
+            transport="http",
+            credential_type="ssh_private_key",
+            credential_secret="not-a-real-key",
+        ),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "http 또는 https 연결에는 https_pat 자격 증명이 필요합니다.",
+    }
+
+
+def test_create_gitlab_http_connection_honors_allowlist_port_when_enabled(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("TCI_ALLOW_INSECURE_GITLAB_HTTP", "true")
+    workspace_id = uuid.uuid4()
+    client, _store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference_response = client.post(
+        "/api/planning-input-references",
+        json=create_planning_input_reference_payload(workspace_id=workspace_id),
+    )
+    reference_id = uuid.UUID(reference_response.json()["id"])
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference_id,
+            provider="gitlab_self_managed",
+            remote_url="http://192.168.10.20:8080/group/sample-repo.git",
+            transport="http",
+            credential_type="https_pat",
+        ),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["providerInstanceUrl"] == "http://192.168.10.20:8080"
+
+
+def test_create_gitlab_http_connection_rejects_unallowlisted_host_when_enabled(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("TCI_ALLOW_INSECURE_GITLAB_HTTP", "true")
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="gitlab_self_managed",
+            remote_url="http://192.168.10.21/group/sample-repo.git",
+            transport="http",
+            credential_type="https_pat",
+        ),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "GitLab Self-Managed host는 허용 목록에 등록되어야 합니다.",
+    }
+
+
+def test_create_github_http_connection_is_rejected_at_api_boundary(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="github_cloud",
+            remote_url="http://github.com/acme/sample-repo.git",
+            transport="http",
+            credential_type="https_pat",
+        ),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "remoteUrl은 GitHub Cloud 저장소 주소여야 합니다.",
+    }
+
+
 def test_get_connection_detail_returns_null_last_processed_event_and_traceability(
     tmp_path,
 ) -> None:

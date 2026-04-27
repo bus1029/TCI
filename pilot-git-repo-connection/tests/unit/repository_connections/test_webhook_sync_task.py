@@ -98,6 +98,59 @@ def test_build_code_snapshot_rejects_unallowlisted_gitlab_before_git_access(
     assert store.last_resolved_remote_url is None
 
 
+def test_build_code_snapshot_rejects_stored_http_when_opt_in_disabled_before_git_access(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("TCI_ALLOW_INSECURE_GITLAB_HTTP", "true")
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="gitlab_self_managed",
+            remote_url="http://192.168.10.20/group/sample-repo.git",
+            transport="http",
+            credential_type="https_pat",
+        ),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    sync_run = create_initial_snapshot(
+        CreateInitialSnapshotCommand(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        ),
+        dependencies=_dependencies(client),
+    )
+    store.last_resolved_remote_url = None
+    object.__setattr__(_settings(client), "allow_insecure_gitlab_http", False)
+
+    try:
+        build_code_snapshot(
+            BuildCodeSnapshotCommand(
+                workspace_id=workspace_id,
+                connection_id=connection_id,
+                sync_run_id=sync_run.id,
+            ),
+            dependencies=_dependencies(client),
+        )
+    except RepositoryConnectionProblem as error:
+        assert (
+            error.detail
+            == "GitLab Self-Managed HTTP 연결은 TCI_ALLOW_INSECURE_GITLAB_HTTP=true일 때만 허용됩니다."
+        )
+    else:
+        raise AssertionError("GitLab HTTP snapshot should reject disabled opt-in")
+
+    assert store.sync_runs[sync_run.id].status.value == "failed"
+    failure_code = store.sync_runs[sync_run.id].failure_code
+    assert failure_code is not None
+    assert failure_code.value == "MIRROR_SYNC_FAILED"
+    assert store.last_resolved_remote_url is None
+
+
 def test_run_webhook_sync_task_marks_event_failed_when_snapshot_build_fails(
     tmp_path, monkeypatch
 ) -> None:

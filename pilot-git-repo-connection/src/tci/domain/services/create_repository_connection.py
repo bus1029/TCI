@@ -74,6 +74,7 @@ def create_repository_connection(command, *, dependencies):
         provider=provider,
         provider_instance_url=parsed_remote.provider_instance_url,
         settings=dependencies.settings,
+        transport=transport,
         remote_url=command.remote_url,
         remote_port=parsed_remote.provider_remote_port,
     )

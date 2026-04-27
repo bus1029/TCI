@@ -38,6 +38,7 @@ class RepositoryProvider(StrEnum):
 class RepositoryTransport(StrEnum):
     SSH = "ssh"
     HTTPS = "https"
+    HTTP = "http"
 
 
 class RefType(StrEnum):
@@ -259,6 +260,15 @@ class RepositoryConnection(Base):
             "AND remote_url !~ '^https://[^/]*-[.:/]' "
             "AND remote_url !~ '^https://[^/]*[[:space:][:cntrl:]][^/]*/' "
             "AND remote_url !~ '^https://\\[') "
+            "OR (remote_url LIKE 'http://%/%' "
+            "AND remote_url !~* '^http://github\\.com\\.?(?::[0-9]+)?/' "
+            "AND remote_url !~ '^http://[-[:space:][:cntrl:]]' "
+            "AND remote_url !~ '^http://[^/]*\\.\\.' "
+            "AND remote_url !~ '^http://[^/]*\\.-' "
+            "AND remote_url !~ '^http://[^/?#]*\\.(?::[0-9]+)?/' "
+            "AND remote_url !~ '^http://[^/]*-[.:/]' "
+            "AND remote_url !~ '^http://[^/]*[[:space:][:cntrl:]][^/]*/' "
+            "AND remote_url !~ '^http://\\[') "
             "OR (remote_url LIKE 'ssh://git@%/%' "
             "AND remote_url !~* '^ssh://(?:[^@/]+@)?github\\.com\\.?(?::[0-9]+)?/' "
             "AND remote_url !~ '^ssh://git@[-[:space:][:cntrl:]]' "
@@ -272,10 +282,19 @@ class RepositoryConnection(Base):
         ),
         CheckConstraint(
             "remote_url NOT LIKE 'https://%@%/%' "
+            "AND remote_url NOT LIKE 'http://%@%/%' "
             "AND remote_url NOT LIKE 'ssh://%:%@%/%' "
             "AND remote_url NOT LIKE '%?%' "
             "AND remote_url NOT LIKE '%#%'",
             name="ck_repo_conn_remote_url_no_userinfo",
+        ),
+        CheckConstraint(
+            "("
+            "(transport = 'http' AND remote_url LIKE 'http://%/%') "
+            "OR (transport = 'https' AND remote_url LIKE 'https://%/%') "
+            "OR (transport = 'ssh' AND (remote_url LIKE 'git@%:%' OR remote_url LIKE 'ssh://%/%'))"
+            ")",
+            name="ck_repo_conn_transport_remote_url_scheme_match",
         ),
         CheckConstraint(
             "("
@@ -292,13 +311,13 @@ class RepositoryConnection(Base):
             "("
             "(provider <> 'gitlab_self_managed') "
             "OR "
-            "(provider_instance_url ~ '^https://[A-Za-z0-9][A-Za-z0-9.-]*(?::[0-9]+)?/?$' "
-            "AND provider_instance_url !~ '^https://[^/]*\\.\\.' "
-            "AND provider_instance_url !~ '^https://[^/]*\\.-' "
-            "AND provider_instance_url !~ '^https://[^/]*\\.(?::[0-9]+)?/?$' "
-            "AND provider_instance_url !~ '^https://[^/:/]*-(?::[0-9]+)?/?$' "
-            "AND provider_instance_url !~ '^https://[^/]*[[:space:][:cntrl:]][^/]*' "
-            "AND provider_instance_url !~ '^https://[^/]*-[.:/]')"
+            "(provider_instance_url ~ '^https?://[A-Za-z0-9][A-Za-z0-9.-]*(?::[0-9]+)?/?$' "
+            "AND provider_instance_url !~ '^https?://[^/]*\\.\\.' "
+            "AND provider_instance_url !~ '^https?://[^/]*\\.-' "
+            "AND provider_instance_url !~ '^https?://[^/]*\\.(?::[0-9]+)?/?$' "
+            "AND provider_instance_url !~ '^https?://[^/:/]*-(?::[0-9]+)?/?$' "
+            "AND provider_instance_url !~ '^https?://[^/]*[[:space:][:cntrl:]][^/]*' "
+            "AND provider_instance_url !~ '^https?://[^/]*-[.:/]')"
             ")",
             name="ck_repo_conn_gitlab_instance_url_https",
         ),
@@ -306,9 +325,11 @@ class RepositoryConnection(Base):
             "("
             "(provider <> 'gitlab_self_managed') "
             "OR "
-            "(lower(regexp_replace(provider_instance_url, '^https://([^/:?#]+)(?::[0-9]+)?(?:/.*)?$', '\\1')) = CASE "
+            "(lower(regexp_replace(provider_instance_url, '^https?://([^/:?#]+)(?::[0-9]+)?(?:/.*)?$', '\\1')) = CASE "
             "WHEN remote_url LIKE 'https://%' "
             "THEN lower(regexp_replace(remote_url, '^https://([^/:?#]+)(?::[0-9]+)?/.*$', '\\1')) "
+            "WHEN remote_url LIKE 'http://%' "
+            "THEN lower(regexp_replace(remote_url, '^http://([^/:?#]+)(?::[0-9]+)?/.*$', '\\1')) "
             "WHEN remote_url LIKE 'git@%:%' "
             "THEN lower(regexp_replace(remote_url, '^git@([^:]+):.*$', '\\1')) "
             "WHEN remote_url LIKE 'ssh://%/%' "
@@ -322,12 +343,27 @@ class RepositoryConnection(Base):
             "("
             "(provider <> 'gitlab_self_managed') "
             "OR "
-            "(remote_url NOT LIKE 'https://%/%') "
+            "(remote_url NOT LIKE 'https://%/%' AND remote_url NOT LIKE 'http://%/%') "
             "OR "
-            "(coalesce(nullif(regexp_replace(provider_instance_url, '^https://[^/:?#]+(?::([0-9]+))?(?:/.*)?$', '\\1'), ''), '443') = "
-            "coalesce(nullif(regexp_replace(remote_url, '^https://[^/:?#]+(?::([0-9]+))?/.*$', '\\1'), ''), '443'))"
+            "(CASE WHEN provider_instance_url LIKE 'http://%' "
+            "THEN coalesce(nullif(regexp_replace(provider_instance_url, '^http://[^/:?#]+(?::([0-9]+))?(?:/.*)?$', '\\1'), ''), '80') "
+            "ELSE coalesce(nullif(regexp_replace(provider_instance_url, '^https://[^/:?#]+(?::([0-9]+))?(?:/.*)?$', '\\1'), ''), '443') END = "
+            "CASE WHEN remote_url LIKE 'http://%' "
+            "THEN coalesce(nullif(regexp_replace(remote_url, '^http://[^/:?#]+(?::([0-9]+))?/.*$', '\\1'), ''), '80') "
+            "ELSE coalesce(nullif(regexp_replace(remote_url, '^https://[^/:?#]+(?::([0-9]+))?/.*$', '\\1'), ''), '443') END)"
             ")",
             name="ck_repo_conn_gitlab_https_port_match",
+        ),
+        CheckConstraint(
+            "("
+            "(provider <> 'gitlab_self_managed') "
+            "OR "
+            "(remote_url NOT LIKE 'https://%/%' AND remote_url NOT LIKE 'http://%/%') "
+            "OR "
+            "((provider_instance_url LIKE 'https://%' AND remote_url LIKE 'https://%/%') "
+            "OR (provider_instance_url LIKE 'http://%' AND remote_url LIKE 'http://%/%'))"
+            ")",
+            name="ck_repo_conn_gitlab_http_scheme_match",
         ),
         CheckConstraint(
             "((provider <> 'gitlab_self_managed') "
@@ -349,6 +385,8 @@ class RepositoryConnection(Base):
             "(provider_project_path IS NOT NULL AND provider_project_path = CASE "
             "WHEN remote_url LIKE 'https://%' "
             "THEN regexp_replace(regexp_replace(remote_url, '^https://[^/]+/', ''), '\\.git$', '') "
+            "WHEN remote_url LIKE 'http://%' "
+            "THEN regexp_replace(regexp_replace(remote_url, '^http://[^/]+/', ''), '\\.git$', '') "
             "WHEN remote_url LIKE 'git@%:%' "
             "THEN regexp_replace(regexp_replace(remote_url, '^git@[^:]+:', ''), '\\.git$', '') "
             "WHEN remote_url LIKE 'ssh://%/%' "

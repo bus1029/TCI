@@ -60,6 +60,7 @@ def verify_repository_connection(command, *, dependencies):
             provider=verification_context.provider,
             provider_instance_url=verification_context.provider_instance_url,
             settings=dependencies.settings,
+            transport=verification_context.transport,
             remote_url=verification_context.remote_url,
         )
         credential_secret = decrypt_secret_from_storage(

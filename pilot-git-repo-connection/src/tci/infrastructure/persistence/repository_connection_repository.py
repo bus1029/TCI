@@ -74,6 +74,9 @@ class RepositoryConnectionRepository:
                 raise ValueError("GitLab connection requires provider_instance_url.")
             if not provider_project_path:
                 raise ValueError("GitLab connection requires provider_project_path.")
+            self._validate_transport_matches_remote_url(
+                transport=draft.transport, remote_url=draft.remote_url
+            )
             self._validate_gitlab_project_path(
                 provider_project_path=provider_project_path
             )
@@ -127,6 +130,23 @@ class RepositoryConnectionRepository:
         return connection
 
     @staticmethod
+    def _validate_transport_matches_remote_url(
+        *, transport: RepositoryTransport, remote_url: str
+    ) -> None:
+        if transport is RepositoryTransport.HTTP and not remote_url.startswith(
+            "http://"
+        ):
+            raise ValueError("Repository transport must match remote_url scheme.")
+        if transport is RepositoryTransport.HTTPS and not remote_url.startswith(
+            "https://"
+        ):
+            raise ValueError("Repository transport must match remote_url scheme.")
+        if transport is RepositoryTransport.SSH and not remote_url.startswith(
+            ("git@", "ssh://")
+        ):
+            raise ValueError("Repository transport must match remote_url scheme.")
+
+    @staticmethod
     def _validate_remote_url_credentials(*, remote_url: str) -> None:
         if _has_whitespace_or_control(remote_url):
             raise ValueError(
@@ -136,7 +156,7 @@ class RepositoryConnectionRepository:
             raise ValueError(
                 "Repository remote_url must not include query or fragment."
             )
-        if remote_url.startswith("https://") or remote_url.startswith("ssh://"):
+        if remote_url.startswith(("http://", "https://", "ssh://")):
             parsed_remote = urlparse(remote_url)
             if parsed_remote.params or parsed_remote.query or parsed_remote.fragment:
                 raise ValueError(
@@ -146,7 +166,10 @@ class RepositoryConnectionRepository:
                 raise ValueError(
                     "Repository remote_url must not include credential-bearing userinfo."
                 )
-            if remote_url.startswith("https://") and parsed_remote.username is not None:
+            if (
+                remote_url.startswith(("http://", "https://"))
+                and parsed_remote.username is not None
+            ):
                 raise ValueError(
                     "Repository remote_url must not include credential-bearing userinfo."
                 )
@@ -163,13 +186,13 @@ class RepositoryConnectionRepository:
             and parsed_instance.password is None
         )
         if (
-            parsed_instance.scheme != "https"
+            parsed_instance.scheme not in ("http", "https")
             or not parsed_instance.netloc
             or not has_supported_base_url
             or parsed_instance.path not in ("", "/")
         ):
             raise ValueError(
-                "GitLab connection requires an https provider_instance_url without query or fragment."
+                "GitLab connection requires an http or https provider_instance_url without query or fragment."
             )
         normalized_host = (parsed_instance.hostname or "").lower()
         RepositoryConnectionRepository._validate_gitlab_host(hostname=normalized_host)
@@ -177,13 +200,13 @@ class RepositoryConnectionRepository:
             parsed_url=parsed_instance
         )
         normalized_port = f":{parsed_port}" if parsed_port is not None else ""
-        return f"https://{normalized_host}{normalized_port}"
+        return f"{parsed_instance.scheme}://{normalized_host}{normalized_port}"
 
     @staticmethod
     def _canonical_gitlab_project_path(
         *, provider_instance_url: str, remote_url: str
     ) -> str:
-        if remote_url.startswith("https://") or remote_url.startswith("ssh://"):
+        if remote_url.startswith(("http://", "https://", "ssh://")):
             parsed_remote = urlparse(remote_url)
             project_path = parsed_remote.path.lstrip("/")
         elif remote_url.startswith("git@"):
@@ -208,7 +231,7 @@ class RepositoryConnectionRepository:
     def _extract_gitlab_remote_location(
         *, remote_url: str
     ) -> tuple[str, int | None, str] | None:
-        if remote_url.startswith("https://"):
+        if remote_url.startswith(("http://", "https://")):
             parsed_remote = urlparse(remote_url)
             if parsed_remote.hostname is None:
                 return None
@@ -217,7 +240,7 @@ class RepositoryConnectionRepository:
                 RepositoryConnectionRepository._parse_url_port(
                     parsed_url=parsed_remote
                 ),
-                "https",
+                parsed_remote.scheme,
             )
         if remote_url.startswith("ssh://"):
             parsed_remote = urlparse(remote_url)
@@ -257,12 +280,17 @@ class RepositoryConnectionRepository:
             raise ValueError(
                 "GitLab connection remote_url must match provider_instance_url host."
             )
-        if remote_scheme == "https":
-            instance_port = parsed_instance.port or 443
-            expected_remote_port = remote_port or 443
+        if remote_scheme in ("http", "https"):
+            if parsed_instance.scheme != remote_scheme:
+                raise ValueError(
+                    "GitLab HTTP(S) remote_url scheme must match provider_instance_url scheme."
+                )
+            default_port = 80 if remote_scheme == "http" else 443
+            instance_port = parsed_instance.port or default_port
+            expected_remote_port = remote_port or default_port
             if instance_port != expected_remote_port:
                 raise ValueError(
-                    "GitLab HTTPS remote_url port must match provider_instance_url port."
+                    "GitLab HTTP(S) remote_url port must match provider_instance_url port."
                 )
 
     @staticmethod

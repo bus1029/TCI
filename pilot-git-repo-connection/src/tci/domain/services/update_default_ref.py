@@ -49,6 +49,7 @@ def update_default_ref(command, *, dependencies):
             provider=provider,
             provider_instance_url=provider_instance_url,
             settings=dependencies.settings,
+            transport=transport,
             remote_url=remote_url,
         )
         credential_secret = decrypt_secret_from_storage(

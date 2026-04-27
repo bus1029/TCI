@@ -106,14 +106,14 @@ def test_gitlab_foundation_repository_connection_metadata_is_provider_aware() ->
     } <= set(connection_table.c.keys())
 
 
-def test_gitlab_foundation_connection_constraints_enforce_https_instance_and_host_match() -> (
+def test_gitlab_foundation_connection_constraints_enforce_gitlab_instance_and_host_match() -> (
     None
 ):
     revision_path = (
         Path(__file__).resolve().parents[3]
         / "alembic"
         / "versions"
-        / "004_gitlab_self_managed_provider_support.py"
+        / "008_gitlab_insecure_http_transport.py"
     )
     revision_text = revision_path.read_text(encoding="utf-8")
     instance_url_sql = _check_sql(
@@ -125,18 +125,32 @@ def test_gitlab_foundation_connection_constraints_enforce_https_instance_and_hos
     instance_port_sql = _check_sql(
         "repository_connections", "ck_repo_conn_gitlab_https_port_match"
     )
+    scheme_match_sql = _check_sql(
+        "repository_connections", "ck_repo_conn_gitlab_http_scheme_match"
+    )
     remote_url_userinfo_sql = _check_sql(
         "repository_connections", "ck_repo_conn_remote_url_no_userinfo"
     )
+    transport_scheme_sql = _check_sql(
+        "repository_connections", "ck_repo_conn_transport_remote_url_scheme_match"
+    )
 
-    assert "provider_instance_url ~ '^https://" in instance_url_sql
+    assert "provider_instance_url ~ '^https?://" in instance_url_sql
     assert "(?::[0-9]+)?/?$" in instance_url_sql
-    assert "!~ '^https://[^/:/]*-(?::[0-9]+)?/?$'" in instance_url_sql
-    assert "lower(regexp_replace(provider_instance_url, '^https://" in instance_host_sql
+    assert "!~ '^https?://[^/:/]*-(?::[0-9]+)?/?$'" in instance_url_sql
+    assert "lower(regexp_replace(provider_instance_url, '^https?://" in instance_host_sql
+    assert "WHEN remote_url LIKE 'http://%'" in instance_host_sql
     assert "regexp_replace(remote_url, '^git@([^:]+):.*$', '\\1')" in instance_host_sql
     assert "regexp_replace(remote_url, '^ssh://" in instance_host_sql
     assert "coalesce(nullif" in instance_port_sql
     assert "^https://[^/:?#]+(?::([0-9]+))?/.*$" in instance_port_sql
+    assert "^http://[^/:?#]+(?::([0-9]+))?/.*$" in instance_port_sql
+    assert "provider_instance_url LIKE 'https://%'" in scheme_match_sql
+    assert "provider_instance_url LIKE 'http://%'" in scheme_match_sql
+    assert "http://%@%/%" in remote_url_userinfo_sql
+    assert "transport = 'http'" in transport_scheme_sql
+    assert "transport = 'https'" in transport_scheme_sql
+    assert "transport = 'ssh'" in transport_scheme_sql
     assert "ssh://%:%@%/%" in remote_url_userinfo_sql
     assert "remote_url NOT LIKE '%?%'" in remote_url_userinfo_sql
     assert "remote_url NOT LIKE '%#%'" in remote_url_userinfo_sql
@@ -145,14 +159,18 @@ def test_gitlab_foundation_connection_constraints_enforce_https_instance_and_hos
     )
     assert "github\\.com\\.?" in remote_url_host_sql
     assert "!~* '^https://github\\.com\\.?" in remote_url_host_sql
+    assert "!~* '^http://github\\.com\\.?" in remote_url_host_sql
     assert "!~* '^ssh://(?:[^@/]+@)?github\\.com\\.?" in remote_url_host_sql
     assert "!~ '^git@[-[:space:][:cntrl:]]'" in remote_url_host_sql
+    assert "remote_url LIKE 'http://%/%'" in remote_url_host_sql
     assert "remote_url LIKE 'ssh://git@%/%'" in remote_url_host_sql
     assert "!~ '^ssh://git@[-[:space:][:cntrl:]]'" in remote_url_host_sql
     assert "!~ '^git@[^:]*\\.:'" in remote_url_host_sql
     assert "!~ '^https://[^/?#]*\\." in remote_url_host_sql
+    assert "!~ '^http://[^/?#]*\\." in remote_url_host_sql
     assert "!~ '^ssh://git@[^/?#]*\\." in remote_url_host_sql
     assert "!~ '^https://\\['" in remote_url_host_sql
+    assert "!~ '^http://\\['" in remote_url_host_sql
     assert "!~ '^ssh://git@\\['" in remote_url_host_sql
     provider_project_path_sql = _check_sql(
         "repository_connections", "ck_repo_conn_provider_project_path"
@@ -168,6 +186,11 @@ def test_gitlab_foundation_connection_constraints_enforce_https_instance_and_hos
     )
     assert "provider_project_path !~ '(^|/)\\.\\.?(/|$)'" in provider_project_path_sql
     assert "provider_project_path IS NOT NULL" in project_path_match_sql
+    assert "WHEN remote_url LIKE 'http://%'" in project_path_match_sql
+    assert "ck_repo_conn_gitlab_http_scheme_match" in revision_text
+    assert "ck_repo_conn_transport_remote_url_scheme_match" in revision_text
+    assert "DROP CONSTRAINT IF EXISTS" in revision_text
+    assert "truncate_and_render_constraint_name" in revision_text
     assert "ck_repo_conn_gitlab_instance_url_https" in revision_text
     assert "ck_repo_conn_gitlab_instance_host_match" in revision_text
     assert "ck_repo_conn_gitlab_https_port_match" in revision_text
@@ -449,6 +472,128 @@ def test_gitlab_foundation_repository_rejects_remote_url_query_or_fragment() -> 
         )
 
 
+def test_gitlab_foundation_repository_rejects_http_userinfo() -> None:
+    repository = RepositoryConnectionRepository(session=MagicMock())
+
+    try:
+        repository.create(
+            RepositoryConnectionDraft(
+                id=uuid.uuid4(),
+                workspace_id=uuid.uuid4(),
+                planning_input_reference_id=uuid.uuid4(),
+                provider=RepositoryProvider.GITLAB_SELF_MANAGED,
+                remote_url="http://x-access-token:secret@gitlab.example.com/group/subgroup/repo.git",
+                transport=RepositoryTransport.HTTP,
+                repository_owner="group",
+                repository_name="repo",
+                provider_instance_url="http://gitlab.example.com",
+                provider_project_path="group/subgroup/repo",
+                default_ref_type=DefaultRefType.BRANCH,
+                default_ref_name="main",
+                status=RepositoryConnectionStatus.ACTIVE,
+                mirror_path=".runtime/git-mirrors/example.git",
+                last_verified_at=None,
+            )
+        )
+    except ValueError as error:
+        assert "must not include credential-bearing userinfo" in str(error)
+    else:
+        raise AssertionError("GitLab HTTP connection should reject userinfo")
+
+
+def test_gitlab_foundation_repository_rejects_http_remote_with_https_instance() -> None:
+    repository = RepositoryConnectionRepository(session=MagicMock())
+
+    try:
+        repository.create(
+            RepositoryConnectionDraft(
+                id=uuid.uuid4(),
+                workspace_id=uuid.uuid4(),
+                planning_input_reference_id=uuid.uuid4(),
+                provider=RepositoryProvider.GITLAB_SELF_MANAGED,
+                remote_url="http://gitlab.example.com/group/subgroup/repo.git",
+                transport=RepositoryTransport.HTTP,
+                repository_owner="group",
+                repository_name="repo",
+                provider_instance_url="https://gitlab.example.com:80",
+                provider_project_path="group/subgroup/repo",
+                default_ref_type=DefaultRefType.BRANCH,
+                default_ref_name="main",
+                status=RepositoryConnectionStatus.ACTIVE,
+                mirror_path=".runtime/git-mirrors/example.git",
+                last_verified_at=None,
+            )
+        )
+    except ValueError as error:
+        assert "scheme must match" in str(error)
+    else:
+        raise AssertionError(
+            "GitLab HTTP remote should reject HTTPS provider_instance_url"
+        )
+
+
+def test_gitlab_foundation_repository_rejects_http_remote_with_https_transport() -> (
+    None
+):
+    repository = RepositoryConnectionRepository(session=MagicMock())
+
+    try:
+        repository.create(
+            RepositoryConnectionDraft(
+                id=uuid.uuid4(),
+                workspace_id=uuid.uuid4(),
+                planning_input_reference_id=uuid.uuid4(),
+                provider=RepositoryProvider.GITLAB_SELF_MANAGED,
+                remote_url="http://gitlab.example.com/group/subgroup/repo.git",
+                transport=RepositoryTransport.HTTPS,
+                repository_owner="group",
+                repository_name="repo",
+                provider_instance_url="http://gitlab.example.com",
+                provider_project_path="group/subgroup/repo",
+                default_ref_type=DefaultRefType.BRANCH,
+                default_ref_name="main",
+                status=RepositoryConnectionStatus.ACTIVE,
+                mirror_path=".runtime/git-mirrors/example.git",
+                last_verified_at=None,
+            )
+        )
+    except ValueError as error:
+        assert "transport must match" in str(error)
+    else:
+        raise AssertionError("GitLab HTTP remote should reject HTTPS transport")
+
+
+def test_gitlab_foundation_repository_rejects_https_remote_with_http_instance() -> None:
+    repository = RepositoryConnectionRepository(session=MagicMock())
+
+    try:
+        repository.create(
+            RepositoryConnectionDraft(
+                id=uuid.uuid4(),
+                workspace_id=uuid.uuid4(),
+                planning_input_reference_id=uuid.uuid4(),
+                provider=RepositoryProvider.GITLAB_SELF_MANAGED,
+                remote_url="https://gitlab.example.com:80/group/subgroup/repo.git",
+                transport=RepositoryTransport.HTTPS,
+                repository_owner="group",
+                repository_name="repo",
+                provider_instance_url="http://gitlab.example.com",
+                provider_project_path="group/subgroup/repo",
+                default_ref_type=DefaultRefType.BRANCH,
+                default_ref_name="main",
+                status=RepositoryConnectionStatus.ACTIVE,
+                mirror_path=".runtime/git-mirrors/example.git",
+                last_verified_at=None,
+            )
+        )
+    except ValueError as error:
+        assert "scheme must match" in str(error)
+    else:
+        raise AssertionError(
+            "GitLab HTTPS remote should reject HTTP provider_instance_url"
+        )
+
+
 def test_gitlab_foundation_repository_treats_gitlab_path_prefix_as_project_namespace_for_ssh_remote() -> (
     None
 ):
@@ -553,7 +698,7 @@ def test_gitlab_foundation_repository_rejects_https_port_mismatch() -> None:
     try:
         repository.create(draft)
     except ValueError as error:
-        assert "HTTPS remote_url port must match" in str(error)
+        assert "HTTP(S) remote_url port must match" in str(error)
     else:
         raise AssertionError(
             "GitLab connection should reject HTTPS port mismatch against default 443"
@@ -1019,6 +1164,36 @@ def test_gitlab_foundation_fake_repository_rejects_credential_bearing_remote_url
         raise AssertionError(
             "fake repository should reject credential-bearing remote_url"
         )
+
+
+def test_gitlab_foundation_fake_repository_rejects_http_userinfo() -> None:
+    store = InMemoryRepositoryStore()
+    repository = FakeRepositoryConnectionRepository(store)
+
+    try:
+        repository.create(
+            RepositoryConnectionDraft(
+                id=uuid.uuid4(),
+                workspace_id=uuid.uuid4(),
+                planning_input_reference_id=uuid.uuid4(),
+                provider=RepositoryProvider.GITLAB_SELF_MANAGED,
+                remote_url="http://x-access-token:secret@gitlab.example.com/group/subgroup/repo.git",
+                transport=RepositoryTransport.HTTP,
+                repository_owner="group",
+                repository_name="repo",
+                provider_instance_url="http://gitlab.example.com",
+                provider_project_path="group/subgroup/repo",
+                default_ref_type=DefaultRefType.BRANCH,
+                default_ref_name="main",
+                status=RepositoryConnectionStatus.ACTIVE,
+                mirror_path=".runtime/git-mirrors/example.git",
+                last_verified_at=None,
+            )
+        )
+    except ValueError as error:
+        assert "must not include credential-bearing userinfo" in str(error)
+    else:
+        raise AssertionError("fake repository should reject HTTP userinfo")
 
 
 def test_gitlab_foundation_fake_repository_rejects_remote_url_query_or_fragment() -> (

@@ -73,6 +73,7 @@ class Settings:
     operator_api_token: str | None
     gitlab_self_managed_allowed_hosts: tuple[str, ...]
     gitlab_webhook_trusted_proxy_hosts: tuple[str, ...]
+    allow_insecure_gitlab_http: bool
 
     def runtime_directories(self) -> tuple[Path, Path, Path]:
         return (
@@ -140,6 +141,9 @@ def load_settings() -> Settings:
         gitlab_webhook_trusted_proxy_hosts=_parse_allowed_hosts(
             os.getenv("TCI_GITLAB_WEBHOOK_TRUSTED_PROXY_HOSTS"),
             strip_port=True,
+        ),
+        allow_insecure_gitlab_http=_parse_bool(
+            os.getenv("TCI_ALLOW_INSECURE_GITLAB_HTTP")
         ),
     )
 
@@ -217,3 +221,9 @@ def _normalize_allowed_host(raw_host: str, *, strip_port: bool = False) -> str:
             return hostname.rstrip(".")
         return f"{hostname.rstrip('.')}:{port}"
     return host.rstrip(".")
+
+
+def _parse_bool(raw_value: str | None) -> bool:
+    if raw_value is None:
+        return False
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}

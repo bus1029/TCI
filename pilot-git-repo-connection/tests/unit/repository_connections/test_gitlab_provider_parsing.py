@@ -120,6 +120,20 @@ def test_parse_provider_accepts_gitlab_self_managed() -> None:
             "group",
             "sample-repo",
         ),
+        (
+            "http://gitlab.example.com/group/sample-repo.git",
+            RepositoryTransport.HTTP,
+            "http://gitlab.example.com",
+            "group",
+            "sample-repo",
+        ),
+        (
+            "http://192.168.10.20:8080/group/sample-repo.git",
+            RepositoryTransport.HTTP,
+            "http://192.168.10.20:8080",
+            "group",
+            "sample-repo",
+        ),
     ],
 )
 def test_gitlab_remote_parser_extracts_instance_namespace_and_project(
@@ -287,6 +301,24 @@ def test_gitlab_remote_parser_extracts_instance_namespace_and_project(
             "https://gitlab.example.com/group/sample-repo.git",
             RepositoryTransport.HTTPS,
             "remoteUrl은 GitHub Cloud 저장소 주소여야 합니다.",
+        ),
+        (
+            RepositoryProvider.GITHUB_CLOUD,
+            "http://github.com/acme/sample-repo.git",
+            RepositoryTransport.HTTP,
+            "remoteUrl은 GitHub Cloud 저장소 주소여야 합니다.",
+        ),
+        (
+            RepositoryProvider.GITLAB_SELF_MANAGED,
+            "http://x-access-token:secret@gitlab.example.com/group/sample-repo.git",
+            RepositoryTransport.HTTP,
+            "remoteUrl은 GitLab Self-Managed 저장소 주소여야 합니다.",
+        ),
+        (
+            RepositoryProvider.GITLAB_SELF_MANAGED,
+            "http://gitlab.example.com/group/sample-repo.git?token=secret",
+            RepositoryTransport.HTTP,
+            "remoteUrl은 GitLab Self-Managed 저장소 주소여야 합니다.",
         ),
     ],
 )

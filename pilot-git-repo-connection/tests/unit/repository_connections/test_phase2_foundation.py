@@ -142,7 +142,7 @@ def test_phase2_enums_match_spec_language() -> None:
         "github_cloud",
         "gitlab_self_managed",
     ]
-    assert [member.value for member in RepositoryTransport] == ["ssh", "https"]
+    assert [member.value for member in RepositoryTransport] == ["ssh", "https", "http"]
     assert [member.value for member in RefType] == [
         "branch",
         "tag",

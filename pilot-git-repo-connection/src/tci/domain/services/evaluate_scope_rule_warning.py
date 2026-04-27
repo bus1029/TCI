@@ -60,6 +60,7 @@ def evaluate_scope_rule_warning(
                 provider=connection.provider,
                 provider_instance_url=connection.provider_instance_url,
                 settings=dependencies.settings,
+                transport=connection.transport,
                 remote_url=connection.remote_url,
             )
             credential_secret = decrypt_secret_from_storage(

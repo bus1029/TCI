@@ -469,8 +469,8 @@ def _normalize_subprocess_output(output: bytes | str | None) -> str:
 
 def _sanitize_git_error_detail(detail: str) -> str:
     sanitized = re.sub(
-        r"https://x-access-token:[^@\s]+@",
-        "https://x-access-token:[REDACTED]@",
+        r"(https?://x-access-token:)[^@\s]+@",
+        r"\1[REDACTED]@",
         detail,
     )
     return re.sub(

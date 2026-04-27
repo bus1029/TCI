@@ -39,6 +39,7 @@ def test_load_settings_uses_project_runtime_defaults(
     monkeypatch.delenv("TCI_TEMPLATE_ROOT", raising=False)
     monkeypatch.delenv("TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS", raising=False)
     monkeypatch.delenv("TCI_GITLAB_WEBHOOK_TRUSTED_PROXY_HOSTS", raising=False)
+    monkeypatch.delenv("TCI_ALLOW_INSECURE_GITLAB_HTTP", raising=False)
 
     settings = load_settings()
     expected_root = _expected_project_root()
@@ -50,6 +51,7 @@ def test_load_settings_uses_project_runtime_defaults(
     assert settings.template_root == expected_root / "src" / "tci" / "web" / "templates"
     assert settings.gitlab_self_managed_allowed_hosts == ()
     assert settings.gitlab_webhook_trusted_proxy_hosts == ()
+    assert settings.allow_insecure_gitlab_http is False
 
 
 def test_load_settings_parses_gitlab_self_managed_allowed_hosts(
@@ -90,6 +92,34 @@ def test_load_settings_parses_gitlab_webhook_trusted_proxy_hosts(
         "2001:db8::1",
         "2001:db8::2",
     )
+
+
+@pytest.mark.parametrize("raw_value", ["1", "true", "TRUE", "yes", "on"])
+def test_load_settings_allows_insecure_gitlab_http_only_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    raw_value: str,
+) -> None:
+    monkeypatch.setenv("TCI_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("TCI_ALLOW_INSECURE_GITLAB_HTTP", raw_value)
+
+    settings = load_settings()
+
+    assert settings.allow_insecure_gitlab_http is True
+
+
+@pytest.mark.parametrize("raw_value", ["0", "false", "off", ""])
+def test_load_settings_disables_insecure_gitlab_http_by_default_values(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    raw_value: str,
+) -> None:
+    monkeypatch.setenv("TCI_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("TCI_ALLOW_INSECURE_GITLAB_HTTP", raw_value)
+
+    settings = load_settings()
+
+    assert settings.allow_insecure_gitlab_http is False
 
 
 def test_load_settings_allows_runtime_path_overrides(

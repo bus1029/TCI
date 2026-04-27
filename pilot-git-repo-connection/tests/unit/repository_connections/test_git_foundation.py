@@ -333,6 +333,29 @@ def test_git_ref_resolver_redacts_https_token_from_runtime_error() -> None:
         )
 
 
+def test_git_ref_resolver_redacts_http_token_from_runtime_error() -> None:
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult, GitRefResolver
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        return GitCommandResult(
+            returncode=1,
+            stdout="",
+            stderr="fatal: could not access http://x-access-token:secret-token@gitlab.example.com/acme/repo.git",
+        )
+
+    resolver = GitRefResolver(runner=runner)
+
+    with pytest.raises(RuntimeError) as error_info:
+        resolver.resolve(
+            remote_url="http://gitlab.example.com/example/repo.git",
+            ref_type=DefaultRefType.BRANCH,
+            ref_name="main",
+        )
+
+    assert "REDACTED" in str(error_info.value)
+    assert "secret-token" not in str(error_info.value)
+
+
 def test_git_readonly_validator_redacts_https_token_from_error_detail() -> None:
     from tci.infrastructure.git.git_readonly_validator import GitReadonlyValidator
     from tci.infrastructure.git.git_ref_resolver import GitCommandResult
@@ -346,6 +369,25 @@ def test_git_readonly_validator_redacts_https_token_from_error_detail() -> None:
 
     validator = GitReadonlyValidator(runner=runner)
     result = validator.probe(remote_url="https://github.com/example/repo.git")
+
+    assert result.problem_code == ProblemCode.CONNECTION_AUTH_FAILED
+    assert "REDACTED" in result.detail
+    assert "secret-token" not in result.detail
+
+
+def test_git_readonly_validator_redacts_http_token_from_error_detail() -> None:
+    from tci.infrastructure.git.git_readonly_validator import GitReadonlyValidator
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        return GitCommandResult(
+            returncode=1,
+            stdout="",
+            stderr="fatal: Authentication failed for http://x-access-token:secret-token@gitlab.example.com/acme/repo.git",
+        )
+
+    validator = GitReadonlyValidator(runner=runner)
+    result = validator.probe(remote_url="http://gitlab.example.com/example/repo.git")
 
     assert result.problem_code == ProblemCode.CONNECTION_AUTH_FAILED
     assert "REDACTED" in result.detail
@@ -647,6 +689,85 @@ def test_https_credential_binding_uses_git_header_env_not_remote_url() -> None:
     assert current_git_command_environment() == {}
 
 
+def test_http_credential_binding_uses_askpass_not_remote_url() -> None:
+    from tci.domain.services.repository_connection_support import bind_git_credential
+    from tci.infrastructure.git.git_command_env import current_git_command_environment
+
+    remote_url = "http://gitlab.example.com/acme/private-repo.git"
+
+    with bind_git_credential(
+        remote_url=remote_url,
+        transport=RepositoryTransport.HTTP,
+        credential_type=CredentialType.HTTPS_PAT,
+        credential_secret="secret-token",
+    ) as bound_remote_url:
+        git_env = current_git_command_environment()
+
+        assert bound_remote_url == remote_url
+        assert "secret-token" not in bound_remote_url
+        assert "secret-token" not in str(git_env)
+        assert "GIT_ASKPASS" in git_env
+        username = subprocess.run(
+            (git_env["GIT_ASKPASS"], "Username for http://gitlab.example.com"),
+            capture_output=True,
+            check=True,
+            env={**os.environ, **git_env},
+            text=True,
+        )
+        password = subprocess.run(
+            (
+                git_env["GIT_ASKPASS"],
+                "Password for http://x-access-token@gitlab.example.com",
+            ),
+            capture_output=True,
+            check=True,
+            env={**os.environ, **git_env},
+            text=True,
+        )
+
+        assert username.stdout == "x-access-token\n"
+        assert password.stdout == "secret-token\n"
+
+    assert current_git_command_environment() == {}
+
+
+def test_http_credential_binding_supports_multiple_git_commands() -> None:
+    from tci.domain.services.repository_connection_support import bind_git_credential
+    from tci.infrastructure.git.git_command_env import current_git_command_environment
+
+    with bind_git_credential(
+        remote_url="http://gitlab.example.com/acme/private-repo.git",
+        transport=RepositoryTransport.HTTP,
+        credential_type=CredentialType.HTTPS_PAT,
+        credential_secret="secret-token",
+    ):
+        git_env = current_git_command_environment()
+
+        for _ in range(3):
+            username = subprocess.run(
+                (git_env["GIT_ASKPASS"], "Username for http://gitlab.example.com"),
+                capture_output=True,
+                check=True,
+                env={**os.environ, **git_env},
+                text=True,
+            )
+            password = subprocess.run(
+                (
+                    git_env["GIT_ASKPASS"],
+                    "Password for http://x-access-token@gitlab.example.com",
+                ),
+                capture_output=True,
+                check=True,
+                env={**os.environ, **git_env},
+                text=True,
+            )
+
+            assert username.stdout == "x-access-token\n"
+            assert password.stdout == "secret-token\n"
+
+    assert current_git_command_environment() == {}
+
+
 def test_https_askpass_environment_waits_for_server_ready(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -867,6 +988,31 @@ def test_git_readonly_validator_accepts_readonly_probe_result() -> None:
     validator = GitReadonlyValidator(runner=runner)
 
     result = validator.probe(remote_url="https://github.com/example/repo.git")
+
+    assert result.is_read_only is True
+    assert result.problem_code is None
+
+
+def test_git_readonly_validator_accepts_gitlab_upload_denied_probe_as_readonly() -> (
+    None
+):
+    from tci.infrastructure.git.git_readonly_validator import GitReadonlyValidator
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        return GitCommandResult(
+            returncode=128,
+            stdout="",
+            stderr=(
+                "remote: You are not allowed to upload code.\n"
+                "fatal: unable to access 'http://gitlab.example.com/group/repo.git/': "
+                "The requested URL returned error: 403\n"
+            ),
+        )
+
+    validator = GitReadonlyValidator(runner=runner)
+
+    result = validator.probe(remote_url="http://gitlab.example.com/group/repo.git")
 
     assert result.is_read_only is True
     assert result.problem_code is None

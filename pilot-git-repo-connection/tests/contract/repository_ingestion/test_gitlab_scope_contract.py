@@ -104,3 +104,44 @@ def test_gitlab_scope_rule_save_rejects_unallowlisted_host_before_preview(
         "message": "GitLab Self-Managed host는 허용 목록에 등록되어야 합니다.",
     }
     assert store.last_resolved_remote_url is None
+
+
+def test_gitlab_scope_rule_save_rejects_stored_http_when_opt_in_disabled_before_preview(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("TCI_ALLOW_INSECURE_GITLAB_HTTP", "true")
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            planning_input_reference_id=reference.id,
+            provider="gitlab_self_managed",
+            remote_url="http://192.168.10.20/group/sample-repo.git",
+            transport="http",
+            credential_type="https_pat",
+        ),
+    )
+    connection_id = create_response.json()["id"]
+    store.last_resolved_remote_url = None
+    object.__setattr__(_settings(client), "allow_insecure_gitlab_http", False)
+
+    response = client.post(
+        f"/api/repository-connections/{connection_id}/scope-rules",
+        json={
+            "includePaths": ["src/**"],
+            "excludePaths": [],
+            "allowedFileTypes": [".py"],
+            "blockedFileTypes": [],
+            "maxFileSizeBytes": 5242880,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "GitLab Self-Managed HTTP 연결은 TCI_ALLOW_INSECURE_GITLAB_HTTP=true일 때만 허용됩니다.",
+    }
+    assert store.last_resolved_remote_url is None

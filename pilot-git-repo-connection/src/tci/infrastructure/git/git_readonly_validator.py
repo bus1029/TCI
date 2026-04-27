@@ -26,6 +26,7 @@ class GitReadonlyValidator:
         "read-only",
         "does not have write access",
         "permission to ",
+        "not allowed to upload code",
         "could not read from remote repository",
     )
 
@@ -81,8 +82,8 @@ class GitReadonlyValidator:
 
 def _sanitize_git_error_detail(detail: str) -> str:
     sanitized = re.sub(
-        r"https://x-access-token:[^@\s]+@",
-        "https://x-access-token:[REDACTED]@",
+        r"(https?://x-access-token:)[^@\s]+@",
+        r"\1[REDACTED]@",
         detail,
     )
     return re.sub(

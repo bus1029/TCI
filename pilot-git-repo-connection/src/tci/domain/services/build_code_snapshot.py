@@ -115,6 +115,7 @@ def build_code_snapshot(
             provider=context.provider,
             provider_instance_url=context.provider_instance_url,
             settings=dependencies.settings,
+            transport=context.transport,
             remote_url=context.remote_url,
         )
         credential_secret = decrypt_secret_from_storage(

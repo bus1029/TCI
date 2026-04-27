@@ -1974,6 +1974,7 @@ def _load_test_settings(tmp_path: Path, *, database_url: str | None = None):
     original_gitlab_proxy_hosts = os.environ.get(
         "TCI_GITLAB_WEBHOOK_TRUSTED_PROXY_HOSTS"
     )
+    original_insecure_gitlab_http = os.environ.get("TCI_ALLOW_INSECURE_GITLAB_HTTP")
     template_root = (
         Path(__file__).resolve().parents[2] / "src" / "tci" / "web" / "templates"
     )
@@ -1983,7 +1984,8 @@ def _load_test_settings(tmp_path: Path, *, database_url: str | None = None):
     os.environ["TCI_TEMPLATE_ROOT"] = str(template_root)
     os.environ["TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS"] = (
         "gitlab.example.com,gitlab.example.com:8443,"
-        "localhost,127.0.0.1,192.168.10.20,192.168.10.20:2222"
+        "localhost,127.0.0.1,192.168.10.20,192.168.10.20:2222,"
+        "192.168.10.20:8080"
     )
     os.environ["TCI_GITLAB_WEBHOOK_TRUSTED_PROXY_HOSTS"] = "testclient,127.0.0.1"
     if database_url is None:
@@ -2028,3 +2030,7 @@ def _load_test_settings(tmp_path: Path, *, database_url: str | None = None):
             os.environ["TCI_GITLAB_WEBHOOK_TRUSTED_PROXY_HOSTS"] = (
                 original_gitlab_proxy_hosts
             )
+        if original_insecure_gitlab_http is None:
+            os.environ.pop("TCI_ALLOW_INSECURE_GITLAB_HTTP", None)
+        else:
+            os.environ["TCI_ALLOW_INSECURE_GITLAB_HTTP"] = original_insecure_gitlab_http
