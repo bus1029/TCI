@@ -7,7 +7,7 @@
 
 ## Implementation Status
 
-- Phase 2 foundation, US1 연결/초기 snapshot/operator detail, US2 scope/ref 관리 경로가 구현됐다.
+- Phase 2 foundation, US1 연결/초기 snapshot/operator detail, US2 scope/ref 관리, US3 webhook 최신화 경로가 구현됐다.
 - 구현된 범위:
   - GitLab self-managed remote 파싱과 provider metadata 저장
   - host allowlist 기반 fail-closed 검증
@@ -24,9 +24,13 @@
   - empty-result snapshot의 `NO_INCLUDED_FILES` 실패 처리와 connection status 보존
   - HTTPS PAT URL embedding 제거, askpass token handshake, isolated SSH agent, ambient Git config/agent 상속 차단
   - scope filtering 전 raw Git tree entry cap과 blob read 전 prefiltering
+  - GitLab push/MR webhook token 검증, delivery-id extraction, event normalization, queued/record-only/dedupe/stale handling
+  - GitHub/GitLab public webhook response uniform `202 accepted` hardening
+  - same-ref active sync uniqueness, blocked follow-up handoff, `dispatch_enqueued_at` 기반 replay/crash recovery
+  - operator token guard와 signed HttpOnly operator session cookie
 - 아직 pending인 범위:
-  - GitLab webhook event normalization
-  - US3 webhook 수신/처리
+  - Phase 6 quickstart/latency harness와 final evidence refresh
+- 최종 reviewer loop는 `python-reviewer`, `security-reviewer`, `database-reviewer`, `pr-test-analyzer` 기준 clean으로 완료됐다. 일반 `reviewer`는 사용자 결정에 따라 제외한다.
 - 상세 증적은 `specs/002-gitlab-onprem-connection/delivery-evidence.md`를 기준으로 한다.
 
 ## Design Input Traceability *(mandatory)*

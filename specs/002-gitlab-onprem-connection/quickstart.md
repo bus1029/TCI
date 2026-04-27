@@ -20,9 +20,13 @@
   - GitLab scope/ref 관리, `excludeBinary`, filtered snapshot, empty-result failure
   - HTTPS/SSH credential binding hardening과 Git subprocess 환경 격리
   - snapshot raw tree entry cap과 blob read 전 scope prefiltering
-- GitLab 연결부터 초기 snapshot 및 operator detail까지는 자동화 검증 기준선이 준비됐다.
-- scope/ref 전체 흐름은 자동화 검증 기준선이 준비됐다.
-- webhook quickstart는 아직 실행 가능한 제품 동작이 아니라, 이후 US3 구현과 검증이 따라야 할 기준선이다.
+  - GitLab push/MR webhook 수신, token 검증, delivery id 추출, event normalization
+  - GitHub/GitLab webhook public response uniform `202 accepted` hardening
+  - webhook limiter connection bucket 정책과 Redis failure handling
+  - same-ref active sync uniqueness, blocked follow-up handoff, `dispatch_enqueued_at` 기반 replay/crash recovery
+- GitLab 연결부터 초기 snapshot, scope/ref, webhook 최신화, operator detail까지는 자동화 검증 기준선이 준비됐다.
+- Phase 6 quickstart/latency harness는 아직 미구현이다. 최종 reviewer loop가 clean으로 끝났으므로 다음 세션은 `T044`~`T046`을 시작한다.
+- reviewer loop는 일반 `reviewer`를 호출하지 않고 `python-reviewer`, `security-reviewer`, `database-reviewer`, `pr-test-analyzer`만 사용했으며, 현재 clean 상태다.
 - 현재 준비된 자동화 표면:
   - `tests/contract/repository_ingestion/test_gitlab_connection_contract.py`
   - `tests/contract/repository_ingestion/test_gitlab_webhook_contract.py`
@@ -42,7 +46,7 @@
   - `tests/unit/repository_connections/test_update_default_ref.py`
   - `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
   - `tests/integration/repository_connections/test_phase2_migration_smoke.py`
-- 전체 webhook quickstart 검증은 US3 이후 실제 구현 상태에 맞춰 채워진다.
+- 전체 webhook 제품 흐름은 테스트로 구현되어 있다. 단, 운영자가 15분 이내 완료하는 quickstart harness와 1분 이내 status refresh latency harness는 Phase 6에서 추가해야 한다.
 - 최신 실행 결과는 `delivery-evidence.md`를 기준으로 확인한다.
 
 ## 사전 조건
@@ -111,8 +115,8 @@
 ### 5. GitLab webhook 보안과 health
 
 1. 올바른 `X-Gitlab-Token`으로 webhook을 보내면 검증 성공하는지 확인한다.
-2. 잘못된 token으로 보내면 canonical status는 유지되고 `webhookHealth.webhookStatus=secret_mismatch_detected`가 노출되는지 확인한다.
-3. 올바른 token으로 다시 보내면 `webhookHealth.webhookStatus=healthy`로 회복되는지 확인한다.
+2. 잘못된 token으로 보내면 canonical status는 유지되고 `webhookHealth.webhookStatus=secret_mismatch_detected`, delivery `secret_mismatch` 거부가 기록되는지 확인한다.
+3. 올바른 token으로 다시 보내면 `webhookHealth.webhookStatus=healthy`로 유지 또는 회복되는지 확인한다.
 
 ### 6. Provider compatibility regression
 

@@ -13,6 +13,10 @@ tags:
   - name: RepositoryEvents
   - name: GitHubWebhooks
   - name: GitLabWebhooks
+security:
+  - OperatorHeaderToken: []
+  - OperatorBearerToken: []
+  - OperatorCookieToken: []
 paths:
   /api/repository-connections:
     post:
@@ -149,6 +153,7 @@ paths:
       tags: [GitHubWebhooks]
       summary: GitHub Cloud webhook 수신
       operationId: receiveGitHubWebhook
+      security: []
       parameters:
         - $ref: '#/components/parameters/ConnectionId'
         - name: X-GitHub-Delivery
@@ -178,6 +183,7 @@ paths:
       tags: [GitLabWebhooks]
       summary: GitLab self-managed webhook 수신
       operationId: receiveGitLabWebhook
+      security: []
       parameters:
         - $ref: '#/components/parameters/ConnectionId'
         - name: X-Gitlab-Event
@@ -208,6 +214,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/WebhookAcceptedResponse'
 components:
+  securitySchemes:
+    OperatorHeaderToken:
+      type: apiKey
+      in: header
+      name: X-TCI-Operator-Token
+      description: Management API operator token configured by TCI_OPERATOR_API_TOKEN.
+    OperatorBearerToken:
+      type: http
+      scheme: bearer
+      description: Same operator token supplied as an Authorization bearer token.
+    OperatorCookieToken:
+      type: apiKey
+      in: cookie
+      name: tci_operator_token
+      description: Short-lived signed browser operator session cookie issued by /operator/session.
   parameters:
     ConnectionId:
       name: connectionId
@@ -397,6 +418,25 @@ components:
           enum: [reachable, unreachable_recently, tls_failed_recently, dns_failed_recently]
         lastRejectionReason:
           type: string
+          enum: [secret_missing, secret_mismatch, signature_invalid]
+          nullable: true
+        lastRejectionAt:
+          type: string
+          format: date-time
+          nullable: true
+        rotationState:
+          type: string
+          enum: [not_rotating, grace_active, grace_expired]
+        graceUntil:
+          type: string
+          format: date-time
+          nullable: true
+        previousSecretDeliveriesDuringGrace:
+          type: integer
+          minimum: 0
+        lastPreviousSecretAcceptedAt:
+          type: string
+          format: date-time
           nullable: true
     TraceabilityBlock:
       type: object

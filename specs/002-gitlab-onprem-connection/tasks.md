@@ -36,7 +36,7 @@
 - [x] T005 Extend provider enums, canonical state helpers, and shared persistence models for `gitlab_self_managed`, `provider_instance_url`, delivery-id source, health projection, and `webhook_merge_request` trigger support in `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
 - [x] T006 Create additive Alembic migration for mixed-provider repository ingestion schema changes in `pilot-git-repo-connection/alembic/versions/004_gitlab_self_managed_provider_support.py`
 - [x] T007 [P] Refactor provider parsing and remote validation entry points to support GitHub/GitLab side by side in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py` and `pilot-git-repo-connection/src/tci/infrastructure/git/remote_parsers.py`
-- [ ] T008 [P] Introduce shared provider event types and normalized event DTOs in `pilot-git-repo-connection/src/tci/infrastructure/webhooks/provider_event_types.py` and `pilot-git-repo-connection/src/tci/domain/services/repository_event_processing.py` *(deferred to US3 webhook implementation; not required for US1 lifecycle completion)*
+- [x] T008 [P] Introduce shared provider event types and normalized event DTOs in `pilot-git-repo-connection/src/tci/infrastructure/webhooks/provider_event_types.py` and `pilot-git-repo-connection/src/tci/domain/services/repository_event_processing.py`
 - [x] T009 [P] Extend repository connection, event, cursor, sync run, and snapshot repositories for mixed-provider reads/writes in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`, `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_repository.py`, `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_event_cursor_repository.py`, `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_sync_run_repository.py`, and `pilot-git-repo-connection/src/tci/infrastructure/persistence/code_snapshot_repository.py`
 - [x] T010 [P] Extend shared API schemas for mixed-provider connection detail, webhook health, and traceability fields in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`, `pilot-git-repo-connection/src/tci/api/schemas/repository_scope.py`, and `pilot-git-repo-connection/src/tci/api/schemas/_base.py`
 - [x] T011 [P] Add foundational unit tests for mixed-provider model invariants, canonical status rules, and additive migration expectations in `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py`
@@ -47,9 +47,10 @@
 **Current Progress Note**:
 
 - 완료 체크가 현재 작업 상태의 기준이다. 상세 실행 로그와 리뷰 이력은 `delivery-evidence.md`와 `next-session-handoff.md`를 본다.
-- 2026-04-24 결정: `T008`은 US3 webhook event normalization 선행 작업으로 defer한다.
+- 2026-04-26 갱신: `T008`은 US3 webhook event normalization 구현과 함께 완료했다.
 - US1 진행 gate는 `T005`, `T006`, `T007`, `T009`, `T010`, `T011`, `T012` 완료로 충족한다.
-- 다음 우선순위는 US3 webhook 수신/처리다. US3를 시작하려면 먼저 `T008` webhook normalization을 진행한다.
+- 2026-04-27 현재: US1~US3 구현, reviewer follow-up hardening, 최종 reviewer loop가 clean 상태다.
+- 다음 우선순위는 Phase 6 polish/quickstart/latency 검증이다. 일반 `reviewer`는 사용자 결정에 따라 계속 제외한다.
 
 ---
 
@@ -112,21 +113,21 @@
 
 ### Tests for User Story 3
 
-- [ ] T032 [P] [US3] Add contract tests for GitLab webhook intake, accepted response, and connection detail health projection in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_webhook_contract.py`
-- [ ] T033 [P] [US3] Add unit tests for GitLab token verification, delivery-id extraction, and MR update gating in `pilot-git-repo-connection/tests/unit/repository_connections/test_process_gitlab_event.py`
-- [ ] T034 [P] [US3] Add integration tests for GitLab push webhook, merge request webhook, duplicate delivery, stale head, token mismatch handling, and state-based webhook snapshot blocking in `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_provider_flows.py`
-- [ ] T035 [P] [US3] Extend GitHub webhook regression tests to cover mixed-provider coexistence in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+- [x] T032 [P] [US3] Add contract tests for GitLab webhook intake, accepted response, and connection detail health projection in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_gitlab_webhook_contract.py`
+- [x] T033 [P] [US3] Add unit tests for GitLab token verification, delivery-id extraction, and MR update gating in `pilot-git-repo-connection/tests/unit/repository_connections/test_process_gitlab_event.py`
+- [x] T034 [P] [US3] Add integration tests for GitLab push webhook, merge request webhook, duplicate delivery, stale head, token mismatch handling, and state-based webhook snapshot blocking in `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_provider_flows.py`
+- [x] T035 [P] [US3] Extend GitHub webhook regression tests to cover mixed-provider coexistence in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
 
 ### Implementation for User Story 3
 
-- [ ] T036 [P] [US3] Implement GitLab webhook token verifier and delivery-id extractor in `pilot-git-repo-connection/src/tci/infrastructure/webhooks/gitlab_token_verifier.py` and `pilot-git-repo-connection/src/tci/infrastructure/webhooks/gitlab_delivery_id.py`
-- [ ] T037 [P] [US3] Implement GitLab push and merge request payload parser in `pilot-git-repo-connection/src/tci/infrastructure/webhooks/gitlab_event_parser.py`
-- [ ] T038 [US3] Implement GitLab event processing service for commit recording, record-only/queued decisions, dedupe, stale-head handling, and health updates in `pilot-git-repo-connection/src/tci/domain/services/process_gitlab_event.py`
-- [ ] T039 [US3] Implement GitLab webhook intake route and Celery enqueue handoff in `pilot-git-repo-connection/src/tci/api/routes/gitlab_webhooks.py`
-- [ ] T040 [US3] Extend queue tasks and sync-run execution for GitLab push and merge request source-branch snapshots with `reauth_required`/`ref_missing` blocking in `pilot-git-repo-connection/src/tci/infrastructure/queue/repository_ingestion_tasks.py`
-- [ ] T041 [US3] Extend event list/detail query services and operator event timeline for mixed-provider event projections in `pilot-git-repo-connection/src/tci/domain/services/list_repository_events.py`, `pilot-git-repo-connection/src/tci/api/routes/repository_events.py`, `pilot-git-repo-connection/src/tci/web/routes/repository_events.py`, and `pilot-git-repo-connection/src/tci/web/templates/connections/events.html`
-- [ ] T042 [US3] Extend connection detail read model and webhook health projection for GitLab single-secret validation failures and reachability health in `pilot-git-repo-connection/src/tci/domain/services/get_repository_connection_detail.py` and `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
-- [ ] T043 [US3] Capture User Story 3 verification evidence for GitLab realtime sync and GitHub compatibility in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
+- [x] T036 [P] [US3] Implement GitLab webhook token verifier and delivery-id extractor in `pilot-git-repo-connection/src/tci/infrastructure/webhooks/gitlab_token_verifier.py` and `pilot-git-repo-connection/src/tci/infrastructure/webhooks/gitlab_delivery_id.py`
+- [x] T037 [P] [US3] Implement GitLab push and merge request payload parser in `pilot-git-repo-connection/src/tci/infrastructure/webhooks/gitlab_event_parser.py`
+- [x] T038 [US3] Implement GitLab event processing service for commit recording, record-only/queued decisions, dedupe, stale-head handling, and health updates in `pilot-git-repo-connection/src/tci/domain/services/process_gitlab_event.py`
+- [x] T039 [US3] Implement GitLab webhook intake route and Celery enqueue handoff in `pilot-git-repo-connection/src/tci/api/routes/gitlab_webhooks.py`
+- [x] T040 [US3] Extend queue tasks and sync-run execution for GitLab push and merge request source-branch snapshots with `reauth_required`/`ref_missing` blocking in `pilot-git-repo-connection/src/tci/infrastructure/queue/repository_ingestion_tasks.py`
+- [x] T041 [US3] Extend event list/detail query services and operator event timeline for mixed-provider event projections in `pilot-git-repo-connection/src/tci/domain/services/list_repository_events.py`, `pilot-git-repo-connection/src/tci/api/routes/repository_events.py`, `pilot-git-repo-connection/src/tci/web/routes/repository_events.py`, and `pilot-git-repo-connection/src/tci/web/templates/connections/events.html`
+- [x] T042 [US3] Extend connection detail read model and webhook health projection for GitLab single-secret validation failures and reachability health in `pilot-git-repo-connection/src/tci/domain/services/get_repository_connection_detail.py` and `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
+- [x] T043 [US3] Capture User Story 3 verification evidence for GitLab realtime sync and GitHub compatibility in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
 
 **Checkpoint**: GitLab webhook 기반 최신화와 mixed-provider 호환 운영이 독립 검증 가능해야 한다.
 
@@ -135,6 +136,8 @@
 ## Phase 6: Polish & Cross-Cutting Concerns
 
 **Purpose**: mixed-provider 회귀, quickstart, evidence를 마무리한다.
+
+**Current Gate**: `python-reviewer`, `security-reviewer`, `database-reviewer`, `pr-test-analyzer` loop는 clean으로 완료됐다. Phase 6을 시작할 수 있다. 일반 `reviewer`는 사용자 결정에 따라 제외한다.
 
 - [ ] T044 [P] Add end-to-end quickstart regression harness and operator-path duration validation for SC-001 across GitLab primary flow and GitHub compatibility flow in `pilot-git-repo-connection/tests/support/run_gitlab_quickstart_validation.py` and `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_quickstart_validation.py`
 - [ ] T045 [P] Add mixed-provider latency and status-refresh validation for SC-002 and SC-004 in `pilot-git-repo-connection/tests/support/measure_gitlab_webhook_status_latency.py` and `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_webhook_status_latency.py`

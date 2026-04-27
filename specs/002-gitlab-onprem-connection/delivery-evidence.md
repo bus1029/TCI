@@ -2,591 +2,189 @@
 
 ## 목적
 
-이 문서는 `002-gitlab-onprem-connection` 구현이 어떤 검증 근거로 완료되었는지 기록한다. GitLab self-managed 신규 흐름과 기존 GitHub Cloud 회귀를 함께 추적할 수 있어야 하며, `FR-001`부터 `FR-023`, `SC-001`부터 `SC-005`까지의 근거를 한곳에서 연결해야 한다.
+이 문서는 `002-gitlab-onprem-connection`의 현재 구현/검증 상태를 빠르게 이어받기 위한 증적 요약이다. 오래된 RED/GREEN 상세 로그는 2026-04-27에 압축했고, 다음 세션 판단에 필요한 결정사항과 최신 검증 상태만 남긴다.
 
 ## 문서 사용 규칙
 
-- Phase 1에서는 섹션, 추적 키, 기대 근거 슬롯만 먼저 준비한다.
-- 각 구현 Phase가 끝날 때마다 관련 사용자 스토리, FR, SC 섹션에 검증 근거를 추가한다.
-- 실행 로그는 명령, 결과 요약, 필요 시 수동 검증 메모를 함께 남긴다.
-- GitLab 신규 검증과 GitHub 회귀 검증은 같은 섹션에 섞어 쓰지 않고 구분해서 기록한다.
+- 다음 세션은 먼저 `Current Handoff State`와 `Open Evidence Slots`를 읽는다.
+- 상세 요구사항은 `spec.md`, 실행 순서는 `tasks.md`, 운영 흐름은 `quickstart.md`를 기준으로 한다.
+- 새 개발 증적은 최신 섹션에만 추가하고, 오래된 상세 명령 로그를 다시 누적하지 않는다.
+- 일반 `reviewer`는 사용자 결정에 따라 제외한다.
 
 ## Feature Artifact Trace References
 
-| Artifact | Path | Purpose | Phase 1 Status |
-|----------|------|---------|----------------|
-| Spec | `specs/002-gitlab-onprem-connection/spec.md` | 승인 범위와 FR/SC 기준선 | linked |
-| Plan | `specs/002-gitlab-onprem-connection/plan.md` | 구현 전략과 mixed-provider 설계 규칙 | linked |
-| Research | `specs/002-gitlab-onprem-connection/research.md` | provider adapter, webhook, credential 설계 근거 | linked |
-| Data Model | `specs/002-gitlab-onprem-connection/data-model.md` | mixed-provider entity/state 확장 근거 | linked |
-| Contract | `specs/002-gitlab-onprem-connection/contracts/repository-ingestion.openapi.yaml` | API/webhook 계약 기준선 | linked |
-| Quickstart | `specs/002-gitlab-onprem-connection/quickstart.md` | 운영 검증 경로와 완료 기준 | linked |
-| Tasks | `specs/002-gitlab-onprem-connection/tasks.md` | Phase/task 실행 순서 | linked |
+| Artifact | Path | Purpose |
+|----------|------|---------|
+| Spec | `specs/002-gitlab-onprem-connection/spec.md` | 승인 범위와 FR/SC 기준선 |
+| Plan | `specs/002-gitlab-onprem-connection/plan.md` | 구현 전략과 mixed-provider 설계 규칙 |
+| Research | `specs/002-gitlab-onprem-connection/research.md` | provider adapter, webhook, credential 설계 근거 |
+| Data Model | `specs/002-gitlab-onprem-connection/data-model.md` | mixed-provider entity/state 확장 근거 |
+| Contract | `specs/002-gitlab-onprem-connection/contracts/repository-ingestion.openapi.yaml` | API/webhook 계약 기준선 |
+| Quickstart | `specs/002-gitlab-onprem-connection/quickstart.md` | 운영 검증 경로와 완료 기준 |
+| Tasks | `specs/002-gitlab-onprem-connection/tasks.md` | Phase/task 실행 순서 |
+| Handoff | `specs/002-gitlab-onprem-connection/next-session-handoff.md` | 다음 세션 시작 순서와 Phase 6 진입 기준 |
+
+## Current Handoff State
+
+- US1~US3 구현은 local GREEN이다.
+- `python-reviewer` HIGH findings 3개는 TDD로 수정했고 reviewer loop가 clean으로 끝났다.
+- 최종 reviewer 결과:
+  - `python-reviewer`: blocking findings 없음, approve verdict.
+  - `security-reviewer`: security findings 없음.
+  - `database-reviewer`: database findings 없음.
+  - `pr-test-analyzer`: material remaining test gaps 없음.
+- 일반 `reviewer`는 사용자 결정에 따라 호출하지 않았다.
+- Phase 6(`T044`~`T046`) quickstart/latency/evidence 작업을 시작할 수 있다.
 
 ## Phase Status
 
 | Phase | Goal | Status | Evidence |
 |------|------|--------|----------|
-| Phase 1 | 증적 문서 및 테스트 골격 준비 | scaffolded | T001-T004 |
-| Phase 2 | mixed-provider 공통 기반 구축 | US1-ready | T005-T007, T009-T012; T008 deferred to US3 |
+| Phase 1 | 증적 문서 및 테스트 골격 준비 | complete | T001-T004 |
+| Phase 2 | mixed-provider 공통 기반 구축 | complete | T005-T012 |
 | Phase 3 | US1 GitLab 연결과 초기 snapshot | complete | T013-T023 |
 | Phase 4 | US2 scope/ref 관리 | complete | T024-T031 |
-| Phase 5 | US3 webhook 최신화 | pending | - |
-| Phase 6 | polish, quickstart, latency 검증 | pending | - |
+| Phase 5 | US3 webhook 최신화 | complete | T008, T032-T043 |
+| Phase 6 | polish, quickstart, latency 검증 | ready | reviewer loop clean 완료 후 시작 가능 |
 
 ## User Story Verification
 
 ### User Story 1
 
 - 상태: complete
-- 범위
-  - GitLab self-managed 저장소 연결 생성
-  - verify 성공 및 `reauth_required` / `ref_missing` 전이
-  - 초기 snapshot 생성
-  - GitHub compatibility regression
-- 근거
-  - Contract
-    - Phase 1 scaffold: `tests/contract/repository_ingestion/test_gitlab_connection_contract.py`
-    - Implemented coverage: `tests/contract/repository_ingestion/test_repository_connection_contract.py`
-      - GitLab provider create and derived metadata
-      - allowlist rejection before git access
-      - custom HTTPS/SSH port allowlist behavior
-      - `/gitlab` path prefix as project namespace
-      - GitLab detail response shape compatibility
-      - default-ref patch allowlist rejection
-  - Integration
-    - Phase 1 scaffold: `tests/integration/repository_connections/test_gitlab_provider_flows.py`
-    - Phase 1 scaffold: `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
-    - Planned follow-up split in `T014`: `tests/integration/repository_connections/test_gitlab_connection_lifecycle.py`
-    - Operator detail coverage: `tests/integration/repository_connections/test_operator_connection_pages.py`
-      - GitLab instance URL and project path rendered in connection detail
-      - active scope rule traceability rendered for operator audit
-      - `webhookAuthMode` / `shared_token` not exposed in operator detail HTML
-  - 실행 결과
-    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections tests/contract/repository_ingestion`
-    - 결과: `244 passed, 9 skipped in 7.52s`
-    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_operator_connection_pages.py -q`
-    - 결과: `9 passed in 0.98s`
+- 범위: GitLab self-managed 저장소 연결 생성, verify, status transition, 초기 snapshot, GitHub compatibility regression.
+- 핵심 증적:
+  - `tests/contract/repository_ingestion/test_repository_connection_contract.py`
+  - `tests/integration/repository_connections/test_gitlab_connection_lifecycle.py`
+  - `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+  - `tests/integration/repository_connections/test_operator_connection_pages.py`
+  - `tests/unit/repository_connections/test_verify_repository_connection.py`
+  - `tests/unit/repository_connections/test_update_default_ref.py`
+- 보존 결정:
+  - GitLab allowlist는 outbound git access와 credential decrypt 전에 검증한다.
+  - `github.com`, trailing-dot host, IPv6, userinfo/query/fragment, malformed port는 GitLab self-managed remote로 거부한다.
+  - `localhost`, private IPv4, custom SSH/HTTPS port는 allowlist에 명시된 경우 지원한다.
+  - canonical connection status는 `active`, `reauth_required`, `ref_missing`만 유지한다.
+  - `webhookAuthMode`, `shared_token`, raw operator token은 general response/operator HTML에 노출하지 않는다.
 
 ### User Story 2
 
 - 상태: complete
-- 범위
-  - GitLab ref 변경 관리
-  - scope rule 저장과 경고
-  - filtered snapshot 생성
-  - GitHub compatibility regression
-- 근거
-  - Contract
-    - Phase 1 scaffold: `tests/contract/repository_ingestion/test_gitlab_connection_contract.py`
-    - Implemented coverage: `tests/contract/repository_ingestion/test_gitlab_scope_contract.py`
-      - GitLab scope rule save/detail projection
-      - `excludeBinary` request/response/detail projection
-      - GitLab allowlist rejection before preview git access
-    - Implemented coverage: `tests/contract/repository_ingestion/test_repository_scope_contract.py`
-      - GitLab allowlist rejection is propagated before preview git access
-      - shared scope projection includes `excludeBinary`
-  - Unit
-    - Implemented coverage: `tests/unit/repository_connections/test_gitlab_scope_rules.py`
-      - provider-neutral scope precedence
-      - hard excludes and `5 MiB` guard override explicit includes
-      - binary opt-in when `excludeBinary=false`
-  - Integration
-    - Phase 1 scaffold: `tests/integration/repository_connections/test_gitlab_provider_flows.py`
-    - Phase 1 scaffold: `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
-    - Implemented coverage: `tests/integration/repository_connections/test_gitlab_scoped_snapshot.py`
-      - GitLab scoped snapshot stamps active scope version
-      - default-ref change affects future sync without mutating prior history
-      - empty-result snapshot fails with `NO_INCLUDED_FILES` without status transition
-    - Operator coverage: `tests/integration/repository_connections/test_operator_scope_pages.py`
-      - GitLab instance/project summary on scope page
-      - binary policy warning state display
-  - 실행 결과
-    - RED: `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py -q`
-    - 결과: `2 failed, 6 passed`
-    - 의도한 실패 이유: `excludeBinary`가 scope API/detail projection과 snapshot filter path에 전달되지 않음
-    - GREEN: `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py -q`
-    - 결과: `8 passed in 0.93s`
-    - Focused regression: `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py tests/contract/repository_ingestion/test_repository_scope_contract.py tests/integration/repository_connections/test_scoped_snapshot.py tests/integration/repository_connections/test_operator_scope_pages.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
-    - 결과: `26 passed, 3 skipped in 1.15s`
+- 범위: GitLab ref 변경 관리, scope rule 저장/경고, filtered snapshot, GitHub compatibility regression.
+- 핵심 증적:
+  - `tests/contract/repository_ingestion/test_gitlab_scope_contract.py`
+  - `tests/contract/repository_ingestion/test_repository_scope_contract.py`
+  - `tests/unit/repository_connections/test_gitlab_scope_rules.py`
+  - `tests/integration/repository_connections/test_gitlab_scoped_snapshot.py`
+  - `tests/integration/repository_connections/test_operator_scope_pages.py`
+  - `tests/integration/repository_connections/test_scoped_snapshot.py`
+- 보존 결정:
+  - `excludeBinary=false`는 binary opt-in으로 처리하되 hard exclude와 `5 MiB` guard는 유지한다.
+  - scope preview allowlist rejection은 preview failure로 삼키지 않고 management API problem response로 전파한다.
+  - Git subprocess는 ambient `HOME`, `GIT_CONFIG_*`, `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND`를 신뢰하지 않는다.
+  - HTTPS PAT는 URL embedding 대신 askpass Unix socket flow를 사용한다.
+  - SSH private key는 temp file 대신 isolated `ssh-agent`에 stdin으로 등록한다.
+  - snapshot materialization은 scope filter 전 raw tree entry cap을 둔다.
 
 ### User Story 3
 
-- 상태: pending
-- 범위
-  - GitLab push webhook
-  - GitLab merge request webhook
-  - dedupe, stale head, token mismatch health
-  - GitHub webhook regression
-- 근거
-  - Contract
-    - Phase 1 scaffold: `tests/contract/repository_ingestion/test_gitlab_webhook_contract.py`
-  - Unit
-    - Phase 1 scaffold: `tests/unit/repository_connections/test_process_gitlab_event.py`
-  - Integration
-    - Phase 1 scaffold: `tests/integration/repository_connections/test_gitlab_provider_flows.py`
-    - Phase 1 scaffold: `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
-  - 실행 결과
-    - pending
+- 상태: complete, reviewer loop clean
+- 범위: GitLab push/MR webhook, dedupe, stale head, token mismatch health, GitHub webhook regression.
+- 핵심 증적:
+  - `tests/contract/repository_ingestion/test_gitlab_webhook_contract.py`
+  - `tests/contract/repository_ingestion/test_github_webhook_contract.py`
+  - `tests/unit/repository_connections/test_process_gitlab_event.py`
+  - `tests/unit/repository_connections/test_webhook_sync_task.py`
+  - `tests/integration/repository_connections/test_gitlab_provider_flows.py`
+  - `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+  - `tests/integration/repository_connections/test_github_webhook_refresh.py`
+- 보존 결정:
+  - Public webhook response는 auth/validation oracle을 만들지 않도록 authenticated malformed/invalid payload까지 uniform `202 {"status":"accepted"}`로 접는다.
+  - Redis limiter 장애는 raw `500`이 아니라 webhook unavailable `503`으로 접는다.
+  - GitHub/GitLab webhook limiter는 source-level pre-auth cap을 제거하고 connection bucket 중심으로 유지한다.
+  - 같은 requested ref의 active sync는 `pending`/`running` 하나만 허용한다.
+  - running sync 중 같은 ref에 새 head가 오면 blocked follow-up을 하나만 유지하고 최신 이벤트로 교체한다.
+  - `RepositorySyncRun.dispatch_enqueued_at`는 Celery publish 성공 marker이며 outbox가 아니다.
+  - `dispatch_enqueued_at is None`인 active pending sync는 commit-to-enqueue crash gap 복구 대상으로 본다.
 
-## Functional Requirement Trace Matrix
+## Requirement Trace Summary
 
-| Requirement | Summary | Planned Evidence |
-|-------------|---------|------------------|
-| FR-001 | GitHub Cloud 기준선 유지 + GitLab self-managed 추가 | US1/US3 regression tests; GitLab parser keeps GitHub parser path intact |
-| FR-002 | provider, remote, transport, credential, status 등록 | GitLab connection contract/integration; create contract now verifies derived metadata |
-| FR-002a | 읽기 전용 credential만 허용 | GitLab readonly validator unit/integration |
-| FR-003 | 연결 등록 시 접근 가능 여부 검증 | create/verify contract/integration; allowlist rejection before git access covered |
-| FR-004 | GitHub 기존 흐름 유지 | GitHub compatibility regression |
-| FR-004a | canonical status는 `active`, `reauth_required`, `ref_missing`만 사용 | phase2 foundation/unit |
-| FR-005 | 기본 분석 대상 ref 1개 선택/변경 | connection patch and verify tests; GitLab allowlist check covered on patch |
-| FR-006 | ref 변경 후 기존 snapshot/event 이력 보존 | integration lifecycle tests |
-| FR-007 | 조치 필요 상태에서 새 수집 차단 | blocked snapshot/webhook integration; snapshot allowlist rejection before git access covered |
-| FR-007a | auth 실패 시 `reauth_required` | verify lifecycle tests |
-| FR-007b | ref 조회 실패 시 `ref_missing` | verify lifecycle tests |
-| FR-008 | include/exclude/file type 규칙 관리 | scope contract/integration |
-| FR-009 | GitHub/GitLab 공통 scope semantics 유지 | mixed-provider regression |
-| FR-009a | 텍스트 파일만 기본 수집, 바이너리/생성물/5 MiB 초과 제외 | scope engine and snapshot tests |
-| FR-010 | provider/ref/scope/captured-at 포함 snapshot 생성 | snapshot integration/detail checks |
-| FR-011 | 완전한 파일 집합 snapshot 보존 | snapshot storage integration |
-| FR-012 | Commit/Push/Merge Request webhook 기록 | webhook contract/integration |
-| FR-012a | commit 메타데이터는 기록 전용으로 저장 | process_gitlab_event unit/integration |
-| FR-013 | Push/MR만 snapshot 최신화 기준 이벤트로 사용 | process_gitlab_event unit/integration |
-| FR-014 | MR source branch 기준 snapshot 생성 | merge request integration |
-| FR-014a | `opened`, `reopened`, code-moving `update`만 queued | process_gitlab_event unit |
-| FR-015 | connection별 webhook secret 검증/거부 사유 기록 | webhook contract/integration |
-| FR-015a | webhook 이상을 health 신호로 분리 | connection detail contract/integration |
-| FR-016 | duplicate/stale webhook guard | webhook integration |
-| FR-017 | latest success/failure/last processed event 요약 | detail/event contract |
-| FR-018 | connection/scope/event/snapshot traceability 유지 | detail and evidence trace checks; GitLab `provider_instance_url` and `provider_project_path` persistence covered |
-| FR-019 | 빈 수집 위험 경고와 empty snapshot 실패 처리 | scope warning and snapshot tests; allowlist rejection is not swallowed by preview failure handling |
-| FR-020 | mixed-provider 동시 운영 시 상태/이력 분리 | compatibility regression |
-| FR-021 | 읽기 전용 공유 credential 운영 모델 유지 | validator/service tests |
-| FR-022 | GitHub와 유사한 작업 순서/상태 해석 제공 | quickstart and operator flow |
-| FR-023 | 계획 입력과 connection/snapshot traceability 유지 | detail traceability tests |
+| Range | Summary | Current Evidence Status |
+|-------|---------|-------------------------|
+| FR-001-FR-004 | GitHub 기준선 유지와 GitLab provider 추가 | covered by mixed-provider contract/integration regression |
+| FR-005-FR-011 | ref, scope, filtered snapshot, snapshot traceability | covered by US1/US2 suites; SC traceability final evidence remains Phase 6 |
+| FR-012-FR-017 | Push/MR webhook, health, dedupe, latest status | implemented; replay/dispatch/limiter reviewer findings fixed and clean-reviewed |
+| FR-018-FR-023 | connection/snapshot traceability, operator flow, shared credential model | implemented for product flow; quickstart/latency harness remains Phase 6 |
 
 ## Success Criteria Trace Matrix
 
-| Criterion | Target | Planned Evidence | Status |
-|-----------|--------|------------------|--------|
-| SC-001 | GitLab 연결부터 첫 snapshot 완료까지 15분 이내 | quickstart harness + US1 integration | pending |
-| SC-002 | 유효한 Push/MR 이벤트 95% 이상 1분 이내 처리 상태 반영 | latency harness + webhook integration | pending |
-| SC-003 | snapshot 100% traceability | connection detail + snapshot detail checks | partial: US1/US2 covered |
-| SC-004 | GitHub 기준선 시나리오 모두 유지 | compatibility regression suite | pending |
-| SC-005 | 스냅샷 100% scope rule 일치 | scope engine + filtered snapshot tests | partial: US2 covered |
+| Criterion | Target | Status |
+|-----------|--------|--------|
+| SC-001 | GitLab 연결부터 첫 snapshot 완료까지 15분 이내 | pending: Phase 6 quickstart harness |
+| SC-002 | 유효한 Push/MR 이벤트 95% 이상 1분 이내 처리 상태 반영 | partial: webhook transition covered; latency harness pending |
+| SC-003 | snapshot 100% traceability | partial: US1/US2 covered; final evidence pending |
+| SC-004 | GitHub 기준선 시나리오 모두 유지 | covered by full suite and mixed-provider regression |
+| SC-005 | 스냅샷 100% scope rule 일치 | covered by US2 scope/snapshot tests |
 
-## Test Evidence Index
+## Latest Verification
 
-### Phase 1 Scaffolded Files
-
-- Contract
-  - `tests/contract/repository_ingestion/test_gitlab_connection_contract.py`
-  - `tests/contract/repository_ingestion/test_gitlab_webhook_contract.py`
-- Unit
-  - `tests/unit/repository_connections/test_gitlab_provider_parsing.py`
-  - `tests/unit/repository_connections/test_process_gitlab_event.py`
-- Integration
-  - `tests/integration/repository_connections/test_gitlab_provider_flows.py`
-  - `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
-
-### Planned Follow-up Additions
-
-- Integration
-  - `tests/integration/repository_connections/test_gitlab_connection_lifecycle.py` in `T014`
-  - `tests/contract/repository_ingestion/test_gitlab_scope_contract.py` in `T024`
-  - `tests/unit/repository_connections/test_gitlab_scope_rules.py` in `T025`
-  - `tests/integration/repository_connections/test_gitlab_scoped_snapshot.py` in `T026`
-
-### 2026-04-24 Implemented Coverage
-
-- Contract
-  - `tests/contract/repository_ingestion/test_repository_connection_contract.py`
-  - `tests/contract/repository_ingestion/test_repository_scope_contract.py`
-- Unit
-  - `tests/unit/repository_connections/test_gitlab_provider_parsing.py`
-  - `tests/unit/repository_connections/test_gitlab_foundation.py`
-  - `tests/unit/repository_connections/test_verify_repository_connection.py`
-  - `tests/unit/repository_connections/test_webhook_sync_task.py`
-  - `tests/unit/repository_connections/test_settings.py`
-
-## Phase 1 Completion Evidence
-
-- T001: `delivery-evidence.md` 스캐폴드 생성 완료
-- T002: GitLab contract/integration 테스트 골격 파일 생성 완료
-- T003: GitLab unit/regression 테스트 골격 파일 생성 완료
-- T004: spec/plan/research/data-model/contracts/quickstart trace reference 반영 완료
-
-## Phase 2 Partial Completion Evidence
-
-- T005: mixed-provider foundation metadata 반영 완료
-  - 근거 파일
-    - `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
-  - 검증
-    - `tests/unit/repository_connections/test_phase2_foundation.py`
-    - `tests/unit/repository_connections/test_gitlab_foundation.py`
-- T006: additive GitLab foundation migration 작성 완료
-  - 근거 파일
-    - `pilot-git-repo-connection/alembic/versions/004_gitlab_self_managed_provider_support.py`
-  - 중요 메모
-    - `provider_project_path`는 rollout-safe 하게 migration에서는 nullable 유지
-    - downgrade 시 004-only 인덱스 삭제까지 반영
-- T011: mixed-provider foundation unit test 추가 완료
-  - 근거 파일
-    - `pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py`
-    - `pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py`
-  - 실행 결과
-    - `python -m pytest pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_git_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_process_github_event.py pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py -q`
-    - 결과: `101 passed in 1.83s`
-- T009/T010/T012: US1에 필요한 mixed-provider repository read/write, API detail schema, FastAPI dependency wiring 완료
-  - 근거 파일
-    - `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
-    - `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_sync_run_repository.py`
-    - `pilot-git-repo-connection/src/tci/infrastructure/persistence/code_snapshot_repository.py`
-    - `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
-    - `pilot-git-repo-connection/src/tci/app.py`
-  - 중요 메모
-    - `T008` provider event normalization은 US3 webhook 구현 전 완료할 선행 작업으로 defer한다.
-    - US1 lifecycle gate는 `T005`, `T006`, `T007`, `T009`, `T010`, `T011`, `T012`로 충족한다.
-
-## Phase 2/US1 Security Slice Evidence
-
-- T007: provider parsing and remote validation entry point refactor 완료
-  - 근거 파일
-    - `pilot-git-repo-connection/src/tci/infrastructure/git/remote_parsers.py`
-    - `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
-    - `pilot-git-repo-connection/src/tci/domain/services/repository_connection_support.py`
-  - 검증 범위
-    - GitLab HTTPS, SCP-like SSH, `ssh://` remote parsing
-    - `/gitlab` path prefix를 project namespace로 처리
-    - localhost/private IPv4/custom HTTPS/custom SSH port parsing
-    - GitHub host, trailing-dot host, IPv6, userinfo, query/fragment, whitespace/control chars, dot segment, malformed port 거부
-- T013: GitLab connection contract coverage 추가 완료
-  - 근거 파일
-    - `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
-  - 중요 메모
-    - Phase 1 scaffold 파일인 `test_gitlab_connection_contract.py`는 유지한다.
-    - 실제 coverage는 기존 provider-neutral contract suite에 추가했다.
-- T016: GitLab remote URL parser와 namespace/project extraction 구현 완료
-  - 근거 파일
-    - `pilot-git-repo-connection/src/tci/infrastructure/git/remote_parsers.py`
-- Additional security coverage
-  - `TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS` 설정 추가
-  - create, verify, default-ref update, scope preview, snapshot build 경로에서 outbound git 접근 전 allowlist 검증
-  - Scope preview는 allowlist rejection을 preview failure로 삼키지 않고 전파
-
-## 2026-04-24 Verification Snapshot
-
-- 테스트
-  - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections tests/contract/repository_ingestion`
-  - 결과: `244 passed, 9 skipped in 7.52s`
-- 타입/정적 검증
-  - `PYTHONDONTWRITEBYTECODE=1 mypy src/tci/settings.py src/tci/infrastructure/git/remote_parsers.py src/tci/domain/services/create_repository_connection.py src/tci/domain/services/repository_connection_support.py src/tci/domain/services/verify_repository_connection.py src/tci/domain/services/update_default_ref.py src/tci/domain/services/build_code_snapshot.py src/tci/domain/services/evaluate_scope_rule_warning.py src/tci/infrastructure/persistence/repository_connection_repository.py tests/unit/repository_connections/test_gitlab_provider_parsing.py tests/unit/repository_connections/test_gitlab_foundation.py tests/unit/repository_connections/test_settings.py`
-  - 결과: `Success: no issues found in 12 source files`
-- 스타일/포맷 검증
-  - focused `ruff check` 통과
-  - focused `black --check` 통과: `17 files would be left unchanged`
-- diff hygiene
-  - `git diff --check` 통과
-- Reviewer loop
-  - `reviewer`: findings 없음
-  - `python-reviewer`: findings 없음
-  - `security-reviewer`: findings 없음
-- Residual risks
-  - 해소됨: 실제 PostgreSQL Alembic migration 적용 검증은 2026-04-24 DB follow-up에서 완료했다.
-  - 해소됨: `update_default_ref.py` decrypt-before-allowlist 순서는 2026-04-24 US1 follow-up에서 allowlist-before-decrypt로 수정했다.
-  - 해소됨: stored SSH custom-port의 scope preview와 snapshot build 직접 검증은 2026-04-24 US1 follow-up에서 positive/negative control로 추가했다.
-
-## 2026-04-24 US1 Follow-up TDD Evidence
-
-- 사전 점검
-  - `git status --short`
-  - 결과: clean
-  - tracked `.pyc` 확인 결과:
-    - `pilot-git-repo-connection/alembic/__pycache__/env.cpython-313.pyc`
-    - `pilot-git-repo-connection/alembic/versions/__pycache__/001_repository_ingestion_core.cpython-313.pyc`
-- 실제 PostgreSQL Alembic 검증 사전 상태
-  - `PYTHONDONTWRITEBYTECODE=1 alembic current`
-  - 결과: `TCI_DATABASE_URL` 또는 `alembic.ini`의 `sqlalchemy.url` 미설정으로 실행 불가
-  - 상태: 당시에는 residual risk였으나, 2026-04-24 DB follow-up에서 해소했다.
-- RED
-  - 추가 테스트: `tests/unit/repository_connections/test_update_default_ref.py`
-  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections/test_update_default_ref.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py -q`
-  - 결과: `test_update_default_ref_rejects_unallowlisted_gitlab_before_credential_decrypt` 실패
-  - 의도한 실패 이유: `update_default_ref.py`가 GitLab allowlist 검사 전에 credential decrypt를 수행함
-- GREEN
-  - 구현: `update_default_ref.py`에서 encrypted secret만 context로 로드하고, GitLab allowlist 통과 후 decrypt하도록 순서 변경
-  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections/test_update_default_ref.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py -q`
-  - 결과: `4 passed in 0.95s`
-- 추가 US1/T015 회귀 고정
-  - 추가 테스트:
-    - `tests/integration/repository_connections/test_gitlab_connection_lifecycle.py`
-    - `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
-  - 검증 범위:
-    - SSH custom-port GitLab remote가 `host:port` allowlist로 verify, scope preview, snapshot build 경로를 통과
-    - SSH custom-port GitLab remote가 host-only allowlist에서는 verify, scope preview, snapshot build 경로에서 git 접근 전 거부
-    - SSH custom-port default-ref update가 host-only allowlist에서 credential decrypt 전 거부
-    - snapshot build allowlist rejection은 credential failure/`reauth_required`로 오분류하지 않고 `MIRROR_SYNC_FAILED`와 기존 connection status 유지로 기록
-    - `reauth_required` / `ref_missing` GitLab 연결의 manual snapshot 차단
-    - GitHub/GitLab connection verify와 snapshot flow coexistence, credential revision/mirror/snapshot ownership 분리
-  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections/test_update_default_ref.py tests/unit/repository_connections/test_verify_repository_connection.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
-  - 결과: `15 passed, 3 skipped in 1.09s`
-- Python/security reviewer follow-up
-  - 지적: snapshot allowlist rejection이 `AUTH_FAILED`/`reauth_required`로 오분류될 수 있음
-  - 조치: `build_code_snapshot.py`의 `ProblemCode.INVALID_INPUT` 분류를 `MIRROR_SYNC_FAILED`, connection status unchanged로 변경하고 테스트 보강
-  - 재검증:
-    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections tests/contract/repository_ingestion tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
-    - 결과: `253 passed, 12 skipped in 7.31s`
-
-## 2026-04-24 DB Migration Follow-up Evidence
-
-- 실제 PostgreSQL 연결
-  - compose: `specs/001-git-repo-connection/docker-compose/docker-compose-test.yaml`
-  - DSN: `postgresql+psycopg://tci:tci@127.0.0.1:5433/tci_test`
-  - 결과: `('tci_test', 'tci')`
-- RED
-  - 명령: `TCI_TEST_DATABASE_URL='postgresql+psycopg://tci:tci@127.0.0.1:5433/tci_test' TCI_ALLOW_DESTRUCTIVE_MIGRATION_TESTS=1 PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_phase2_migration_smoke.py -q`
-  - 결과: 실패
-  - 실패 원인: `004_gitlab_self_managed_provider_support.py` downgrade가 raw SQL `NOT VALID` constraint를 삭제할 때 naming convention이 적용되어 `ck_repository_events_ck_repo_event_verified_secret_pair` 삭제를 시도함
-- GREEN
-  - 구현: raw SQL `NOT VALID` check constraint 생성/검증/삭제를 SQLAlchemy naming convention 및 PostgreSQL identifier truncation/hash 규칙과 일치하도록 수정
-  - 명령: `TCI_TEST_DATABASE_URL='postgresql+psycopg://tci:tci@127.0.0.1:5433/tci_test' TCI_ALLOW_DESTRUCTIVE_MIGRATION_TESTS=1 PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_phase2_migration_smoke.py -q`
-  - 결과: `1 passed in 2.74s`
-- Database-reviewer follow-up
-  - 지적: immediate downgrade failure는 고쳤지만 live DB constraint name과 SQLAlchemy metadata naming convention drift가 남을 수 있음
-  - 조치: `test_phase2_migration_smoke.py`에 live PostgreSQL check constraint name이 metadata의 PostgreSQL-rendered name을 포함하는지 검증하는 regression 추가
-  - 재검증: `1 passed in 2.74s`
-- 실DB bootstrap 검증
-  - 명령: `TCI_MIGRATION_TEST_DATABASE_URL='postgresql+psycopg://tci:tci@127.0.0.1:5433/tci_test' TCI_MIGRATION_TEST_DATABASE_URL_ACK='postgresql+psycopg://tci:tci@127.0.0.1:5433/tci_test' TCI_MIGRATION_TEST_DATABASE_NAME='tci_test' TCI_ALLOW_DESTRUCTIVE_MIGRATION_TESTS=1 PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_planning_input_reference_create_bootstraps_connection_creation_with_real_db -q`
-  - 결과: `1 passed in 2.08s`
-- 전체 변경 범위 재검증
-  - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections tests/contract/repository_ingestion tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py tests/integration/repository_connections/test_phase2_migration_smoke.py -q`
-  - 결과: `253 passed, 13 skipped in 7.38s`
-  - focused `mypy`: `Success: no issues found in 8 source files`
+- 최신 전체 Python suite:
+  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest -q`
+  - 결과: `496 passed, 10 skipped, 1 warning in 20.75s`
+- 최신 reviewer follow-up targeted GREEN:
+  - running sync replay recovery, dispatch marker duplicate idempotency, in-memory limiter thread safety, GitHub/GitLab webhook contract regressions covered.
+  - targeted pack 결과: `35 passed`
+- PostgreSQL migration smoke:
+  - local default: `3 skipped` because `TCI_TEST_DATABASE_URL` / `TCI_ALLOW_DESTRUCTIVE_MIGRATION_TESTS=1` not set.
+  - optional destructive cases cover revision `006 -> 007` backfill and duplicate active preflight with real PostgreSQL when env is provided.
+- 변경 범위 정적 검증:
   - focused `ruff check`: `All checks passed!`
-  - focused `black --check`: `8 files would be left unchanged`
-- 최종 reviewer loop
-  - `reviewer`: findings 없음
-  - `python-reviewer`: findings 없음
-  - `database-reviewer`: findings 없음
-  - 로컬 destructive Alembic round-trip은 실제 `tci_test` PostgreSQL DB에서 통과했다.
+  - migration smoke `ruff check`: `All checks passed!`
+- 알려진 전체 정적 검증 실패:
+  - `uv run ruff check src tests alembic/versions/007_sync_run_active_trigger_guard.py`는 기존 support measurement scripts의 `E402` 때문에 실패한다.
+  - `uv run mypy src/tci`는 Celery/Kombu missing stubs와 기존 `github_signature.py` nullable issue 때문에 실패한다.
+  - `pip_audit`는 현재 workspace에 설치되어 있지 않다.
+  - 전체 pytest warning: `tests/support/repository_connection_testkit.py`의 `TestRepositoryEvent` dataclass collection warning. 기능 실패는 아니다.
 
-## 2026-04-24 US1 Backend Completion Evidence
+## Historical Evidence Summary
 
-- RED: GitLab read-only validator module/wiring
-  - 추가 테스트:
-    - `tests/unit/repository_connections/test_gitlab_readonly_validator.py`
-    - `tests/unit/repository_connections/test_app.py::test_build_app_dependencies_uses_gitlab_aware_readonly_validator`
-  - 명령: `pytest tests/unit/repository_connections/test_gitlab_readonly_validator.py -q`
-  - 결과: `ModuleNotFoundError: No module named 'tci.infrastructure.git.gitlab_readonly_validator'`
-  - 명령: `pytest tests/unit/repository_connections/test_app.py::test_build_app_dependencies_uses_gitlab_aware_readonly_validator -q`
-  - 결과: generic `GitReadonlyValidator` wiring으로 실패
-- GREEN: GitLab-specific read-only probe
-  - 구현:
-    - `src/tci/infrastructure/git/gitlab_readonly_validator.py`
-    - `src/tci/infrastructure/git/git_readonly_validator.py`
-    - `src/tci/app.py`
-  - 검증:
-    - `pytest tests/unit/repository_connections/test_app.py::test_build_app_dependencies_uses_gitlab_aware_readonly_validator tests/unit/repository_connections/test_gitlab_readonly_validator.py -q`
-    - 결과: `3 passed in 0.79s`
-- RED: GitLab detail metadata와 default-ref failure status transition
-  - 추가 테스트:
-    - `tests/contract/repository_ingestion/test_repository_connection_contract.py::test_get_connection_detail_preserves_shared_shape_for_gitlab_connection`
-    - `tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_snapshot_returns_conflict_for_ref_missing_connection`
-    - `tests/unit/repository_connections/test_update_default_ref.py::test_update_default_ref_marks_ref_missing_and_preserves_prior_ref`
-    - `tests/unit/repository_connections/test_update_default_ref.py::test_update_default_ref_marks_reauth_required_and_preserves_prior_ref`
-  - 결과: `providerInstanceUrl` missing, default-ref failure 후 status가 `active`로 남아 의도 실패
-- GREEN: GitLab metadata serialization과 failed default-ref transition
-  - 구현:
-    - `src/tci/api/schemas/repository_connection.py`
-    - `src/tci/domain/services/update_default_ref.py`
-  - 검증:
-    - `pytest tests/unit/repository_connections/test_update_default_ref.py::test_update_default_ref_marks_ref_missing_and_preserves_prior_ref tests/unit/repository_connections/test_update_default_ref.py::test_update_default_ref_marks_reauth_required_and_preserves_prior_ref tests/contract/repository_ingestion/test_repository_connection_contract.py::test_get_connection_detail_preserves_shared_shape_for_gitlab_connection tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_snapshot_returns_conflict_for_ref_missing_connection -q`
-    - 결과: `4 passed in 0.95s`
-- Focused US1 regression
-  - 명령: `pytest tests/unit/repository_connections/test_app.py tests/unit/repository_connections/test_gitlab_readonly_validator.py tests/unit/repository_connections/test_git_foundation.py tests/unit/repository_connections/test_verify_repository_connection.py tests/unit/repository_connections/test_update_default_ref.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
-  - 결과: `86 passed, 3 skipped in 2.54s`
-- 전체 변경 범위
-  - 명령: `pytest tests/unit/repository_connections tests/contract/repository_ingestion tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
-  - 결과: `264 passed, 12 skipped in 7.36s`
-- 정적 검증
-  - 명령: `mypy src/tci/app.py src/tci/infrastructure/git/git_readonly_validator.py src/tci/infrastructure/git/gitlab_readonly_validator.py src/tci/api/schemas/repository_connection.py src/tci/domain/services/update_default_ref.py tests/unit/repository_connections/test_gitlab_readonly_validator.py tests/unit/repository_connections/test_app.py tests/unit/repository_connections/test_update_default_ref.py`
-  - 결과: `Success: no issues found in 8 source files`
-  - 명령: `ruff check src/tci/app.py src/tci/infrastructure/git/git_readonly_validator.py src/tci/infrastructure/git/gitlab_readonly_validator.py src/tci/api/schemas/repository_connection.py src/tci/domain/services/update_default_ref.py tests/unit/repository_connections/test_gitlab_readonly_validator.py tests/unit/repository_connections/test_app.py tests/unit/repository_connections/test_update_default_ref.py tests/contract/repository_ingestion/test_repository_connection_contract.py`
-  - 결과: `All checks passed!`
-  - 명령: `black --check src/tci/app.py src/tci/infrastructure/git/git_readonly_validator.py src/tci/infrastructure/git/gitlab_readonly_validator.py src/tci/api/schemas/repository_connection.py src/tci/domain/services/update_default_ref.py tests/unit/repository_connections/test_gitlab_readonly_validator.py tests/unit/repository_connections/test_app.py tests/unit/repository_connections/test_update_default_ref.py tests/contract/repository_ingestion/test_repository_connection_contract.py`
-  - 결과: `9 files would be left unchanged`
-  - 명령: `git diff --check`
-  - 결과: 통과
-- Package sanity
-  - 명령: `python -m pip check`
-  - 결과: `No broken requirements found.`
-  - 명령: `python -m pip_audit`
-  - 결과: `/opt/anaconda3/bin/python: No module named pip_audit`
-  - 명령: `command -v pip-audit && pip-audit || true`
-  - 결과: executable 없음
-  - 남은 gap: package vulnerability scanner는 로컬 설치 도구 부재로 미실행
-- Reviewer loop follow-up
-  - security-reviewer 지적:
-    - GitLab-specific `401/403` auth heuristic이 모든 provider에 적용될 수 있음
-    - `webhookAuthMode` 응답 노출
-    - local decrypt/config fault가 `reauth_required`로 오분류될 수 있음
-  - 조치:
-    - generic `401 unauthorized` / `403 forbidden` token을 GitLab readonly validator에서 제거
-    - `webhookAuthMode`를 general connection serializer에서 제거
-    - local decrypt failure는 connection status를 변경하지 않도록 regression 추가
-  - python-reviewer 지적:
-    - active credential missing default-ref update가 status transition을 우회
-    - runtime validator behavior coverage 부족
-    - create/patch response metadata coverage 부족
-  - 조치:
-    - active credential missing 시 `reauth_required`로 전환
-    - `build_app_dependencies` test에서 GitLab-aware validator behavior sample까지 검증
-    - GitLab create/patch/detail response metadata와 `webhookAuthMode` 비노출 contract 보강
-  - 최종 재리뷰:
-    - `reviewer`: findings 없음, approve
-    - `python-reviewer`: findings 없음, approve
-    - `security-reviewer`: findings 없음, previous issues remediated
-
-## Foundation Verification Snapshot
-
-- 타입/정적 검증
-  - `mypy pilot-git-repo-connection/src/tci/domain/services/process_github_event.py pilot-git-repo-connection/tests/unit/repository_connections/test_phase2_foundation.py pilot-git-repo-connection/tests/unit/repository_connections/test_gitlab_foundation.py`
-  - 결과: `Success: no issues found in 3 source files`
-- 스타일/포맷 검증
-  - `ruff check` 대상 파일 세트 통과
-  - `black --check` 대상 파일 세트 통과
-- diff hygiene
-  - `git diff --check` 통과
-
-## 2026-04-26 US1 Operator Detail Completion Evidence
-
-- RED: GitLab operator detail summary
-  - 추가 테스트:
-    - `tests/integration/repository_connections/test_operator_connection_pages.py::test_connection_detail_page_renders_gitlab_provider_summary_without_auth_mode`
-  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_operator_connection_pages.py::test_connection_detail_page_renders_gitlab_provider_summary_without_auth_mode -q`
-  - 결과: 실패
-  - 의도한 실패 이유: operator detail template이 GitLab instance URL, provider project path, active scope traceability label을 렌더링하지 않음
-- GREEN: mixed-provider operator detail template
-  - 구현:
-    - `src/tci/web/templates/connections/detail.html`
-    - `src/tci/py.typed`
-  - 검증:
-    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_operator_connection_pages.py -q`
-    - 결과: `9 passed in 1.12s`
-  - 보안 확인:
-    - webhook health가 렌더링되는 GitLab operator detail HTML에서도 `shared_token` 및 `webhookAuthMode` 비노출
-- Focused regression
-  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/integration/repository_connections/test_operator_connection_pages.py tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
-  - 결과: `57 passed, 3 skipped in 1.49s`
-- 정적 검증
-  - 명령: `PYTHONDONTWRITEBYTECODE=1 mypy src/tci/web/routes/repository_connection_detail.py src/tci/api/schemas/repository_connection.py src/tci/domain/services/get_repository_connection_detail.py`
-  - 결과: `Success: no issues found in 3 source files`
-  - 명령: `PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 mypy tests/integration/repository_connections/test_operator_connection_pages.py`
-  - 결과: `Success: no issues found in 1 source file`
-  - 명령: `ruff check tests/integration/repository_connections/test_operator_connection_pages.py`
-  - 결과: `All checks passed!`
-  - 명령: `black --check tests/integration/repository_connections/test_operator_connection_pages.py`
-  - 결과: `1 file would be left unchanged`
-  - 명령: `git diff --check`
-  - 결과: 통과
-  - 명령: `python -m pip check`
-  - 결과: `No broken requirements found.`
-- Reviewer loop follow-up
-  - `python-reviewer` 지적:
-    - webhook health가 없는 branch에서만 auth-mode 비노출을 확인해 assertion 실효성이 약함
-    - 새 테스트가 `client.app.state.dependencies` 직접 접근으로 mypy noise를 늘림
-  - 조치:
-    - GitLab connection에 active webhook secret을 seed하고 webhook health 렌더링 상태에서 `shared_token` / `webhookAuthMode` 비노출 검증
-    - `_dependencies()` helper와 `src/tci/py.typed` 추가로 test-target mypy 통과
-  - 최종 재리뷰:
-    - `reviewer`: findings 없음, approve
-    - `python-reviewer`: findings 없음, approve
-    - `security-reviewer`: findings 없음, approve
-
-## 2026-04-26 US2 Scope/Ref Completion Evidence
-
-- RED: GitLab scope binary policy contract
-  - 추가 테스트:
-    - `tests/contract/repository_ingestion/test_gitlab_scope_contract.py`
-    - `tests/unit/repository_connections/test_gitlab_scope_rules.py`
-    - `tests/integration/repository_connections/test_gitlab_scoped_snapshot.py`
-  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py -q`
-  - 결과: `2 failed, 6 passed`
-  - 의도한 실패 이유:
-    - scope rule save response/detail projection에 `excludeBinary`가 없음
-    - `excludeBinary=false`가 snapshot filter path에 전달되지 않아 binary file이 제외됨
-- GREEN: GitLab scope/ref path
-  - 구현:
-    - `src/tci/api/schemas/repository_scope.py`
-    - `src/tci/api/routes/repository_scope.py`
-    - `src/tci/web/routes/repository_scope.py`
-    - `src/tci/web/templates/connections/scope.html`
-  - 검증:
-    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py -q`
-    - 결과: `8 passed in 0.93s`
-  - 보안/노출 확인:
-    - scope/detail response에서 `webhookAuthMode`, `shared_token`, secret 값 비노출 유지
-    - GitLab allowlist rejection은 scope preview failure로 삼키지 않고 400 problem response로 전파
-- Focused regression
-  - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py tests/contract/repository_ingestion/test_repository_scope_contract.py tests/integration/repository_connections/test_scoped_snapshot.py tests/integration/repository_connections/test_operator_scope_pages.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
-  - 결과: `26 passed, 3 skipped in 1.15s`
-- 정적 검증
-  - 명령: `PYTHONDONTWRITEBYTECODE=1 mypy src/tci/api/schemas/repository_scope.py src/tci/api/routes/repository_scope.py src/tci/web/routes/repository_scope.py tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py tests/integration/repository_connections/test_operator_scope_pages.py`
-  - 결과: `Success: no issues found in 7 source files`
-  - 명령: `ruff check src/tci/api/schemas/repository_scope.py src/tci/api/routes/repository_scope.py src/tci/web/routes/repository_scope.py tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py tests/integration/repository_connections/test_operator_scope_pages.py`
-  - 결과: `All checks passed!`
-  - 명령: `black --check src/tci/api/schemas/repository_scope.py src/tci/api/routes/repository_scope.py src/tci/web/routes/repository_scope.py tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py tests/integration/repository_connections/test_operator_scope_pages.py`
-  - 결과: `7 files would be left unchanged`
-- Reviewer loop follow-up
-  - 초기 reviewer findings:
-    - HTTPS askpass 서버 시작 race와 startup failure 침묵
-    - SSH agent teardown 실패가 본 작업 오류/성공을 덮어쓰는 문제
-    - credentialed Git subprocess가 ambient Git config/SSH agent를 신뢰하는 문제
-    - scope filter 이전 raw Git tree entry volume 무제한 문제
-    - PAT/SSH credential bind window의 ambient exposure
-  - 조치:
-    - HTTPS PAT는 URL embedding 대신 askpass Unix socket + per-session token + 2회 성공 요청 제한으로 처리
-    - askpass server `ready_event`/`startup_errors` handshake 추가
-    - SSH private key는 temp file 대신 isolated `ssh-agent`에 stdin 등록하고, Git env에는 `GIT_SSH_COMMAND`만 주입
-    - SSH agent cleanup 실패는 best-effort logging으로 처리해 본 작업 결과를 보존
-    - `build_git_env()`에서 ambient `HOME`, `XDG_CONFIG_HOME`, `GIT_CONFIG_*`, `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND` 상속 제거 및 `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_SYSTEM=/dev/null`, `GIT_CONFIG_NOSYSTEM=1` 강제
-    - snapshot materialization에서 scope/hard-exclude 필터 전 raw tree entry cap 추가
-  - 추가 RED/GREEN 검증:
-    - askpass readiness/startup failure, SSH cleanup success/body-error preservation, Git env isolation, raw tree cap 테스트 추가
-    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections/test_git_foundation.py -q`
-    - 결과: `32 passed in 2.28s`
-    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/unit/repository_connections/test_git_mirror_manager.py -q`
-    - 결과: `19 passed in 9.66s`
-  - 전체 관련 범위 재검증:
-    - `PYTHONDONTWRITEBYTECODE=1 pytest tests/contract/repository_ingestion/test_gitlab_scope_contract.py tests/unit/repository_connections/test_gitlab_scope_rules.py tests/unit/repository_connections/test_git_mirror_manager.py tests/unit/repository_connections/test_git_foundation.py tests/unit/repository_connections/test_phase2_foundation.py tests/unit/repository_connections/test_update_default_ref.py tests/unit/repository_connections/test_verify_repository_connection.py tests/integration/repository_connections/test_gitlab_scoped_snapshot.py tests/contract/repository_ingestion/test_repository_connection_contract.py tests/contract/repository_ingestion/test_repository_scope_contract.py tests/integration/repository_connections/test_scoped_snapshot.py tests/integration/repository_connections/test_operator_scope_pages.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py tests/integration/repository_connections/test_phase2_migration_smoke.py -q`
-    - 결과: `174 passed, 5 skipped in 15.03s`
-    - `PYTHONDONTWRITEBYTECODE=1 pytest -q`
-    - 결과: `354 passed, 17 skipped in 16.43s`
-  - 정적/보안 검증:
-    - focused `mypy`: `Success: no issues found in 22 source files`
-    - focused `ruff check`: `All checks passed!`
-    - focused `black --check`: `5 files would be left unchanged`
-    - `git diff --check`: 통과
-    - `python -m pip check`: `No broken requirements found.`
-    - `python -m pip_audit`: `/opt/anaconda3/bin/python: No module named pip_audit`
-  - 최종 재리뷰:
-    - `reviewer`: blocking findings 없음
-    - `python-reviewer`: blocking findings 없음, approve
-    - `security-reviewer`: blocking findings 없음, prior security findings addressed
+- 2026-04-23: Phase 1 evidence scaffold와 GitLab contract/unit/integration 테스트 골격을 생성했다.
+- 2026-04-24: Phase 2 mixed-provider foundation, GitLab remote parser, allowlist, provider metadata, repository persistence/read model wiring을 완료했다.
+- 2026-04-24: 실제 PostgreSQL migration smoke에서 004 downgrade/check constraint naming drift를 수정했고 destructive Alembic round-trip을 통과했다.
+- 2026-04-24: US1 backend completion에서 GitLab read-only validator, detail metadata, default-ref failure transition, create/patch/detail response coverage를 완료했다.
+- 2026-04-26: US1 operator detail에서 GitLab instance/project/scope traceability 렌더링과 secret/auth-mode 비노출을 확인했다.
+- 2026-04-26: US2 scope/ref에서 `excludeBinary`, binary opt-in, allowlist-before-preview, scoped snapshot behavior를 완료했다.
+- 2026-04-26: US2 reviewer loop에서 askpass, isolated SSH agent, Git env isolation, raw tree cap hardening을 완료했다.
+- 2026-04-26: US3 webhook에서 GitLab push/MR parser, token verifier, delivery id, queue handoff, event/detail projection, GitHub parity hardening을 완료했다.
+- 2026-04-26~2026-04-27: active sync uniqueness, follow-up coalescing, blocked handoff, operator session cookie, OpenAPI parity, Redis limiter branch, public webhook uniform response hardening을 반복 적용했다.
+- 2026-04-27: 최종 `python-reviewer` HIGH findings 3개를 TDD로 수정했다.
+  - `_run_webhook_sync_task()` running replay recovery 보강.
+  - dispatch marker 유실/duplicate execution idempotency 보강.
+  - GitHub/GitLab in-memory webhook limiter thread safety 보강.
+- 2026-04-27: `python-reviewer`, `security-reviewer`, `database-reviewer`, `pr-test-analyzer` loop가 clean으로 종료됐다.
 
 ## Open Evidence Slots
 
-- 수동 quickstart 검증 메모
-- latency 측정 결과
-- GitHub regression 실행 결과
-- GitLab webhook flow 구현 후 reviewer / python-reviewer / security-reviewer 최종 재검토 결과
+- Phase 6 quickstart harness 결과.
+- Phase 6 webhook status refresh latency harness 결과.
+- final FR/SC trace coverage refresh.
+
+## Next Session Order
+
+1. `git status --short`와 `git diff --stat`로 현재 diff를 확인한다.
+2. `tasks.md`의 Phase 6(`T044`~`T046`)부터 시작한다.
+3. `T044` quickstart regression harness로 SC-001과 GitHub compatibility flow를 검증한다.
+4. `T045` webhook status-refresh latency harness로 SC-002/SC-004를 검증한다.
+5. `T046`에서 FR/SC trace coverage와 final evidence를 갱신한다.
+6. 변경 후 `PYTHONDONTWRITEBYTECODE=1 pytest -q`와 focused `ruff check`를 다시 실행한다.
+7. 일반 `reviewer`는 계속 제외하고, 필요 시 `python-reviewer`, `security-reviewer`, `database-reviewer`, `pr-test-analyzer`만 재호출한다.
 
 ## 변경 이력
 
-- 2026-04-23: Phase 1 evidence scaffold 생성
-- 2026-04-23: Phase 2 foundation partial evidence 추가 (`T005`, `T006`, `T011`)
-- 2026-04-24: GitLab remote parser, allowlist, localhost/private-IP/custom-port, fail-closed outbound guard evidence 추가 (`T007`, `T013`, `T016` 및 security slice)
-- 2026-04-24: 실제 PostgreSQL migration smoke와 실DB bootstrap 검증 완료, 004 downgrade/check constraint naming bug 수정
-- 2026-04-26: US1 operator detail/read-model/UI polish 완료 (`T022`)
-- 2026-04-26: US2 scope/ref 관리 완료 (`T024`-`T031`)
-- 2026-04-26: US2 reviewer loop findings 모두 해소, credential/Git subprocess/snapshot tree hardening 후 전체 Python suite 통과
+- 2026-04-23: Phase 1 evidence scaffold 생성.
+- 2026-04-24: Phase 2 foundation, US1 backend, PostgreSQL migration smoke 증적 추가.
+- 2026-04-26: US1 operator detail, US2 scope/ref, US3 webhook 최신화 증적 추가.
+- 2026-04-27: webhook follow-up dispatch replay/crash hardening 후 중간 전체 Python suite를 통과했다.
+- 2026-04-27: 최종 `python-reviewer` HIGH findings 3개를 TDD로 수정하고 reviewer loop를 clean으로 종료.
+- 2026-04-27: 최신 전체 Python suite `496 passed, 10 skipped, 1 warning`.
+- 2026-04-27: 오래된 상세 RED/GREEN 로그를 핵심 결정사항 중심으로 압축.

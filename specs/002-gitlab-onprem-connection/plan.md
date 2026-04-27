@@ -20,9 +20,14 @@
   - US2 scope/ref 관리, `excludeBinary`, scope preview warning, filtered snapshot
   - HTTPS/SSH credential binding hardening과 credentialed Git subprocess 환경 격리
   - snapshot raw tree entry cap과 blob read 전 scope prefiltering
+  - GitLab webhook event normalization, Push/MR 수신/처리, GitHub webhook 호환 회귀
+  - same-ref active sync uniqueness, blocked follow-up handoff, `dispatch_enqueued_at` 기반 replay/crash recovery
+  - operator token guard, signed HttpOnly operator session cookie, shared operator form body cap
+  - 최종 `python-reviewer`, `security-reviewer`, `database-reviewer`, `pr-test-analyzer` clean loop
 - 남은 구현 범위:
-  - GitLab webhook event normalization
-  - US3 webhook 수신/처리
+  - Phase 6 quickstart regression harness
+  - Phase 6 webhook status-refresh latency harness
+  - final FR/SC trace coverage evidence refresh
 
 ## Change Traceability
 

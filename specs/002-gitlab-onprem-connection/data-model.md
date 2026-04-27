@@ -29,8 +29,11 @@
   - GitLab scope/ref 관리, `exclude_binary`, `preview_failed`, auto-default scope provenance
   - snapshot materialization의 active scope stamping, scope-change retry, empty-result failure handling
   - credentialed Git subprocess 환경 격리와 raw tree entry cap
-- 아직 pending인 항목은 GitLab webhook event normalization/수신/처리다.
-- 따라서 이 문서는 “구현된 US1/US2 baseline + 남은 US3 목표 모델”로 해석한다.
+  - GitLab webhook event normalization/수신/처리
+  - same-ref active sync uniqueness와 `blocked` follow-up handoff
+  - `dispatch_enqueued_at` 기반 enqueue marker와 replay/crash recovery
+- 아직 pending인 항목은 Phase 6 quickstart/latency harness와 final evidence refresh다.
+- 최종 reviewer loop는 `python-reviewer`, `security-reviewer`, `database-reviewer`, `pr-test-analyzer` 기준 clean으로 완료됐다. 따라서 이 문서는 “구현된 US1~US3 baseline + Phase 6 검증 전 상태”로 해석한다.
 
 ## Core Entities
 
@@ -216,12 +219,16 @@
 | `failure_code` | enum nullable | `AUTH_FAILED`, `REF_NOT_FOUND`, `NO_INCLUDED_FILES`, `MIRROR_SYNC_FAILED`, `SNAPSHOT_WRITE_FAILED`, `QUEUE_DISPATCH_FAILED` |
 | `failure_message` | text nullable | 운영자 메시지 |
 | `started_at` | timestamptz | 시작 시각 |
+| `dispatch_enqueued_at` | timestamptz nullable | Celery dispatch 성공 marker. `null`이면 active pending sync를 재발행해 commit-to-enqueue crash gap을 복구할 수 있다. |
 | `completed_at` | timestamptz nullable | 종료 시각 |
 
 **State Rules**:
 
 - GitLab 서버 unreachable은 `MIRROR_SYNC_FAILED` 또는 `AUTH_FAILED`로 구분한다
 - `reauth_required`는 auth failure 때만 canonical 상태를 갱신한다
+- 같은 `(connection_id, requested_ref_type, requested_ref_name)`의 `pending`/`running` sync run은 1개만 허용한다
+- running sync 중 같은 ref의 최신 webhook이 오면 후속 sync는 `blocked`로 유지하고, 선행 sync 완료/실패 후 `blocked -> pending`으로 handoff한다
+- completed worker replay는 `dispatch_enqueued_at`가 기록된 pending follow-up을 중복 dispatch하지 않는다
 
 ### 9. CodeSnapshot
 
