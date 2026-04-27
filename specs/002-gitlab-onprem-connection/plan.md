@@ -14,7 +14,7 @@
   - create/verify/default-ref/scope-preview/snapshot fail-closed 검증
   - 기본 ref 변경의 allowlist-before-decrypt 순서
   - snapshot allowlist rejection의 `MIRROR_SYNC_FAILED` 분류
-  - 실제 PostgreSQL migration smoke, 실DB bootstrap, live constraint name regression
+  - PostgreSQL migration smoke, 실DB bootstrap, live constraint name regression optional env-backed coverage
   - operator detail/read-model/UI의 GitLab instance/project/traceability 표시
   - webhook health 렌더링 상태에서 `shared_token` / `webhookAuthMode` 비노출 검증
   - US2 scope/ref 관리, `excludeBinary`, scope preview warning, filtered snapshot
@@ -24,10 +24,11 @@
   - same-ref active sync uniqueness, blocked follow-up handoff, `dispatch_enqueued_at` 기반 replay/crash recovery
   - operator token guard, signed HttpOnly operator session cookie, shared operator form body cap
   - 최종 `python-reviewer`, `security-reviewer`, `database-reviewer`, `pr-test-analyzer` clean loop
-- 남은 구현 범위:
-  - Phase 6 quickstart regression harness
-  - Phase 6 webhook status-refresh latency harness
+  - Phase 6 deterministic backend/API quickstart regression harness
+  - Phase 6 synthetic TestClient + inline worker webhook status-refresh latency harness
   - final FR/SC trace coverage evidence refresh
+  - 최신 `reviewer`, `python-reviewer`, `pr-test-analyzer` clean loop
+- 남은 구현 범위: 없음
 
 ## Change Traceability
 
@@ -224,7 +225,7 @@ pilot-git-repo-connection/
   - connection detail health projection shape
   - GitHub existing contract no-break regression
 - Integration
-  - GitLab standard operator path completes within 15 minutes for SC-001
+  - GitLab deterministic backend/API quickstart path completes within 15 minutes for SC-001
   - GitLab verify success / auth failure / unreachable failure
   - `reauth_required` / `ref_missing` 상태에서 manual snapshot과 webhook-driven snapshot 차단
   - GitLab push webhook -> sync run -> snapshot

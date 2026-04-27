@@ -50,7 +50,7 @@
 - 2026-04-26 갱신: `T008`은 US3 webhook event normalization 구현과 함께 완료했다.
 - US1 진행 gate는 `T005`, `T006`, `T007`, `T009`, `T010`, `T011`, `T012` 완료로 충족한다.
 - 2026-04-27 현재: US1~US3 구현, reviewer follow-up hardening, 최종 reviewer loop가 clean 상태다.
-- 다음 우선순위는 Phase 6 polish/quickstart/latency 검증이다. 일반 `reviewer`는 사용자 결정에 따라 계속 제외한다.
+- 2026-04-27 현재: Phase 6 polish/quickstart/latency 검증까지 완료했다.
 
 ---
 
@@ -137,11 +137,11 @@
 
 **Purpose**: mixed-provider 회귀, quickstart, evidence를 마무리한다.
 
-**Current Gate**: `python-reviewer`, `security-reviewer`, `database-reviewer`, `pr-test-analyzer` loop는 clean으로 완료됐다. Phase 6을 시작할 수 있다. 일반 `reviewer`는 사용자 결정에 따라 제외한다.
+**Current Gate**: Phase 6 quickstart/latency/final evidence까지 TDD로 완료했다.
 
-- [ ] T044 [P] Add end-to-end quickstart regression harness and operator-path duration validation for SC-001 across GitLab primary flow and GitHub compatibility flow in `pilot-git-repo-connection/tests/support/run_gitlab_quickstart_validation.py` and `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_quickstart_validation.py`
-- [ ] T045 [P] Add mixed-provider latency and status-refresh validation for SC-002 and SC-004 in `pilot-git-repo-connection/tests/support/measure_gitlab_webhook_status_latency.py` and `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_webhook_status_latency.py`
-- [ ] T046 Refresh final FR/SC trace coverage and story completion evidence in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
+- [x] T044 [P] Add deterministic backend/API quickstart regression harness and duration validation for SC-001 across GitLab primary flow and GitHub compatibility flow in `pilot-git-repo-connection/tests/support/run_gitlab_quickstart_validation.py` and `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_quickstart_validation.py`
+- [x] T045 [P] Add mixed-provider synthetic latency and status-refresh validation for SC-002 and SC-004 in `pilot-git-repo-connection/tests/support/measure_gitlab_webhook_status_latency.py` and `pilot-git-repo-connection/tests/integration/repository_connections/test_gitlab_webhook_status_latency.py`
+- [x] T046 Refresh final FR/SC trace coverage and story completion evidence in `specs/002-gitlab-onprem-connection/delivery-evidence.md`
 
 ---
 

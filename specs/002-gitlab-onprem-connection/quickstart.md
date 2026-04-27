@@ -11,7 +11,7 @@
   - remote metadata 파싱
   - host allowlist
   - verify/default-ref/scope-preview/snapshot fail-closed 경로
-  - 실제 PostgreSQL migration smoke와 실DB bootstrap
+  - PostgreSQL migration smoke와 실DB bootstrap optional env-backed coverage
   - GitLab SSH custom-port allowlist
   - GitHub/GitLab coexistence
   - snapshot allowlist rejection 분류 회귀 검증
@@ -25,8 +25,10 @@
   - webhook limiter connection bucket 정책과 Redis failure handling
   - same-ref active sync uniqueness, blocked follow-up handoff, `dispatch_enqueued_at` 기반 replay/crash recovery
 - GitLab 연결부터 초기 snapshot, scope/ref, webhook 최신화, operator detail까지는 자동화 검증 기준선이 준비됐다.
-- Phase 6 quickstart/latency harness는 아직 미구현이다. 최종 reviewer loop가 clean으로 끝났으므로 다음 세션은 `T044`~`T046`을 시작한다.
-- reviewer loop는 일반 `reviewer`를 호출하지 않고 `python-reviewer`, `security-reviewer`, `database-reviewer`, `pr-test-analyzer`만 사용했으며, 현재 clean 상태다.
+- Phase 6 quickstart/latency harness 구현이 완료됐다.
+- GitLab quickstart harness는 TestClient/in-memory backend 기준으로 GitLab 연결, scope 저장, 첫 snapshot, Push/MR webhook 처리, traceability, GitHub compatibility flow를 함께 검증한다.
+- GitLab latency harness는 TestClient/in-memory backend와 inline worker execution 기준으로 Push/MR webhook status projection sample 5건이 1분 SLA 안에 detail/events에 반영되는지 검증한다.
+- reviewer loop는 현재 clean 상태다. 이전 product hardening loop는 `python-reviewer`, `security-reviewer`, `database-reviewer`, `pr-test-analyzer` 기준 clean이었고, 최신 Phase 6 loop는 `reviewer`, `python-reviewer`, `pr-test-analyzer` 기준 clean이었다.
 - 현재 준비된 자동화 표면:
   - `tests/contract/repository_ingestion/test_gitlab_connection_contract.py`
   - `tests/contract/repository_ingestion/test_gitlab_webhook_contract.py`
@@ -46,7 +48,11 @@
   - `tests/unit/repository_connections/test_update_default_ref.py`
   - `tests/integration/repository_connections/test_github_gitlab_compatibility.py`
   - `tests/integration/repository_connections/test_phase2_migration_smoke.py`
-- 전체 webhook 제품 흐름은 테스트로 구현되어 있다. 단, 운영자가 15분 이내 완료하는 quickstart harness와 1분 이내 status refresh latency harness는 Phase 6에서 추가해야 한다.
+  - `tests/support/run_gitlab_quickstart_validation.py`
+  - `tests/integration/repository_connections/test_gitlab_quickstart_validation.py`
+  - `tests/support/measure_gitlab_webhook_status_latency.py`
+  - `tests/integration/repository_connections/test_gitlab_webhook_status_latency.py`
+- 전체 webhook 제품 흐름과 Phase 6 deterministic backend/API quickstart/latency 기준선은 자동화 검증으로 구현되어 있다.
 - 최신 실행 결과는 `delivery-evidence.md`를 기준으로 확인한다.
 
 ## 사전 조건

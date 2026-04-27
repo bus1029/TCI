@@ -6,10 +6,10 @@
 
 ## 문서 사용 규칙
 
-- 다음 세션은 먼저 `Current Handoff State`와 `Open Evidence Slots`를 읽는다.
+- 다음 세션은 먼저 `Current Handoff State`와 `Latest Verification`을 읽는다.
 - 상세 요구사항은 `spec.md`, 실행 순서는 `tasks.md`, 운영 흐름은 `quickstart.md`를 기준으로 한다.
 - 새 개발 증적은 최신 섹션에만 추가하고, 오래된 상세 명령 로그를 다시 누적하지 않는다.
-- 일반 `reviewer`는 사용자 결정에 따라 제외한다.
+- reviewer 사용 이력은 세션별 사용자 지시를 따른다. 최신 Phase 6 loop에서는 `reviewer`, `python-reviewer`, `pr-test-analyzer`를 사용했다.
 
 ## Feature Artifact Trace References
 
@@ -27,14 +27,17 @@
 ## Current Handoff State
 
 - US1~US3 구현은 local GREEN이다.
-- `python-reviewer` HIGH findings 3개는 TDD로 수정했고 reviewer loop가 clean으로 끝났다.
-- 최종 reviewer 결과:
+- `python-reviewer` HIGH findings 3개는 TDD로 수정했고 이전 reviewer loop가 clean으로 끝났다.
+- 이전 reviewer 결과:
   - `python-reviewer`: blocking findings 없음, approve verdict.
   - `security-reviewer`: security findings 없음.
   - `database-reviewer`: database findings 없음.
   - `pr-test-analyzer`: material remaining test gaps 없음.
-- 일반 `reviewer`는 사용자 결정에 따라 호출하지 않았다.
-- Phase 6(`T044`~`T046`) quickstart/latency/evidence 작업을 시작할 수 있다.
+- 최신 Phase 6 reviewer 결과:
+  - `reviewer`: no blocking findings.
+  - `python-reviewer`: no blocking findings, approve.
+  - `pr-test-analyzer`: initial evidence overclaim findings resolved; final no material test gaps.
+- Phase 6(`T044`~`T046`) quickstart/latency/evidence 작업까지 완료했다.
 
 ## Phase Status
 
@@ -45,7 +48,7 @@
 | Phase 3 | US1 GitLab 연결과 초기 snapshot | complete | T013-T023 |
 | Phase 4 | US2 scope/ref 관리 | complete | T024-T031 |
 | Phase 5 | US3 webhook 최신화 | complete | T008, T032-T043 |
-| Phase 6 | polish, quickstart, latency 검증 | ready | reviewer loop clean 완료 후 시작 가능 |
+| Phase 6 | polish, quickstart, latency 검증 | complete | T044-T046 |
 
 ## User Story Verification
 
@@ -112,25 +115,39 @@
 | Range | Summary | Current Evidence Status |
 |-------|---------|-------------------------|
 | FR-001-FR-004 | GitHub 기준선 유지와 GitLab provider 추가 | covered by mixed-provider contract/integration regression |
-| FR-005-FR-011 | ref, scope, filtered snapshot, snapshot traceability | covered by US1/US2 suites; SC traceability final evidence remains Phase 6 |
+| FR-005-FR-011 | ref, scope, filtered snapshot, snapshot traceability | covered by US1/US2 suites and Phase 6 traceability harness |
 | FR-012-FR-017 | Push/MR webhook, health, dedupe, latest status | implemented; replay/dispatch/limiter reviewer findings fixed and clean-reviewed |
-| FR-018-FR-023 | connection/snapshot traceability, operator flow, shared credential model | implemented for product flow; quickstart/latency harness remains Phase 6 |
+| FR-018-FR-023 | connection/snapshot traceability, operator flow, shared credential model | implemented for product flow; quickstart/latency harness complete |
 
 ## Success Criteria Trace Matrix
 
 | Criterion | Target | Status |
 |-----------|--------|--------|
-| SC-001 | GitLab 연결부터 첫 snapshot 완료까지 15분 이내 | pending: Phase 6 quickstart harness |
-| SC-002 | 유효한 Push/MR 이벤트 95% 이상 1분 이내 처리 상태 반영 | partial: webhook transition covered; latency harness pending |
-| SC-003 | snapshot 100% traceability | partial: US1/US2 covered; final evidence pending |
+| SC-001 | GitLab 연결부터 첫 snapshot 완료까지 15분 이내 | deterministic backend/API harness covered by `run_gitlab_quickstart_validation.py`; latest smoke `0.026890s` |
+| SC-002 | 유효한 Push/MR 이벤트 95% 이상 1분 이내 처리 상태 반영 | synthetic TestClient + inline worker harness covered by `measure_gitlab_webhook_status_latency.py`; latest sample 5/5, p95 `0.013243s` |
+| SC-003 | snapshot 100% traceability | covered by US1/US2 suites and Phase 6 quickstart traceability assertion |
 | SC-004 | GitHub 기준선 시나리오 모두 유지 | covered by full suite and mixed-provider regression |
 | SC-005 | 스냅샷 100% scope rule 일치 | covered by US2 scope/snapshot tests |
 
 ## Latest Verification
 
+- Phase 6 RED:
+  - 명령: `pytest -q tests/integration/repository_connections/test_gitlab_quickstart_validation.py tests/integration/repository_connections/test_gitlab_webhook_status_latency.py`
+  - 결과: intended `ModuleNotFoundError` for missing support modules.
+- Phase 6 focused GREEN:
+  - 명령: `pytest -q tests/integration/repository_connections/test_gitlab_quickstart_validation.py tests/integration/repository_connections/test_gitlab_webhook_status_latency.py`
+  - 결과: `2 passed`.
+- Phase 6 support script smoke:
+  - 명령: `python tests/support/run_gitlab_quickstart_validation.py`
+  - 결과: deterministic backend/API path 기준 `SC001_GITLAB_FIRST_SNAPSHOT_SECONDS=0.026890`, Push/MR completed, GitHub compatibility `True`.
+  - 명령: `python tests/support/measure_gitlab_webhook_status_latency.py`
+  - 결과: synthetic TestClient + inline worker path 기준 sample `5/5`, max `0.013243s`, p95 `0.013243s`.
+- Phase 6 focused ruff:
+  - 명령: `ruff check tests/support/run_gitlab_quickstart_validation.py tests/support/measure_gitlab_webhook_status_latency.py tests/integration/repository_connections/test_gitlab_quickstart_validation.py tests/integration/repository_connections/test_gitlab_webhook_status_latency.py`
+  - 결과: `No issues found`.
 - 최신 전체 Python suite:
   - 명령: `PYTHONDONTWRITEBYTECODE=1 pytest -q`
-  - 결과: `496 passed, 10 skipped, 1 warning in 20.75s`
+  - 결과: `498 passed`
 - 최신 reviewer follow-up targeted GREEN:
   - running sync replay recovery, dispatch marker duplicate idempotency, in-memory limiter thread safety, GitHub/GitLab webhook contract regressions covered.
   - targeted pack 결과: `35 passed`
@@ -165,19 +182,14 @@
 
 ## Open Evidence Slots
 
-- Phase 6 quickstart harness 결과.
-- Phase 6 webhook status refresh latency harness 결과.
-- final FR/SC trace coverage refresh.
+- 없음. 선택적 PostgreSQL destructive migration smoke와 real worker/browser-backed latency smoke는 env/운영 QA 범위에서 별도 실행할 수 있다.
 
 ## Next Session Order
 
 1. `git status --short`와 `git diff --stat`로 현재 diff를 확인한다.
-2. `tasks.md`의 Phase 6(`T044`~`T046`)부터 시작한다.
-3. `T044` quickstart regression harness로 SC-001과 GitHub compatibility flow를 검증한다.
-4. `T045` webhook status-refresh latency harness로 SC-002/SC-004를 검증한다.
-5. `T046`에서 FR/SC trace coverage와 final evidence를 갱신한다.
-6. 변경 후 `PYTHONDONTWRITEBYTECODE=1 pytest -q`와 focused `ruff check`를 다시 실행한다.
-7. 일반 `reviewer`는 계속 제외하고, 필요 시 `python-reviewer`, `security-reviewer`, `database-reviewer`, `pr-test-analyzer`만 재호출한다.
+2. final verification 결과와 reviewer loop 결과를 확인한다.
+3. 선택적 destructive PostgreSQL migration smoke가 필요하면 `TCI_TEST_DATABASE_URL`과 `TCI_ALLOW_DESTRUCTIVE_MIGRATION_TESTS=1`을 설정해 실행한다.
+4. release/commit 전 `git diff`와 focused/full test 결과를 다시 확인한다.
 
 ## 변경 이력
 
@@ -186,5 +198,6 @@
 - 2026-04-26: US1 operator detail, US2 scope/ref, US3 webhook 최신화 증적 추가.
 - 2026-04-27: webhook follow-up dispatch replay/crash hardening 후 중간 전체 Python suite를 통과했다.
 - 2026-04-27: 최종 `python-reviewer` HIGH findings 3개를 TDD로 수정하고 reviewer loop를 clean으로 종료.
-- 2026-04-27: 최신 전체 Python suite `496 passed, 10 skipped, 1 warning`.
+- 2026-04-27: 최신 전체 Python suite `498 passed`.
 - 2026-04-27: 오래된 상세 RED/GREEN 로그를 핵심 결정사항 중심으로 압축.
+- 2026-04-27: Phase 6 GitLab quickstart/latency harness와 final FR/SC trace refresh를 완료.

@@ -32,5 +32,6 @@
 ## Notes
 
 - Validation completed in one pass.
-- No open clarification markers remain; spec is ready for `/speckit.plan`.
+- No open clarification markers remain.
+- Implementation planning and Phase 6 evidence refresh are complete as of 2026-04-27.
 - Existing GitHub Cloud compatibility requirement is explicitly included in scope, requirements, and success criteria.

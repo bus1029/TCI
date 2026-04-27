@@ -2,7 +2,7 @@
 
 **Feature Branch**: `[002-gitlab-onprem-connection]`  
 **Created**: 2026-04-23  
-**Status**: In Progress
+**Status**: Implemented
 **Input**: User description: "TCI의 데이터 수집 영역에서 Git 기반 형상 관리 시스템과 연동하여 코드베이스와 변경 이력을 수집하고 분석 가능한 코드 스냅샷을 생성한다. 기존 GitHub Cloud 연동 기능에 추가로 On-premise GitLab 연동 기능을 추가로 개발해야 하며, 기존 GitHub Cloud 연동 기능 관련 코드와의 호환성을 고려해야 한다. Git 기반 레포지토리 연결(SSH/HTTPS), 분석 대상 브랜치/태그 선택, 제외/포함 경로 및 파일 타입 설정, 코드 변경 이벤트 감지(Commit, Push, MR), Webhook 기반 실시간 이벤트 수신."
 
 ## Implementation Status
@@ -16,7 +16,7 @@
   - SSH custom-port allowlist control
   - snapshot allowlist rejection의 `MIRROR_SYNC_FAILED` 분류
   - GitHub/GitLab coexistence 회귀 검증
-  - 실제 PostgreSQL migration smoke, 실DB bootstrap, live constraint name regression
+  - PostgreSQL migration smoke, 실DB bootstrap, live constraint name regression optional env-backed coverage
   - GitLab operator detail의 instance URL, project path, active scope traceability 표시
   - webhook health 렌더링 상태에서 `shared_token` / `webhookAuthMode` 비노출 회귀 검증
   - GitLab scope rule 저장/detail projection, `excludeBinary`, `preview_failed`, auto-default scope provenance
@@ -28,9 +28,11 @@
   - GitHub/GitLab public webhook response uniform `202 accepted` hardening
   - same-ref active sync uniqueness, blocked follow-up handoff, `dispatch_enqueued_at` 기반 replay/crash recovery
   - operator token guard와 signed HttpOnly operator session cookie
-- 아직 pending인 범위:
-  - Phase 6 quickstart/latency harness와 final evidence refresh
-- 최종 reviewer loop는 `python-reviewer`, `security-reviewer`, `database-reviewer`, `pr-test-analyzer` 기준 clean으로 완료됐다. 일반 `reviewer`는 사용자 결정에 따라 제외한다.
+  - Phase 6 deterministic backend/API quickstart harness
+  - Phase 6 synthetic TestClient + inline worker webhook status latency harness
+  - final FR/SC trace coverage evidence refresh
+- 남은 구현 범위는 없다. 선택 사항은 real browser/worker-backed smoke와 destructive PostgreSQL migration smoke의 env-backed 실행이다.
+- 최신 reviewer loop는 `reviewer`, `python-reviewer`, `pr-test-analyzer` 기준 clean으로 완료됐다. 이전 보안/DB reviewer loop도 product code/schema 기준 clean이었다.
 - 상세 증적은 `specs/002-gitlab-onprem-connection/delivery-evidence.md`를 기준으로 한다.
 
 ## Design Input Traceability *(mandatory)*

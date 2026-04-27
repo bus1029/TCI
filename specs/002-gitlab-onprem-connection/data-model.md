@@ -23,7 +23,7 @@
   - create/verify/default-ref/scope-preview/snapshot build 공통 allowlist 정책
   - SSH custom-port allowlist positive/negative control
   - snapshot allowlist rejection의 `MIRROR_SYNC_FAILED` 분류
-  - live PostgreSQL check constraint name과 SQLAlchemy metadata naming 일치 검증
+  - live PostgreSQL check constraint name과 SQLAlchemy metadata naming 일치 검증 optional env-backed coverage
   - operator detail/read-model/UI의 GitLab instance/project/traceability 표시
   - webhook health 렌더링 상태에서 `shared_token` / `webhookAuthMode` 비노출 검증
   - GitLab scope/ref 관리, `exclude_binary`, `preview_failed`, auto-default scope provenance
@@ -32,8 +32,10 @@
   - GitLab webhook event normalization/수신/처리
   - same-ref active sync uniqueness와 `blocked` follow-up handoff
   - `dispatch_enqueued_at` 기반 enqueue marker와 replay/crash recovery
-- 아직 pending인 항목은 Phase 6 quickstart/latency harness와 final evidence refresh다.
-- 최종 reviewer loop는 `python-reviewer`, `security-reviewer`, `database-reviewer`, `pr-test-analyzer` 기준 clean으로 완료됐다. 따라서 이 문서는 “구현된 US1~US3 baseline + Phase 6 검증 전 상태”로 해석한다.
+  - Phase 6 deterministic backend/API quickstart harness
+  - Phase 6 synthetic TestClient + inline worker webhook status latency harness
+- pending 구현 항목은 없다.
+- 최신 reviewer loop는 `reviewer`, `python-reviewer`, `pr-test-analyzer` 기준 clean으로 완료됐다. 이전 보안/DB reviewer loop도 product code/schema 기준 clean이었다.
 
 ## Core Entities
 
