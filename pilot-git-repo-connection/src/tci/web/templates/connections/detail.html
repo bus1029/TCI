@@ -63,7 +63,7 @@
       <section>
         <h2>Webhook 상태</h2>
         {% if connection.webhookHealth %}
-        <p>상태: {{ connection.webhookHealth.status }}</p>
+        <p>상태: {{ connection.webhookHealth.webhookStatus }}</p>
         <p>회전 상태: {{ connection.webhookHealth.rotationState }}</p>
         <p>grace 종료: {{ connection.webhookHealth.graceUntil or "없음" }}</p>
         <p>

@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 import shutil
 import uuid
 
+from sqlalchemy.exc import IntegrityError
+
 from tci.api.problem_details import ProblemCode
 from tci.domain.services.repository_connection_support import (
     RepositoryConnectionProblem,
@@ -308,6 +310,15 @@ def build_code_snapshot(
         )
     except RepositoryConnectionProblem:
         shutil.rmtree(archive.absolute_path, ignore_errors=True)
+        raise
+    except IntegrityError:
+        shutil.rmtree(archive.absolute_path, ignore_errors=True)
+        snapshot = _load_existing_snapshot(
+            sync_run_id=command.sync_run_id,
+            dependencies=dependencies,
+        )
+        if snapshot is not None:
+            return snapshot
         raise
     except Exception as error:
         shutil.rmtree(archive.absolute_path, ignore_errors=True)

@@ -15,6 +15,7 @@ import uuid
 
 # mypy: ignore-errors
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 
 from tci.app import AppDependencies, create_app
 from tci.domain.services.build_traceability_reference import (
@@ -177,6 +178,14 @@ class InMemoryRepositoryStore:
     mirror_tree_sha: str = "b" * 40
     mirror_snapshot_entries: tuple[tuple[str, bytes], ...] = field(
         default_factory=lambda: (("src/main.py", b"print('hello')\n"),)
+    )
+    event_create_conflict_delivery_ids: set[str] = field(default_factory=set)
+    sync_run_create_conflict_refs: set[tuple[uuid.UUID, RefType, str]] = field(
+        default_factory=set
+    )
+    sync_run_create_conflict_status: SyncRunStatus = SyncRunStatus.PENDING
+    sync_run_release_conflict_refs: set[tuple[uuid.UUID, RefType, str]] = field(
+        default_factory=set
     )
 
 
@@ -511,6 +520,32 @@ class FakeRepositoryConnectionRepository:
         connection.updated_at = now_utc()
         return connection
 
+    def record_processed_event_preserving_webhook_health(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        event_id: uuid.UUID,
+        processed_at: datetime,
+    ) -> RepositoryConnection:
+        connection = self._require_any(connection_id=connection_id)
+        connection.last_processed_event_id = event_id
+        connection.last_processed_event_at = processed_at
+        connection.updated_at = now_utc()
+        return connection
+
+    def record_webhook_delivery_failure(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        event_id: uuid.UUID,
+        failed_at: datetime,
+    ) -> RepositoryConnection:
+        connection = self._require_any(connection_id=connection_id)
+        connection.last_processed_event_id = event_id
+        connection.last_processed_event_at = failed_at
+        connection.updated_at = now_utc()
+        return connection
+
     def _require_connection(
         self, *, workspace_id: uuid.UUID, connection_id: uuid.UUID
     ) -> RepositoryConnection:
@@ -767,6 +802,15 @@ class FakeRepositoryEventRepository:
             processed_at=draft.processed_at,
         )
         self._store.repository_events[event.id] = event
+        if event.provider_delivery_id in self._store.event_create_conflict_delivery_ids:
+            self._store.event_create_conflict_delivery_ids.remove(
+                event.provider_delivery_id
+            )
+            raise IntegrityError(
+                statement="INSERT INTO repository_events",
+                params={},
+                orig=RuntimeError("simulated concurrent delivery insert"),
+            )
         return event
 
     def get_by_delivery_id(
@@ -786,7 +830,22 @@ class FakeRepositoryEventRepository:
                 return event
         return None
 
-    def get(self, *, event_id: uuid.UUID) -> TestRepositoryEvent | None:
+    def get_by_delivery_id_for_update(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        provider_delivery_id: str,
+        provider_event_idempotency_source,
+    ) -> TestRepositoryEvent | None:
+        return self.get_by_delivery_id(
+            connection_id=connection_id,
+            provider_delivery_id=provider_delivery_id,
+            provider_event_idempotency_source=provider_event_idempotency_source,
+        )
+
+    def get(
+        self, *, event_id: uuid.UUID, for_update: bool = False
+    ) -> TestRepositoryEvent | None:
         return self._store.repository_events.get(event_id)
 
     def list_for_connection(
@@ -978,6 +1037,7 @@ class RepositorySyncRunDraft:
     trigger_type: SyncTriggerType
     requested_ref_type: RefType
     requested_ref_name: str
+    requested_ref_key: str | None = None
 
 
 class FakeRepositorySyncRunRepository:
@@ -985,6 +1045,45 @@ class FakeRepositorySyncRunRepository:
         self._store = store
 
     def create_pending(self, draft: RepositorySyncRunDraft) -> RepositorySyncRun:
+        return self._create(draft=draft, status=SyncRunStatus.PENDING)
+
+    def create_blocked(self, draft: RepositorySyncRunDraft) -> RepositorySyncRun:
+        return self._create(draft=draft, status=SyncRunStatus.BLOCKED)
+
+    def _create(
+        self, *, draft: RepositorySyncRunDraft, status: SyncRunStatus
+    ) -> RepositorySyncRun:
+        conflict_key = (
+            draft.connection_id,
+            draft.requested_ref_type,
+            draft.requested_ref_key or draft.requested_ref_name,
+        )
+        if conflict_key in self._store.sync_run_create_conflict_refs:
+            self._store.sync_run_create_conflict_refs.remove(conflict_key)
+            winning_sync_run = RepositorySyncRun(
+                id=uuid.uuid4(),
+                connection_id=draft.connection_id,
+                trigger_event_id=draft.trigger_event_id,
+                trigger_type=draft.trigger_type,
+                requested_ref_type=draft.requested_ref_type,
+                requested_ref_name=draft.requested_ref_name,
+                requested_ref_key=draft.requested_ref_key or draft.requested_ref_name,
+                status=self._store.sync_run_create_conflict_status,
+                started_at=now_utc(),
+            )
+            self._store.sync_runs[winning_sync_run.id] = winning_sync_run
+            raise IntegrityError(
+                statement="INSERT INTO repository_sync_runs",
+                params={},
+                orig=RuntimeError("simulated concurrent sync run insert"),
+            )
+        self._raise_if_sync_run_uniqueness_would_fail(
+            connection_id=draft.connection_id,
+            requested_ref_type=draft.requested_ref_type,
+            requested_ref_key=draft.requested_ref_key or draft.requested_ref_name,
+            status=status,
+            excluded_sync_run_id=None,
+        )
         sync_run = RepositorySyncRun(
             id=draft.id,
             connection_id=draft.connection_id,
@@ -992,11 +1091,42 @@ class FakeRepositorySyncRunRepository:
             trigger_type=draft.trigger_type,
             requested_ref_type=draft.requested_ref_type,
             requested_ref_name=draft.requested_ref_name,
-            status=SyncRunStatus.PENDING,
+            requested_ref_key=draft.requested_ref_key or draft.requested_ref_name,
+            status=status,
             started_at=now_utc(),
         )
         self._store.sync_runs[sync_run.id] = sync_run
         return sync_run
+
+    def _raise_if_sync_run_uniqueness_would_fail(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        requested_ref_type: RefType,
+        requested_ref_key: str,
+        status: SyncRunStatus,
+        excluded_sync_run_id: uuid.UUID | None,
+    ) -> None:
+        guarded_statuses: tuple[SyncRunStatus, ...]
+        if status in {SyncRunStatus.PENDING, SyncRunStatus.RUNNING}:
+            guarded_statuses = (SyncRunStatus.PENDING, SyncRunStatus.RUNNING)
+        elif status is SyncRunStatus.BLOCKED:
+            guarded_statuses = (SyncRunStatus.BLOCKED,)
+        else:
+            return
+        for existing_sync_run in self._store.sync_runs.values():
+            if (
+                existing_sync_run.id != excluded_sync_run_id
+                and existing_sync_run.connection_id == connection_id
+                and existing_sync_run.requested_ref_type == requested_ref_type
+                and existing_sync_run.requested_ref_key == requested_ref_key
+                and existing_sync_run.status in guarded_statuses
+            ):
+                raise IntegrityError(
+                    statement="INSERT OR UPDATE repository_sync_runs",
+                    params={},
+                    orig=RuntimeError("simulated sync run uniqueness violation"),
+                )
 
     def get(
         self, *, connection_id: uuid.UUID, sync_run_id: uuid.UUID
@@ -1017,6 +1147,206 @@ class FakeRepositorySyncRunRepository:
         if not sync_runs:
             return None
         return max(sync_runs, key=lambda sync_run: (sync_run.started_at, sync_run.id))
+
+    def get_active_for_trigger_event(
+        self, *, connection_id: uuid.UUID, trigger_event_id: uuid.UUID
+    ) -> RepositorySyncRun | None:
+        sync_runs = [
+            sync_run
+            for sync_run in self._store.sync_runs.values()
+            if sync_run.connection_id == connection_id
+            and sync_run.trigger_event_id == trigger_event_id
+            and sync_run.status in {SyncRunStatus.PENDING, SyncRunStatus.RUNNING}
+        ]
+        if not sync_runs:
+            return None
+        return max(sync_runs, key=lambda sync_run: (sync_run.started_at, sync_run.id))
+
+    def get_active_for_requested_ref(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        trigger_type: SyncTriggerType,
+        requested_ref_type: RefType,
+        requested_ref_name: str,
+        requested_ref_key: str | None = None,
+    ) -> RepositorySyncRun | None:
+        requested_ref_key = requested_ref_key or requested_ref_name
+        sync_runs = [
+            sync_run
+            for sync_run in self._store.sync_runs.values()
+            if sync_run.connection_id == connection_id
+            and sync_run.requested_ref_type == requested_ref_type
+            and sync_run.requested_ref_key == requested_ref_key
+            and sync_run.status is SyncRunStatus.PENDING
+        ]
+        if not sync_runs:
+            return None
+        return max(sync_runs, key=lambda sync_run: (sync_run.started_at, sync_run.id))
+
+    def get_running_for_requested_ref(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        requested_ref_type: RefType,
+        requested_ref_name: str,
+        requested_ref_key: str | None = None,
+    ) -> RepositorySyncRun | None:
+        requested_ref_key = requested_ref_key or requested_ref_name
+        sync_runs = [
+            sync_run
+            for sync_run in self._store.sync_runs.values()
+            if sync_run.connection_id == connection_id
+            and sync_run.requested_ref_type == requested_ref_type
+            and sync_run.requested_ref_key == requested_ref_key
+            and sync_run.status is SyncRunStatus.RUNNING
+        ]
+        if not sync_runs:
+            return None
+        return max(sync_runs, key=lambda sync_run: (sync_run.started_at, sync_run.id))
+
+    def get_blocked_for_requested_ref(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        requested_ref_type: RefType,
+        requested_ref_name: str,
+        requested_ref_key: str | None = None,
+    ) -> RepositorySyncRun | None:
+        requested_ref_key = requested_ref_key or requested_ref_name
+        sync_runs = [
+            sync_run
+            for sync_run in self._store.sync_runs.values()
+            if sync_run.connection_id == connection_id
+            and sync_run.requested_ref_type == requested_ref_type
+            and sync_run.requested_ref_key == requested_ref_key
+            and sync_run.status is SyncRunStatus.BLOCKED
+        ]
+        if not sync_runs:
+            return None
+        return min(sync_runs, key=lambda sync_run: (sync_run.started_at, sync_run.id))
+
+    def release_blocked(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        sync_run_id: uuid.UUID,
+        released_at: datetime,
+    ) -> RepositorySyncRun:
+        sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
+        if sync_run.status is not SyncRunStatus.BLOCKED:
+            raise ValueError("차단된 스냅샷 실행만 대기 상태로 전환할 수 있습니다.")
+        sync_run.status = SyncRunStatus.PENDING
+        sync_run.started_at = released_at
+        sync_run.dispatch_enqueued_at = None
+        sync_run.completed_at = None
+        sync_run.failure_code = None
+        sync_run.failure_message = None
+        return sync_run
+
+    def release_blocked_if_no_active(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        sync_run_id: uuid.UUID,
+        released_at: datetime,
+    ) -> RepositorySyncRun | None:
+        sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
+        if sync_run.status is not SyncRunStatus.BLOCKED:
+            raise ValueError("차단된 스냅샷 실행만 대기 상태로 전환할 수 있습니다.")
+        conflict_key = (
+            connection_id,
+            sync_run.requested_ref_type,
+            sync_run.requested_ref_key,
+        )
+        if conflict_key in self._store.sync_run_release_conflict_refs:
+            self._store.sync_run_release_conflict_refs.remove(conflict_key)
+            raise IntegrityError(
+                statement="UPDATE repository_sync_runs",
+                params={},
+                orig=RuntimeError("simulated concurrent sync run release"),
+            )
+        for existing_sync_run in self._store.sync_runs.values():
+            if (
+                existing_sync_run.id != sync_run.id
+                and existing_sync_run.connection_id == connection_id
+                and existing_sync_run.requested_ref_type == sync_run.requested_ref_type
+                and existing_sync_run.requested_ref_key == sync_run.requested_ref_key
+                and existing_sync_run.status
+                in {SyncRunStatus.PENDING, SyncRunStatus.RUNNING}
+            ):
+                return None
+        sync_run.status = SyncRunStatus.PENDING
+        sync_run.started_at = released_at
+        sync_run.dispatch_enqueued_at = None
+        sync_run.completed_at = None
+        sync_run.failure_code = None
+        sync_run.failure_message = None
+        return sync_run
+
+    def mark_dispatch_enqueued(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        sync_run_id: uuid.UUID,
+        enqueued_at: datetime,
+    ) -> RepositorySyncRun:
+        sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
+        sync_run.dispatch_enqueued_at = enqueued_at
+        return sync_run
+
+    def clear_dispatch_enqueued(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        sync_run_id: uuid.UUID,
+    ) -> RepositorySyncRun:
+        sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
+        sync_run.dispatch_enqueued_at = None
+        return sync_run
+
+    def claim_dispatch_enqueued(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        sync_run_id: uuid.UUID,
+        enqueued_at: datetime,
+        stale_before: datetime | None = None,
+    ) -> bool:
+        sync_run = self.get(connection_id=connection_id, sync_run_id=sync_run_id)
+        if (
+            sync_run is None
+            or sync_run.status is not SyncRunStatus.PENDING
+            or (
+                sync_run.dispatch_enqueued_at is not None
+                and (
+                    stale_before is None
+                    or sync_run.dispatch_enqueued_at > stale_before
+                )
+            )
+        ):
+            return False
+        sync_run.dispatch_enqueued_at = enqueued_at
+        return True
+
+    def update_blocked_trigger_event(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        sync_run_id: uuid.UUID,
+        trigger_event_id: uuid.UUID,
+        updated_at: datetime,
+    ) -> RepositorySyncRun:
+        sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
+        if sync_run.status is not SyncRunStatus.BLOCKED:
+            raise ValueError("차단된 스냅샷 실행만 최신 이벤트로 교체할 수 있습니다.")
+        sync_run.trigger_event_id = trigger_event_id
+        sync_run.started_at = updated_at
+        sync_run.dispatch_enqueued_at = None
+        sync_run.completed_at = None
+        sync_run.failure_code = None
+        sync_run.failure_message = None
+        return sync_run
 
     def mark_running(
         self,
@@ -1061,6 +1391,8 @@ class FakeRepositorySyncRunRepository:
         completed_at: datetime,
     ) -> RepositorySyncRun:
         sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
+        if sync_run.status is SyncRunStatus.SUCCEEDED:
+            return sync_run
         sync_run.status = SyncRunStatus.FAILED
         sync_run.failure_code = failure_code
         sync_run.failure_message = failure_message
@@ -1250,6 +1582,7 @@ def create_test_client(
     store: InMemoryRepositoryStore | None = None,
     use_real_repositories: bool = False,
     database_url: str | None = None,
+    base_url: str = "http://testserver",
 ) -> tuple[TestClient, InMemoryRepositoryStore]:
     store = store or InMemoryRepositoryStore()
     settings = _load_test_settings(tmp_path, database_url=database_url)
@@ -1316,8 +1649,13 @@ def create_test_client(
             ),
         )
     app = create_app(settings=settings, dependencies=dependencies)
-    client = TestClient(app)
-    client.headers.update({"X-TCI-Workspace-Id": str(workspace_id)})
+    client = TestClient(app, base_url=base_url)
+    client.headers.update(
+        {
+            "X-TCI-Workspace-Id": str(workspace_id),
+            "X-TCI-Operator-Token": "test-operator-token",
+        }
+    )
     return client, store
 
 
@@ -1442,6 +1780,84 @@ def build_github_webhook_headers(
     }
 
 
+def build_gitlab_push_payload(
+    *,
+    ref_name: str = "main",
+    after_sha: str = "a" * 40,
+    project_path: str = "group/sample-repo",
+    checkout_sha: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "object_kind": "push",
+        "ref": f"refs/heads/{ref_name}",
+        "after": after_sha,
+        "checkout_sha": checkout_sha or after_sha,
+        "project": {"path_with_namespace": project_path},
+        "commits": [{"id": after_sha, "message": "update repository snapshot"}],
+    }
+
+
+def build_gitlab_tag_payload(
+    *,
+    tag_name: str = "v1.0.0",
+    after_sha: str = "a" * 40,
+    project_path: str = "group/sample-repo",
+) -> dict[str, Any]:
+    return {
+        "object_kind": "tag_push",
+        "ref": f"refs/tags/{tag_name}",
+        "after": after_sha,
+        "checkout_sha": after_sha,
+        "project": {"path_with_namespace": project_path},
+    }
+
+
+def build_gitlab_merge_request_payload(
+    *,
+    action: str = "open",
+    iid: int = 42,
+    source_branch: str = "feature/us3",
+    last_commit_sha: str = "b" * 40,
+    project_path: str = "group/sample-repo",
+    source_project_path: str | None = None,
+    oldrev: str | None = None,
+) -> dict[str, Any]:
+    object_attributes: dict[str, Any] = {
+        "action": action,
+        "iid": iid,
+        "source_branch": source_branch,
+        "last_commit": {"id": last_commit_sha},
+    }
+    if oldrev is not None:
+        object_attributes["oldrev"] = oldrev
+    return {
+        "object_kind": "merge_request",
+        "project": {"path_with_namespace": project_path},
+        "source_project": {
+            "path_with_namespace": source_project_path or project_path,
+        },
+        "object_attributes": object_attributes,
+    }
+
+
+def build_gitlab_webhook_headers(
+    *,
+    token: str,
+    event_name: str,
+    idempotency_key: str | None = "gitlab-delivery-001",
+    webhook_uuid: str | None = None,
+) -> dict[str, str]:
+    headers = {
+        "X-Gitlab-Token": token,
+        "X-Gitlab-Event": event_name,
+    }
+    if idempotency_key is not None:
+        headers["Idempotency-Key"] = idempotency_key
+    if webhook_uuid is not None:
+        headers["X-Gitlab-Webhook-UUID"] = webhook_uuid
+    return headers
+
+
 def seed_active_webhook_secret(
     store: InMemoryRepositoryStore,
     *,
@@ -1524,6 +1940,10 @@ def serialize_github_webhook_payload(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
 
+def serialize_gitlab_webhook_payload(payload: dict[str, Any]) -> bytes:
+    return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
 def _matches_any_path(path: str, patterns: Sequence[str]) -> bool:
     return any(fnmatchcase(path, pattern) for pattern in patterns)
 
@@ -1549,17 +1969,23 @@ def _load_test_settings(tmp_path: Path, *, database_url: str | None = None):
     original_template_root = os.environ.get("TCI_TEMPLATE_ROOT")
     original_database_url = os.environ.get("TCI_DATABASE_URL")
     original_redis_url = os.environ.get("TCI_REDIS_URL")
+    original_operator_token = os.environ.get("TCI_OPERATOR_API_TOKEN")
     original_gitlab_hosts = os.environ.get("TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS")
+    original_gitlab_proxy_hosts = os.environ.get(
+        "TCI_GITLAB_WEBHOOK_TRUSTED_PROXY_HOSTS"
+    )
     template_root = (
         Path(__file__).resolve().parents[2] / "src" / "tci" / "web" / "templates"
     )
     os.environ["TCI_PROJECT_ROOT"] = str(tmp_path)
     os.environ["TCI_CREDENTIAL_ENCRYPTION_KEY"] = Fernet.generate_key().decode("utf-8")
+    os.environ["TCI_OPERATOR_API_TOKEN"] = "test-operator-token"
     os.environ["TCI_TEMPLATE_ROOT"] = str(template_root)
     os.environ["TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS"] = (
         "gitlab.example.com,gitlab.example.com:8443,"
         "localhost,127.0.0.1,192.168.10.20,192.168.10.20:2222"
     )
+    os.environ["TCI_GITLAB_WEBHOOK_TRUSTED_PROXY_HOSTS"] = "testclient,127.0.0.1"
     if database_url is None:
         os.environ.pop("TCI_DATABASE_URL", None)
     else:
@@ -1588,7 +2014,17 @@ def _load_test_settings(tmp_path: Path, *, database_url: str | None = None):
             os.environ.pop("TCI_REDIS_URL", None)
         else:
             os.environ["TCI_REDIS_URL"] = original_redis_url
+        if original_operator_token is None:
+            os.environ.pop("TCI_OPERATOR_API_TOKEN", None)
+        else:
+            os.environ["TCI_OPERATOR_API_TOKEN"] = original_operator_token
         if original_gitlab_hosts is None:
             os.environ.pop("TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS", None)
         else:
             os.environ["TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS"] = original_gitlab_hosts
+        if original_gitlab_proxy_hosts is None:
+            os.environ.pop("TCI_GITLAB_WEBHOOK_TRUSTED_PROXY_HOSTS", None)
+        else:
+            os.environ["TCI_GITLAB_WEBHOOK_TRUSTED_PROXY_HOSTS"] = (
+                original_gitlab_proxy_hosts
+            )

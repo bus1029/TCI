@@ -17,5 +17,5 @@ def test_quickstart_validation_covers_release_scope_flow(
     assert result.pull_request_event_decision == "queued"
     assert result.pull_request_event_processing_status == "completed"
     assert result.grace_period_previous_secret_accepted is True
-    assert result.expired_previous_secret_rejection_code == "WEBHOOK_SECRET_MISMATCH"
+    assert result.expired_previous_secret_public_status == "accepted"
     assert result.traceability_snapshot_id == result.webhook_snapshot_id

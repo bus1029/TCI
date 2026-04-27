@@ -11,15 +11,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tci.domain.services.rotate_webhook_secret import (
+from tci.domain.services.rotate_webhook_secret import (  # noqa: E402
     RotateWebhookSecretCommand,
     rotate_webhook_secret,
 )
-from tci.infrastructure.queue.repository_ingestion_tasks import (
+from tci.infrastructure.queue.repository_ingestion_tasks import (  # noqa: E402
     _run_manual_snapshot_sync_task,
     _run_webhook_sync_task,
 )
-from tests.support.repository_connection_testkit import (
+from tests.support.repository_connection_testkit import (  # noqa: E402
     build_github_pull_request_payload,
     build_github_push_payload,
     build_github_webhook_headers,
@@ -42,7 +42,7 @@ class QuickstartValidationResult:
     pull_request_event_decision: str
     pull_request_event_processing_status: str
     grace_period_previous_secret_accepted: bool
-    expired_previous_secret_rejection_code: str
+    expired_previous_secret_public_status: str
 
 
 def run_quickstart_validation(*, tmp_path, monkeypatch) -> QuickstartValidationResult:
@@ -174,7 +174,7 @@ def run_quickstart_validation(*, tmp_path, monkeypatch) -> QuickstartValidationR
         delivery_id="delivery-quickstart-expired",
         after_sha="4" * 40,
     )
-    assert expired_secret_response.status_code == 401
+    assert expired_secret_response.status_code == 202
 
     connection_detail_response = client.get(f"/api/repository-connections/{connection_id}")
     assert connection_detail_response.status_code == 200
@@ -200,7 +200,7 @@ def run_quickstart_validation(*, tmp_path, monkeypatch) -> QuickstartValidationR
             "processingStatus"
         ],
         grace_period_previous_secret_accepted=grace_period_previous_secret_accepted,
-        expired_previous_secret_rejection_code=expired_secret_response.json()["code"],
+        expired_previous_secret_public_status=expired_secret_response.json()["status"],
     )
 
 
@@ -344,7 +344,10 @@ def main() -> None:
                 f"PR_EVENT_PROCESSING_STATUS={result.pull_request_event_processing_status}"
             )
             print(f"GRACE_ACCEPTED={result.grace_period_previous_secret_accepted}")
-            print(f"EXPIRED_REJECTION_CODE={result.expired_previous_secret_rejection_code}")
+            print(
+                "EXPIRED_PUBLIC_STATUS="
+                f"{result.expired_previous_secret_public_status}"
+            )
         finally:
             monkeypatch.undo()
 

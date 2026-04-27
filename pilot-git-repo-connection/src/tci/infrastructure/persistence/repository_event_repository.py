@@ -92,16 +92,51 @@ class RepositoryEventRepository:
         provider_delivery_id: str,
         provider_event_idempotency_source: ProviderEventIdempotencySource,
     ) -> RepositoryEvent | None:
+        return self._get_by_delivery_id(
+            connection_id=connection_id,
+            provider_delivery_id=provider_delivery_id,
+            provider_event_idempotency_source=provider_event_idempotency_source,
+            for_update=False,
+        )
+
+    def get_by_delivery_id_for_update(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        provider_delivery_id: str,
+        provider_event_idempotency_source: ProviderEventIdempotencySource,
+    ) -> RepositoryEvent | None:
+        return self._get_by_delivery_id(
+            connection_id=connection_id,
+            provider_delivery_id=provider_delivery_id,
+            provider_event_idempotency_source=provider_event_idempotency_source,
+            for_update=True,
+        )
+
+    def _get_by_delivery_id(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        provider_delivery_id: str,
+        provider_event_idempotency_source: ProviderEventIdempotencySource,
+        for_update: bool,
+    ) -> RepositoryEvent | None:
         statement = select(RepositoryEvent).where(
             RepositoryEvent.connection_id == connection_id,
             RepositoryEvent.provider_delivery_id == provider_delivery_id,
             RepositoryEvent.provider_event_idempotency_source
             == provider_event_idempotency_source,
         )
+        if for_update:
+            statement = statement.with_for_update()
         return self._session.scalar(statement)
 
-    def get(self, *, event_id: uuid.UUID) -> RepositoryEvent | None:
+    def get(
+        self, *, event_id: uuid.UUID, for_update: bool = False
+    ) -> RepositoryEvent | None:
         statement = select(RepositoryEvent).where(RepositoryEvent.id == event_id)
+        if for_update:
+            statement = statement.with_for_update()
         return self._session.scalar(statement)
 
     def list_for_connection(self, *, connection_id: uuid.UUID) -> list[RepositoryEvent]:

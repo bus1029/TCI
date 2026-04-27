@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+import inspect
 import uuid
 
 from celery import Celery
 from celery.utils.log import get_task_logger
 from kombu import Queue
+from sqlalchemy.exc import IntegrityError
 
 from tci.infrastructure.persistence.repository_event_cursor_repository import (
     RepositoryEventCursorDraft,
@@ -17,22 +19,18 @@ REPOSITORY_INGESTION_QUEUE_NAME = "repository_ingestion"
 VERIFY_REPOSITORY_CONNECTION_TASK_NAME = (
     "tci.repository_ingestion.verify_repository_connection"
 )
-RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME = (
-    "tci.repository_ingestion.run_manual_snapshot_sync"
-)
+RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME = "tci.repository_ingestion.run_manual_snapshot_sync"
 RUN_WEBHOOK_SYNC_TASK_NAME = "tci.repository_ingestion.run_webhook_sync"
 
 REPOSITORY_INGESTION_TASK_ROUTES = {
-    VERIFY_REPOSITORY_CONNECTION_TASK_NAME: {
-        "queue": REPOSITORY_INGESTION_QUEUE_NAME
-    },
-    RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME: {
-        "queue": REPOSITORY_INGESTION_QUEUE_NAME
-    },
+    VERIFY_REPOSITORY_CONNECTION_TASK_NAME: {"queue": REPOSITORY_INGESTION_QUEUE_NAME},
+    RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME: {"queue": REPOSITORY_INGESTION_QUEUE_NAME},
     RUN_WEBHOOK_SYNC_TASK_NAME: {"queue": REPOSITORY_INGESTION_QUEUE_NAME},
 }
 
 logger = get_task_logger(__name__)
+WEBHOOK_SYNC_RUNNING_REPLAY_STALE_AFTER = timedelta(minutes=15)
+WEBHOOK_SYNC_PENDING_DISPATCH_STALE_AFTER = timedelta(minutes=15)
 
 
 def build_repository_ingestion_queues() -> tuple[Queue, ...]:
@@ -143,7 +141,22 @@ def _run_manual_snapshot_sync_task(
             sync_run_id,
             error,
         )
+        if (
+            dependencies is not None
+            and connection_uuid is not None
+            and sync_run_uuid is not None
+        ):
+            _dispatch_next_pending_sync_for_ref(
+                dependencies=dependencies,
+                connection_id=connection_uuid,
+                completed_sync_run_id=sync_run_uuid,
+            )
         raise
+    _dispatch_next_pending_sync_for_ref(
+        dependencies=dependencies,
+        connection_id=connection_uuid,
+        completed_sync_run_id=sync_run_uuid,
+    )
     result["status"] = "completed"
     return result
 
@@ -156,11 +169,7 @@ def _mark_manual_snapshot_sync_failed(
     sync_run_id: uuid.UUID | None,
     error: Exception,
 ) -> None:
-    if (
-        workspace_id is None
-        or connection_id is None
-        or sync_run_id is None
-    ):
+    if workspace_id is None or connection_id is None or sync_run_id is None:
         return
 
     if dependencies is None:
@@ -179,21 +188,27 @@ def _mark_manual_snapshot_sync_failed(
     if getattr(dependencies, "session_factory", None) is None:
         return
 
-    failure_message = str(error) or "수동 스냅샷 동기화 준비 중 예기치 못한 오류가 발생했습니다."
+    failure_message = (
+        str(error) or "수동 스냅샷 동기화 준비 중 예기치 못한 오류가 발생했습니다."
+    )
     failed_at = datetime.now(tz=UTC)
     try:
         with dependencies.session_factory() as session:
             sync_run_repository = dependencies.repository_sync_run_repository_factory(
                 session
             )
-            connection_repository = dependencies.repository_connection_repository_factory(
-                session
+            connection_repository = (
+                dependencies.repository_connection_repository_factory(session)
             )
             sync_run = sync_run_repository.get(
                 connection_id=connection_id,
                 sync_run_id=sync_run_id,
             )
-            if sync_run is None or sync_run.status is not None and sync_run.status.value == "failed":
+            if (
+                sync_run is None
+                or sync_run.status is not None
+                and sync_run.status.value == "failed"
+            ):
                 return
             sync_run_repository.mark_failed(
                 connection_id=connection_id,
@@ -222,9 +237,15 @@ def _manual_snapshot_failure_code(error: Exception):
     from tci.infrastructure.persistence.models import SyncFailureCode
 
     problem_code = getattr(error, "problem_code", None)
-    if problem_code is not None and getattr(problem_code, "value", None) == "DEFAULT_REF_NOT_FOUND":
+    if (
+        problem_code is not None
+        and getattr(problem_code, "value", None) == "DEFAULT_REF_NOT_FOUND"
+    ):
         return SyncFailureCode.REF_NOT_FOUND
-    if problem_code is not None and getattr(problem_code, "value", None) == "CONNECTION_AUTH_FAILED":
+    if (
+        problem_code is not None
+        and getattr(problem_code, "value", None) == "CONNECTION_AUTH_FAILED"
+    ):
         return SyncFailureCode.AUTH_FAILED
     return SyncFailureCode.SNAPSHOT_WRITE_FAILED
 
@@ -248,26 +269,47 @@ def _run_webhook_sync_task(
     connection_uuid = uuid.UUID(connection_id)
     sync_run_uuid = uuid.UUID(sync_run_id)
     snapshot = None
+    allow_running_retry = False
 
     try:
         if dependencies.session_factory is not None:
             with dependencies.session_factory() as session:
-                connection_repository = dependencies.repository_connection_repository_factory(
-                    session
+                connection_repository = (
+                    dependencies.repository_connection_repository_factory(session)
                 )
-                connection = connection_repository.get_any(connection_id=connection_uuid)
+                connection = connection_repository.get_any(
+                    connection_id=connection_uuid
+                )
                 if connection is None:
                     return result
-                snapshot = build_service(
-                    build_command_type(
-                        workspace_id=connection.workspace_id,
-                        connection_id=connection_uuid,
-                        sync_run_id=sync_run_uuid,
-                    ),
-                    dependencies=dependencies,
+                sync_run_repository = (
+                    dependencies.repository_sync_run_repository_factory(session)
                 )
+                sync_run = sync_run_repository.get(
+                    connection_id=connection_uuid,
+                    sync_run_id=sync_run_uuid,
+                )
+                if getattr(getattr(sync_run, "status", None), "value", None) == "running":
+                    if not _running_sync_run_is_stale(sync_run):
+                        result["status"] = "in_progress"
+                        return result
+                    allow_running_retry = True
+                workspace_id = connection.workspace_id
+            snapshot = _build_snapshot_for_worker(
+                build_service,
+                build_command_type(
+                    workspace_id=workspace_id,
+                    connection_id=connection_uuid,
+                    sync_run_id=sync_run_uuid,
+                ),
+                dependencies=dependencies,
+                allow_running_retry=allow_running_retry,
+            )
+            with dependencies.session_factory() as session:
                 if event_id:
-                    event_repository = dependencies.repository_event_repository_factory(session)
+                    event_repository = dependencies.repository_event_repository_factory(
+                        session
+                    )
                     from tci.infrastructure.persistence.models import (
                         EventProcessingStatus,
                         ProcessingDecision,
@@ -286,15 +328,17 @@ def _run_webhook_sync_task(
         if event_id and dependencies.session_factory is not None:
             failed_at = datetime.now(tz=UTC)
             with dependencies.session_factory() as session:
-                event_repository = dependencies.repository_event_repository_factory(session)
+                event_repository = dependencies.repository_event_repository_factory(
+                    session
+                )
                 event_cursor_repository = (
                     dependencies.repository_event_cursor_repository_factory(session)
                 )
-                sync_run_repository = dependencies.repository_sync_run_repository_factory(
-                    session
+                sync_run_repository = (
+                    dependencies.repository_sync_run_repository_factory(session)
                 )
-                connection_repository = dependencies.repository_connection_repository_factory(
-                    session
+                connection_repository = (
+                    dependencies.repository_connection_repository_factory(session)
                 )
                 from tci.infrastructure.persistence.models import (
                     EventProcessingStatus,
@@ -305,12 +349,20 @@ def _run_webhook_sync_task(
                 )
 
                 failed_event = event_repository.get(event_id=uuid.UUID(event_id))
-                connection = connection_repository.get_any(connection_id=connection_uuid)
+                connection = connection_repository.get_any(
+                    connection_id=connection_uuid
+                )
                 sync_run = sync_run_repository.get(
                     connection_id=connection_uuid,
                     sync_run_id=sync_run_uuid,
                 )
-                if sync_run is not None and sync_run.status is not SyncRunStatus.FAILED:
+                sync_run_succeeded = (
+                    sync_run is not None and sync_run.status is SyncRunStatus.SUCCEEDED
+                )
+                if sync_run is not None and sync_run.status not in {
+                    SyncRunStatus.FAILED,
+                    SyncRunStatus.SUCCEEDED,
+                }:
                     sync_run_repository.mark_failed(
                         connection_id=connection_uuid,
                         sync_run_id=sync_run_uuid,
@@ -318,7 +370,11 @@ def _run_webhook_sync_task(
                         failure_message="웹훅 스냅샷 처리 중 예기치 못한 오류가 발생했습니다.",
                         completed_at=failed_at,
                     )
-                if failed_event is not None and failed_event.sync_run_id == sync_run_uuid:
+                if (
+                    failed_event is not None
+                    and failed_event.sync_run_id == sync_run_uuid
+                    and not sync_run_succeeded
+                ):
                     event_repository.update_processing(
                         event_id=uuid.UUID(event_id),
                         processing_decision=ProcessingDecision.QUEUED,
@@ -344,11 +400,361 @@ def _run_webhook_sync_task(
                             processed_at=failed_at,
                             health_state=WebhookHealthState.HEALTHY,
                         )
+        _dispatch_next_pending_sync_for_ref(
+            dependencies=dependencies,
+            connection_id=connection_uuid,
+            completed_sync_run_id=sync_run_uuid,
+            event_id=uuid.UUID(event_id) if event_id else None,
+        )
         raise
     if snapshot is not None:
+        _dispatch_next_pending_sync_for_ref(
+            dependencies=dependencies,
+            connection_id=connection_uuid,
+            completed_sync_run_id=sync_run_uuid,
+            event_id=uuid.UUID(event_id) if event_id else None,
+        )
         result["status"] = "completed"
         result["snapshot_id"] = str(snapshot.id)
     return result
+
+
+def _dispatch_next_pending_sync_for_ref(
+    *,
+    dependencies,
+    connection_id: uuid.UUID,
+    completed_sync_run_id: uuid.UUID,
+    event_id: uuid.UUID | None = None,
+) -> None:
+    if getattr(dependencies, "session_factory", None) is None or not getattr(
+        dependencies.settings, "redis_url", None
+    ):
+        return
+
+    with dependencies.session_factory() as session:
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(
+            session
+        )
+        connection_repository = dependencies.repository_connection_repository_factory(
+            session
+        )
+        completed_sync_run = sync_run_repository.get(
+            connection_id=connection_id,
+            sync_run_id=completed_sync_run_id,
+        )
+        connection = connection_repository.get_any(connection_id=connection_id)
+        if completed_sync_run is None or connection is None:
+            return
+        if event_id is not None:
+            event_repository = dependencies.repository_event_repository_factory(session)
+            event = event_repository.get(event_id=event_id)
+            if event is not None and event.sync_run_id != completed_sync_run_id:
+                return
+        if getattr(completed_sync_run.status, "value", None) not in {
+            "succeeded",
+            "failed",
+        }:
+            return
+        from tci.infrastructure.persistence.models import (
+            EventProcessingStatus,
+            ProcessingDecision,
+        )
+
+        event_repository = dependencies.repository_event_repository_factory(session)
+        pending_sync_run = sync_run_repository.get_active_for_requested_ref(
+            connection_id=connection_id,
+            trigger_type=completed_sync_run.trigger_type,
+            requested_ref_type=completed_sync_run.requested_ref_type,
+            requested_ref_name=completed_sync_run.requested_ref_name,
+            requested_ref_key=completed_sync_run.requested_ref_key,
+        )
+        if (
+            pending_sync_run is not None
+            and pending_sync_run.id != completed_sync_run_id
+            and pending_sync_run.trigger_event_id is not None
+        ):
+            if (
+                pending_sync_run.dispatch_enqueued_at is not None
+                and not _pending_dispatch_is_stale(
+                    pending_sync_run.dispatch_enqueued_at
+                )
+            ):
+                return
+            pending_event = event_repository.get(
+                event_id=pending_sync_run.trigger_event_id,
+                for_update=True,
+            )
+            if (
+                pending_event is not None
+                and pending_event.sync_run_id == pending_sync_run.id
+                and getattr(
+                    pending_event.processing_status,
+                    "value",
+                    pending_event.processing_status,
+                )
+                == EventProcessingStatus.QUEUED.value
+            ):
+                task_name, task_kwargs = _pending_sync_task_payload(
+                    workspace_id=connection.workspace_id,
+                    connection_id=connection_id,
+                    pending_sync_run=pending_sync_run,
+                )
+            else:
+                return
+        else:
+            pending_sync_run = None
+
+        if pending_sync_run is None:
+            running_sync_run = sync_run_repository.get_running_for_requested_ref(
+                connection_id=connection_id,
+                requested_ref_type=completed_sync_run.requested_ref_type,
+                requested_ref_name=completed_sync_run.requested_ref_name,
+                requested_ref_key=completed_sync_run.requested_ref_key,
+            )
+            if (
+                running_sync_run is not None
+                and running_sync_run.id != completed_sync_run_id
+            ):
+                return
+            blocked_sync_run = sync_run_repository.get_blocked_for_requested_ref(
+                connection_id=connection_id,
+                requested_ref_type=completed_sync_run.requested_ref_type,
+                requested_ref_name=completed_sync_run.requested_ref_name,
+                requested_ref_key=completed_sync_run.requested_ref_key,
+            )
+            if blocked_sync_run is None or blocked_sync_run.id == completed_sync_run_id:
+                return
+            if blocked_sync_run.trigger_event_id is None:
+                return
+            pending_event = event_repository.get(
+                event_id=blocked_sync_run.trigger_event_id,
+                for_update=True,
+            )
+            if (
+                pending_event is None
+                or pending_event.sync_run_id != blocked_sync_run.id
+                or getattr(
+                    pending_event.processing_status,
+                    "value",
+                    pending_event.processing_status,
+                )
+                != EventProcessingStatus.VALIDATED.value
+            ):
+                return
+            released_at = datetime.now(tz=UTC)
+            try:
+                pending_sync_run = sync_run_repository.release_blocked_if_no_active(
+                    connection_id=connection_id,
+                    sync_run_id=blocked_sync_run.id,
+                    released_at=released_at,
+                )
+            except IntegrityError:
+                return
+            if pending_sync_run is None:
+                return
+            event_repository.update_processing(
+                event_id=blocked_sync_run.trigger_event_id,
+                processing_decision=ProcessingDecision.QUEUED,
+                processing_status=EventProcessingStatus.QUEUED,
+                processed_at=released_at,
+                sync_run_id=pending_sync_run.id,
+            )
+            task_name, task_kwargs = _pending_sync_task_payload(
+                workspace_id=connection.workspace_id,
+                connection_id=connection_id,
+                pending_sync_run=pending_sync_run,
+            )
+        if not sync_run_repository.claim_dispatch_enqueued(
+            connection_id=connection_id,
+            sync_run_id=pending_sync_run.id,
+            enqueued_at=datetime.now(tz=UTC),
+            stale_before=datetime.now(tz=UTC)
+            - WEBHOOK_SYNC_PENDING_DISPATCH_STALE_AFTER,
+        ):
+            return
+
+    from tci.workers.celery_app import create_celery_app
+
+    try:
+        create_celery_app(dependencies.settings).send_task(task_name, kwargs=task_kwargs)
+    except Exception:
+        _mark_pending_sync_dispatch_failed(
+            dependencies=dependencies,
+            connection_id=connection_id,
+            sync_run_id=pending_sync_run.id,
+        )
+        logger.error(
+            "follow-up sync dispatch failed connection_id=%s sync_run_id=%s",
+            connection_id,
+            pending_sync_run.id,
+        )
+    else:
+        return
+
+
+def _build_snapshot_for_worker(
+    build_service,
+    command,
+    *,
+    dependencies,
+    allow_running_retry: bool = False,
+):
+    if allow_running_retry:
+        parameters = inspect.signature(build_service).parameters.values()
+        if any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters
+        ) or "_allow_running_retry" in inspect.signature(build_service).parameters:
+            return build_service(
+                command,
+                dependencies=dependencies,
+                _allow_running_retry=True,
+            )
+    return build_service(command, dependencies=dependencies)
+
+
+def _running_sync_run_is_stale(sync_run) -> bool:
+    started_at = getattr(sync_run, "started_at", None)
+    if started_at is None:
+        return False
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=UTC)
+    return datetime.now(tz=UTC) - started_at > WEBHOOK_SYNC_RUNNING_REPLAY_STALE_AFTER
+
+
+def _pending_dispatch_is_stale(dispatch_enqueued_at: datetime) -> bool:
+    if dispatch_enqueued_at.tzinfo is None:
+        dispatch_enqueued_at = dispatch_enqueued_at.replace(tzinfo=UTC)
+    return (
+        datetime.now(tz=UTC) - dispatch_enqueued_at
+        > WEBHOOK_SYNC_PENDING_DISPATCH_STALE_AFTER
+    )
+
+
+def _pending_sync_task_payload(
+    *,
+    workspace_id: uuid.UUID,
+    connection_id: uuid.UUID,
+    pending_sync_run,
+) -> tuple[str, dict[str, str]]:
+    trigger_type = getattr(pending_sync_run.trigger_type, "value", None)
+    if trigger_type in {"manual_initial", "manual_refresh"}:
+        return RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME, {
+            "workspace_id": str(workspace_id),
+            "connection_id": str(connection_id),
+            "sync_run_id": str(pending_sync_run.id),
+        }
+
+    task_kwargs = {
+        "connection_id": str(connection_id),
+        "sync_run_id": str(pending_sync_run.id),
+    }
+    if pending_sync_run.trigger_event_id is not None:
+        task_kwargs["event_id"] = str(pending_sync_run.trigger_event_id)
+    return RUN_WEBHOOK_SYNC_TASK_NAME, task_kwargs
+
+
+def _mark_pending_sync_dispatch_failed(
+    *,
+    dependencies,
+    connection_id: uuid.UUID,
+    sync_run_id: uuid.UUID,
+) -> None:
+    try:
+        with dependencies.session_factory() as session:
+            sync_run_repository = dependencies.repository_sync_run_repository_factory(
+                session
+            )
+            connection_repository = (
+                dependencies.repository_connection_repository_factory(session)
+            )
+            sync_run = sync_run_repository.get(
+                connection_id=connection_id,
+                sync_run_id=sync_run_id,
+            )
+            connection = connection_repository.get_any(connection_id=connection_id)
+            if sync_run is None or connection is None:
+                return
+            from tci.infrastructure.persistence.models import (
+                EventProcessingStatus,
+                ProcessingDecision,
+                SyncFailureCode,
+            )
+
+            failed_at = datetime.now(tz=UTC)
+            sync_run_repository.mark_failed(
+                connection_id=connection_id,
+                sync_run_id=sync_run_id,
+                failure_code=SyncFailureCode.QUEUE_DISPATCH_FAILED,
+                failure_message="후속 스냅샷 작업 큐에 연결할 수 없습니다.",
+                completed_at=failed_at,
+            )
+            if sync_run.trigger_event_id is not None:
+                event_repository = dependencies.repository_event_repository_factory(
+                    session
+                )
+                event_repository.update_processing(
+                    event_id=sync_run.trigger_event_id,
+                    processing_decision=ProcessingDecision.QUEUED,
+                    processing_status=EventProcessingStatus.FAILED,
+                    processed_at=failed_at,
+                    sync_run_id=sync_run_id,
+                )
+                event_cursor_repository = (
+                    dependencies.repository_event_cursor_repository_factory(session)
+                )
+                failed_event = event_repository.get(event_id=sync_run.trigger_event_id)
+                if failed_event is not None:
+                    _restore_event_cursor_after_failure(
+                        connection_id=connection_id,
+                        failed_event=failed_event,
+                        event_repository=event_repository,
+                        event_cursor_repository=event_cursor_repository,
+                        restored_at=failed_at,
+                    )
+            connection_repository.record_sync_failure(
+                workspace_id=connection.workspace_id,
+                connection_id=connection_id,
+                failed_at=failed_at,
+                status=None,
+            )
+    except Exception:
+        logger.warning(
+            "best-effort follow-up sync dispatch failure bookkeeping failed "
+            "connection_id=%s sync_run_id=%s",
+            connection_id,
+            sync_run_id,
+        )
+
+
+def _mark_pending_sync_dispatch_enqueued(
+    *,
+    dependencies,
+    connection_id: uuid.UUID,
+    sync_run_id: uuid.UUID,
+) -> None:
+    try:
+        with dependencies.session_factory() as session:
+            sync_run_repository = dependencies.repository_sync_run_repository_factory(
+                session
+            )
+            sync_run = sync_run_repository.get(
+                connection_id=connection_id,
+                sync_run_id=sync_run_id,
+            )
+            if sync_run is None:
+                return
+            sync_run_repository.mark_dispatch_enqueued(
+                connection_id=connection_id,
+                sync_run_id=sync_run_id,
+                enqueued_at=datetime.now(tz=UTC),
+            )
+    except Exception:
+        logger.warning(
+            "best-effort follow-up sync dispatch marker failed "
+            "connection_id=%s sync_run_id=%s",
+            connection_id,
+            sync_run_id,
+        )
 
 
 def _registered_task_result(
@@ -415,10 +821,15 @@ def _restore_event_cursor_after_failure(
             if candidate.id != failed_event.id
             and candidate.target_key == failed_event.target_key
             and candidate.target_head_sha is not None
-            and getattr(candidate.processing_decision, "value", candidate.processing_decision)
+            and getattr(
+                candidate.processing_decision, "value", candidate.processing_decision
+            )
             == "queued"
-            and getattr(candidate.processing_status, "value", candidate.processing_status)
+            and getattr(
+                candidate.processing_status, "value", candidate.processing_status
+            )
             != "failed"
+            and getattr(candidate, "sync_run_id", None) is not None
         ),
         None,
     )

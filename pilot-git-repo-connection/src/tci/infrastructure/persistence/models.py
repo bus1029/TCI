@@ -886,6 +886,22 @@ class RepositorySyncRun(Base):
     __table_args__ = (
         UniqueConstraint("connection_id", "id", name="uq_sync_run_conn_id_id"),
         Index("ix_sync_run_trigger_event_id", "trigger_event_id"),
+        Index(
+            "ix_sync_run_one_active_per_requested_ref",
+            "connection_id",
+            "requested_ref_type",
+            "requested_ref_key",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'running')"),
+        ),
+        Index(
+            "ix_sync_run_one_blocked_per_requested_ref",
+            "connection_id",
+            "requested_ref_type",
+            "requested_ref_key",
+            unique=True,
+            postgresql_where=text("status = 'blocked'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
@@ -905,6 +921,7 @@ class RepositorySyncRun(Base):
         nullable=False,
     )
     requested_ref_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    requested_ref_key: Mapped[str] = mapped_column(String(255), nullable=False)
     resolved_commit_sha: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[SyncRunStatus] = mapped_column(
         sql_enum(SyncRunStatus, name="sync_run_status"),
@@ -918,6 +935,9 @@ class RepositorySyncRun(Base):
     failure_message: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    dispatch_enqueued_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

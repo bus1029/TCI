@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 import os
 from pathlib import Path
+import secrets
 
 from cryptography.fernet import Fernet
 
@@ -69,7 +70,9 @@ class Settings:
     database_url: str | None
     redis_url: str | None
     credential_encryption_key: str | None
+    operator_api_token: str | None
     gitlab_self_managed_allowed_hosts: tuple[str, ...]
+    gitlab_webhook_trusted_proxy_hosts: tuple[str, ...]
 
     def runtime_directories(self) -> tuple[Path, Path, Path]:
         return (
@@ -112,9 +115,10 @@ def load_settings() -> Settings:
         os.getenv("TCI_CREDENTIAL_ENCRYPTION_KEY")
     )
 
+    environment = os.getenv("TCI_ENV", "development")
     return Settings(
         project_root=project_root,
-        environment=os.getenv("TCI_ENV", "development"),
+        environment=environment,
         runtime_root=runtime_root,
         git_mirror_root=git_mirror_root,
         code_snapshot_root=code_snapshot_root,
@@ -126,8 +130,16 @@ def load_settings() -> Settings:
         database_url=os.getenv("TCI_DATABASE_URL"),
         redis_url=os.getenv("TCI_REDIS_URL"),
         credential_encryption_key=credential_encryption_key,
+        operator_api_token=_validate_operator_api_token(
+            os.getenv("TCI_OPERATOR_API_TOKEN"),
+            environment=environment,
+        ),
         gitlab_self_managed_allowed_hosts=_parse_allowed_hosts(
             os.getenv("TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS")
+        ),
+        gitlab_webhook_trusted_proxy_hosts=_parse_allowed_hosts(
+            os.getenv("TCI_GITLAB_WEBHOOK_TRUSTED_PROXY_HOSTS"),
+            strip_port=True,
         ),
     )
 
@@ -149,17 +161,59 @@ def _validate_credential_encryption_key(raw_value: str | None) -> str | None:
     return raw_value
 
 
-def _parse_allowed_hosts(raw_value: str | None) -> tuple[str, ...]:
+def _validate_operator_api_token(
+    raw_value: str | None, *, environment: str = "development"
+) -> str | None:
+    if raw_value is None:
+        return None
+    token = raw_value.strip()
+    if not token:
+        return None
+    if len(token) < 16:
+        raise RuntimeError("TCI_OPERATOR_API_TOKEN은 16자 이상이어야 합니다.")
+    if not secrets.compare_digest(token, raw_value):
+        raise RuntimeError("TCI_OPERATOR_API_TOKEN에는 앞뒤 공백을 사용할 수 없습니다.")
+    if environment != "development":
+        allowed_characters = (
+            "abcdefghijklmnopqrstuvwxyz"
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            "0123456789"
+            "-_"
+        )
+        if len(token) < 43 or any(character not in allowed_characters for character in token):
+            raise RuntimeError(
+                "production TCI_OPERATOR_API_TOKEN은 32바이트 이상 난수의 "
+                "base64url 인코딩 값이어야 합니다."
+            )
+    return token
+
+
+def _parse_allowed_hosts(
+    raw_value: str | None, *, strip_port: bool = False
+) -> tuple[str, ...]:
     if not raw_value:
         return ()
     return tuple(
-        _normalize_allowed_host(host) for host in raw_value.split(",") if host.strip()
+        _normalize_allowed_host(host, strip_port=strip_port)
+        for host in raw_value.split(",")
+        if host.strip()
     )
 
 
-def _normalize_allowed_host(raw_host: str) -> str:
+def _normalize_allowed_host(raw_host: str, *, strip_port: bool = False) -> str:
     host = raw_host.strip().lower()
+    if host.startswith("["):
+        bracket_end = host.find("]")
+        if bracket_end != -1:
+            address = host[1:bracket_end].rstrip(".")
+            suffix = host[bracket_end + 1 :]
+            if strip_port or not suffix:
+                return address
+            if suffix.startswith(":") and suffix[1:].isdecimal():
+                return f"{address}:{suffix[1:]}"
     hostname, separator, port = host.rpartition(":")
-    if separator and port.isdecimal():
+    if separator and port.isdecimal() and host.count(":") == 1:
+        if strip_port:
+            return hostname.rstrip(".")
         return f"{hostname.rstrip('.')}:{port}"
     return host.rstrip(".")

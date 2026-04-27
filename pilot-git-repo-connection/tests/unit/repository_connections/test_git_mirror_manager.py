@@ -97,7 +97,9 @@ def _build_test_settings(project_root: Path):
         database_url=None,
         redis_url=None,
         credential_encryption_key=None,
+        operator_api_token="test-operator-token",
         gitlab_self_managed_allowed_hosts=(),
+        gitlab_webhook_trusted_proxy_hosts=(),
     )
 
 

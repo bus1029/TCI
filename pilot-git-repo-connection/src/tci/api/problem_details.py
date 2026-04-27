@@ -15,6 +15,7 @@ class ProblemCode(StrEnum):
     WEBHOOK_SECRET_MISSING = "WEBHOOK_SECRET_MISSING"
     WEBHOOK_SECRET_MISMATCH = "WEBHOOK_SECRET_MISMATCH"
     STALE_HEAD_SHA_SKIPPED = "STALE_HEAD_SHA_SKIPPED"
+    SYNC_ALREADY_ACTIVE = "SYNC_ALREADY_ACTIVE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +75,11 @@ _PROBLEM_DETAILS = {
         code=ProblemCode.STALE_HEAD_SHA_SKIPPED,
         status_code=409,
         message="최신 HEAD가 아닌 이벤트는 스냅샷 갱신 대상에서 제외됩니다.",
+    ),
+    ProblemCode.SYNC_ALREADY_ACTIVE: ProblemDetailDefinition(
+        code=ProblemCode.SYNC_ALREADY_ACTIVE,
+        status_code=409,
+        message="같은 ref에 대한 동기화 작업이 이미 진행 중입니다.",
     ),
 }
 

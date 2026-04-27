@@ -7,6 +7,8 @@ from types import ModuleType
 from collections.abc import Iterable
 from typing import Any, cast
 
+import pytest
+
 # mypy: disable-error-code=import-untyped
 from sqlalchemy.orm import configure_mappers
 
@@ -286,11 +288,147 @@ def test_phase2_revision_ids_fit_alembic_version_column_limit() -> None:
         "004_gitlab_self_managed_provider_support.py",
         "gitlab_self_managed_provider_support_revision_ids",
     )
+    revision_007 = _load_revision_module(
+        "007_sync_run_active_trigger_guard.py",
+        "sync_run_active_trigger_guard_revision_ids",
+    )
 
     assert len(revision_001.revision) <= 32
     assert len(revision_002.revision) <= 32
     assert len(revision_003.revision) <= 32
     assert len(revision_004.revision) <= 32
+    assert len(revision_007.revision) <= 32
+
+
+def test_sync_run_active_guard_revision_rejects_duplicate_pending_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    revision_007 = _load_revision_module(
+        "007_sync_run_active_trigger_guard.py",
+        "sync_run_active_trigger_guard_duplicate_precheck",
+    )
+
+    class FakeBind:
+        def scalar(self, statement) -> int:
+            return 1
+
+    class FakeOp:
+        def get_bind(self) -> FakeBind:
+            return FakeBind()
+
+        def get_context(self):  # pragma: no cover - should not be reached
+            raise AssertionError("duplicate precheck should abort before DDL")
+
+    monkeypatch.setattr(revision_007, "op", FakeOp())
+
+    with pytest.raises(
+        RuntimeError,
+        match="중복 active sync run을 정리한 뒤 migration을 실행해야 합니다.",
+    ):
+        revision_007.upgrade()
+
+
+def test_sync_run_active_guard_revision_rejects_duplicate_blocked_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    revision_007 = _load_revision_module(
+        "007_sync_run_active_trigger_guard.py",
+        "sync_run_active_guard_duplicate_blocked_precheck",
+    )
+
+    class FakeBind:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def scalar(self, statement) -> int:
+            self.calls += 1
+            return 1 if self.calls == 2 else 0
+
+    class FakeOp:
+        def __init__(self) -> None:
+            self.bind = FakeBind()
+
+        def get_bind(self) -> FakeBind:
+            return self.bind
+
+        def get_context(self):  # pragma: no cover - should not be reached
+            raise AssertionError("duplicate precheck should abort before DDL")
+
+    monkeypatch.setattr(revision_007, "op", FakeOp())
+
+    with pytest.raises(
+        RuntimeError,
+        match="중복 blocked sync run을 정리한 뒤 migration을 실행해야 합니다.",
+    ):
+        revision_007.upgrade()
+
+
+def test_sync_run_active_guard_revision_adds_dispatch_column_and_blocked_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    revision_007 = _load_revision_module(
+        "007_sync_run_active_trigger_guard.py",
+        "sync_run_active_guard_blocked_index_contract",
+    )
+    added_columns: list[str] = []
+    created_indexes: list[tuple[str, object]] = []
+    executed_sql: list[str] = []
+    altered_columns: list[tuple[str, str, object]] = []
+
+    class FakeBind:
+        def scalar(self, statement) -> int:
+            return 0
+
+    class FakeOp:
+        def get_bind(self) -> FakeBind:
+            return FakeBind()
+
+        def execute(self, statement) -> None:
+            executed_sql.append(str(statement))
+
+        def add_column(self, table_name: str, column) -> None:
+            added_columns.append(column.name)
+
+        def alter_column(self, table_name: str, column_name: str, **kwargs) -> None:
+            altered_columns.append(
+                (table_name, column_name, kwargs.get("server_default"))
+            )
+
+        def create_index(self, name: str, table_name: str, columns, **kwargs) -> None:
+            created_indexes.append(
+                (
+                    name,
+                    tuple(columns),
+                    kwargs.get("postgresql_where"),
+                    kwargs.get("postgresql_concurrently"),
+                )
+            )
+
+    monkeypatch.setattr(revision_007, "op", FakeOp())
+
+    revision_007.upgrade()
+
+    assert "dispatch_enqueued_at" in added_columns
+    assert "requested_ref_key" in added_columns
+    assert ("repository_sync_runs", "requested_ref_key", None) in altered_columns
+    assert any("UPDATE repository_sync_runs" in sql for sql in executed_sql)
+    assert any("dispatch_enqueued_at" in sql for sql in executed_sql)
+    assert any("requested_ref_key = requested_ref_name" in sql for sql in executed_sql)
+    assert any("events.target_key" in sql for sql in executed_sql)
+    assert any("events.target_key = 'default_ref'" in sql for sql in executed_sql)
+    assert any("status = 'pending'" in sql for sql in executed_sql)
+    assert any(
+        "SET dispatch_enqueued_at = now() - interval '16 minutes'" in sql
+        for sql in executed_sql
+    )
+    assert all("COALESCE(started_at, now())" not in sql for sql in executed_sql)
+    assert any(
+        name == "ix_sync_run_one_blocked_per_requested_ref"
+        and "requested_ref_key" in columns
+        and "blocked" in str(where)
+        and concurrently is None
+        for name, columns, where, concurrently in created_indexes
+    )
 
 
 def test_scope_rule_auto_default_column_is_owned_by_followup_revision() -> None:
@@ -300,15 +438,19 @@ def test_scope_rule_auto_default_column_is_owned_by_followup_revision() -> None:
 
     assert "is_auto_default" not in revision_001_path.read_text(encoding="utf-8")
     assert "is_auto_default" in revision_006_path.read_text(encoding="utf-8")
-    assert "SET is_auto_default = true" in revision_006_path.read_text(
-        encoding="utf-8"
-    )
+    assert "SET is_auto_default = true" in revision_006_path.read_text(encoding="utf-8")
 
     revision_006 = _load_revision_module(
         "006_scope_rule_auto_default_flag.py",
         "scope_rule_auto_default_flag_revision_ids",
     )
     assert revision_006.down_revision == "005_scope_rule_preview_failed"
+
+    revision_007 = _load_revision_module(
+        "007_sync_run_active_trigger_guard.py",
+        "sync_run_active_trigger_guard_revision_ids",
+    )
+    assert revision_007.down_revision == "006_scope_rule_auto_default"
 
 
 def test_repository_event_metadata_enforces_secret_revision_same_connection() -> None:
@@ -431,7 +573,10 @@ def test_phase2_metadata_includes_supporting_foreign_key_indexes() -> None:
             "ix_repository_event_snapshot_id",
         },
         "repository_event_cursors": {"ix_repository_event_cursor_latest_event_id"},
-        "repository_sync_runs": {"ix_sync_run_trigger_event_id"},
+        "repository_sync_runs": {
+            "ix_sync_run_trigger_event_id",
+            "ix_sync_run_one_active_per_requested_ref",
+        },
         "code_snapshots": {
             "ix_code_snapshot_scope_rule_version_id",
             "ix_code_snapshot_connection_id",
@@ -443,6 +588,12 @@ def test_phase2_metadata_includes_supporting_foreign_key_indexes() -> None:
         / "versions"
         / "004_gitlab_self_managed_provider_support.py"
     ).read_text(encoding="utf-8")
+    revision_007_text = (
+        Path(__file__).resolve().parents[3]
+        / "alembic"
+        / "versions"
+        / "007_sync_run_active_trigger_guard.py"
+    ).read_text(encoding="utf-8")
 
     for table_name, index_names in expected_indexes.items():
         table_index_names = {
@@ -450,7 +601,7 @@ def test_phase2_metadata_includes_supporting_foreign_key_indexes() -> None:
         }
         assert index_names <= table_index_names
         for index_name in index_names:
-            assert index_name in revision_text
+            assert index_name in revision_text or index_name in revision_007_text
 
 
 def test_phase2_migration_keeps_provider_project_path_rollout_safe() -> None:

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from pydantic import ValidationError
 
+from tci.api.operator_auth import require_operator_auth
 from tci.api.schemas.repository_connection import serialize_repository_connection_detail
 from tci.api.schemas.repository_scope import SaveScopeRulesRequest
 from tci.domain.services.get_repository_connection_detail import (
@@ -17,6 +18,7 @@ from tci.domain.services.repository_connection_support import (
 from tci.domain.services.save_scope_rules import SaveScopeRulesCommand, save_scope_rules
 
 from ._common import (
+    FormBodyTooLarge,
     build_template_context,
     enforce_same_origin,
     extract_workspace_id_from_query,
@@ -24,7 +26,11 @@ from ._common import (
 )
 
 
-router = APIRouter(tags=["RepositoryScopeWeb"], include_in_schema=False)
+router = APIRouter(
+    tags=["RepositoryScopeWeb"],
+    include_in_schema=False,
+    dependencies=[Depends(require_operator_auth)],
+)
 
 
 @router.get("/connections/{connection_id}/scope")
@@ -62,7 +68,10 @@ async def save_repository_scope_page(connection_id: uuid.UUID, request: Request)
     if same_origin_error is not None:
         return same_origin_error
 
-    form_data = await parse_simple_form_body(request)
+    try:
+        form_data = await parse_simple_form_body(request)
+    except FormBodyTooLarge:
+        return PlainTextResponse("요청 본문이 너무 큽니다.", status_code=413)
     try:
         payload = SaveScopeRulesRequest.model_validate(
             {

@@ -3,9 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 import uuid
 
+from sqlalchemy.exc import IntegrityError
+
 from tci.api.problem_details import ProblemCode
-from tci.domain.services.repository_connection_support import RepositoryConnectionProblem
-from tci.infrastructure.persistence.models import RefType, RepositoryConnectionStatus, SyncTriggerType
+from tci.domain.services.repository_connection_support import (
+    RepositoryConnectionProblem,
+)
+from tci.infrastructure.persistence.models import (
+    RefType,
+    RepositoryConnectionStatus,
+    SyncTriggerType,
+)
 from tci.infrastructure.persistence.repository_sync_run_repository import (
     RepositorySyncRunDraft,
 )
@@ -35,20 +43,41 @@ def create_initial_snapshot(command, *, dependencies, prepared_request=None):
         dependencies=dependencies,
     )
     with dependencies.session_factory() as session:
-        sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
-        return sync_run_repository.create_pending(
-            RepositorySyncRunDraft(
-                id=uuid.uuid4(),
-                connection_id=prepared.connection_id,
-                trigger_event_id=None,
-                trigger_type=prepared.trigger_type,
-                requested_ref_type=prepared.requested_ref_type,
-                requested_ref_name=prepared.requested_ref_name,
-            )
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(
+            session
         )
+        active_sync_run = sync_run_repository.get_active_for_requested_ref(
+            connection_id=prepared.connection_id,
+            trigger_type=prepared.trigger_type,
+            requested_ref_type=prepared.requested_ref_type,
+            requested_ref_name=prepared.requested_ref_name,
+        )
+        if active_sync_run is not None:
+            raise _active_sync_problem()
+        running_sync_run = sync_run_repository.get_running_for_requested_ref(
+            connection_id=prepared.connection_id,
+            requested_ref_type=prepared.requested_ref_type,
+            requested_ref_name=prepared.requested_ref_name,
+        )
+        if running_sync_run is not None:
+            raise _active_sync_problem()
+        draft = RepositorySyncRunDraft(
+            id=uuid.uuid4(),
+            connection_id=prepared.connection_id,
+            trigger_event_id=None,
+            trigger_type=prepared.trigger_type,
+            requested_ref_type=prepared.requested_ref_type,
+            requested_ref_name=prepared.requested_ref_name,
+        )
+        try:
+            return sync_run_repository.create_pending(draft)
+        except IntegrityError as error:
+            raise _active_sync_problem() from error
 
 
-def validate_initial_snapshot_request(command, *, dependencies) -> PreparedInitialSnapshotRequest:
+def validate_initial_snapshot_request(
+    command, *, dependencies
+) -> PreparedInitialSnapshotRequest:
     if dependencies.session_factory is None:
         raise RuntimeError("초기 스냅샷을 검증하려면 데이터베이스 세션이 필요합니다.")
 
@@ -88,7 +117,9 @@ def cancel_initial_snapshot(
         raise RuntimeError("초기 스냅샷을 취소하려면 데이터베이스 세션이 필요합니다.")
 
     with dependencies.session_factory() as session:
-        sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(
+            session
+        )
         sync_run_repository.delete_pending(
             connection_id=connection_id,
             sync_run_id=sync_run_id,
@@ -103,4 +134,11 @@ def _parse_trigger_type(raw_reason: str) -> SyncTriggerType:
     raise RepositoryConnectionProblem(
         ProblemCode.INVALID_INPUT,
         "reason은 manual_initial 또는 manual_refresh여야 합니다.",
+    )
+
+
+def _active_sync_problem() -> RepositoryConnectionProblem:
+    return RepositoryConnectionProblem(
+        ProblemCode.SYNC_ALREADY_ACTIVE,
+        "같은 ref에 대한 스냅샷 작업이 이미 진행 중입니다.",
     )

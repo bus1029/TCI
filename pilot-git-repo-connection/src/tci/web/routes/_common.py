@@ -7,6 +7,12 @@ import uuid
 from fastapi import Request
 from fastapi.responses import PlainTextResponse
 
+MAX_SIMPLE_FORM_BODY_BYTES = 64 * 1024
+
+
+class FormBodyTooLarge(ValueError):
+    pass
+
 
 def extract_workspace_id_from_query(request: Request) -> uuid.UUID | PlainTextResponse:
     raw_workspace_id = request.query_params.get("workspaceId")
@@ -40,7 +46,22 @@ def enforce_same_origin(request: Request) -> PlainTextResponse | None:
 
 async def parse_simple_form_body(request: Request) -> dict[str, str]:
     # 운영 화면은 단순한 기본 폼만 다루므로 multipart 의존성 없이 urlencoded body만 파싱한다.
-    raw_body = (await request.body()).decode("utf-8")
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            parsed_content_length = int(content_length)
+        except ValueError as error:
+            raise FormBodyTooLarge("invalid form content length") from error
+        if parsed_content_length > MAX_SIMPLE_FORM_BODY_BYTES:
+            raise FormBodyTooLarge("form body too large")
+    chunks: list[bytes] = []
+    total_size = 0
+    async for chunk in request.stream():
+        total_size += len(chunk)
+        if total_size > MAX_SIMPLE_FORM_BODY_BYTES:
+            raise FormBodyTooLarge("form body too large")
+        chunks.append(chunk)
+    raw_body = b"".join(chunks).decode("utf-8")
     parsed = parse_qs(raw_body, keep_blank_values=True)
     return {key: values[-1] if values else "" for key, values in parsed.items()}
 

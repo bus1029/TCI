@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
 import uuid
 
+from tci.api.operator_auth import require_operator_auth
 from tci.api.schemas.repository_scope import (
     SaveScopeRulesRequest,
     ScopeRuleResponse,
@@ -20,6 +21,7 @@ from .repository_connections import _extract_workspace_id, _problem_response
 router = APIRouter(
     prefix="/api/repository-connections/{connection_id}/scope-rules",
     tags=["RepositoryConnections"],
+    dependencies=[Depends(require_operator_auth)],
 )
 
 

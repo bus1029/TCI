@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import secrets
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
 import uuid
 
+from tci.api.operator_auth import require_operator_auth
 from tci.api.problem_details import ProblemCode, problem_details_for
 from tci.api.schemas.repository_connection import (
     CreateRepositoryConnectionRequest,
@@ -39,7 +40,11 @@ from tci.domain.services.update_default_ref import (
 )
 
 
-router = APIRouter(prefix="/api/repository-connections", tags=["RepositoryConnections"])
+router = APIRouter(
+    prefix="/api/repository-connections",
+    tags=["RepositoryConnections"],
+    dependencies=[Depends(require_operator_auth)],
+)
 
 
 def generate_webhook_secret() -> str:

@@ -7,7 +7,11 @@ from types import SimpleNamespace
 
 from sqlalchemy.exc import OperationalError
 
-from tci.infrastructure.persistence.models import RepositoryConnectionStatus
+from tci.infrastructure.persistence.models import (
+    RefType,
+    RepositoryConnectionStatus,
+    SyncRunStatus,
+)
 from tests.support.repository_connection_testkit import (
     build_github_push_payload,
     build_github_webhook_headers,
@@ -57,6 +61,70 @@ def test_repository_connection_routes_require_workspace_header(tmp_path) -> None
         "code": "INVALID_INPUT",
         "message": "X-TCI-Workspace-Id 헤더가 필요합니다.",
     }
+
+
+def test_repository_management_routes_require_operator_token(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    client.headers.pop("X-TCI-Operator-Token")
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "운영 API 토큰이 필요합니다."}
+
+
+def test_repository_management_routes_accept_bearer_operator_token(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    client.headers.pop("X-TCI-Operator-Token")
+    client.headers.update({"Authorization": "Bearer test-operator-token"})
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+
+    assert response.status_code == 201
+
+
+def test_repository_management_routes_accept_lowercase_bearer_operator_token(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    client.headers.pop("X-TCI-Operator-Token")
+    client.headers.update({"Authorization": "bearer test-operator-token"})
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+
+    assert response.status_code == 201
+
+
+def test_repository_management_routes_fail_closed_when_operator_token_unconfigured(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    object.__setattr__(client.app.state.settings, "operator_api_token", None)
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "운영 API 토큰이 설정되지 않았습니다."}
 
 
 def test_create_planning_input_reference_route_requires_workspace_header(
@@ -154,9 +222,44 @@ def test_openapi_documents_workspace_header_for_repository_connection_routes(
     openapi_response = client.get("/openapi.json")
 
     assert openapi_response.status_code == 200
-    create_parameters = openapi_response.json()["paths"]["/api/repository-connections"][
-        "post"
-    ]["parameters"]
+    openapi = openapi_response.json()
+    assert openapi["components"]["securitySchemes"]["OperatorHeaderToken"] == {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-TCI-Operator-Token",
+        "description": (
+            "Management API operator token configured by TCI_OPERATOR_API_TOKEN."
+        ),
+    }
+    assert openapi["components"]["securitySchemes"]["OperatorBearerToken"] == {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Same operator token supplied as an Authorization bearer token.",
+    }
+    assert openapi["components"]["securitySchemes"]["OperatorCookieToken"] == {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "tci_operator_token",
+        "description": (
+            "Short-lived signed browser operator session cookie issued by "
+            "/operator/session."
+        ),
+    }
+    create_operation = openapi["paths"]["/api/repository-connections"]["post"]
+    assert create_operation["security"] == [
+        {"OperatorHeaderToken": []},
+        {"OperatorBearerToken": []},
+        {"OperatorCookieToken": []},
+    ]
+    assert (
+        openapi["paths"]["/api/webhooks/github/{connection_id}"]["post"]["security"]
+        == []
+    )
+    assert (
+        openapi["paths"]["/api/webhooks/gitlab/{connection_id}"]["post"]["security"]
+        == []
+    )
+    create_parameters = create_operation["parameters"]
     assert create_parameters == [
         {
             "name": "X-TCI-Workspace-Id",
@@ -699,9 +802,10 @@ def test_get_connection_detail_exposes_webhook_rotation_projection(
 
     assert detail_response.status_code == 200
     assert detail_response.json()["webhookHealth"] == {
-        "status": "healthy",
-        "lastRejectedReason": None,
-        "lastRejectedAt": None,
+        "webhookStatus": "healthy",
+        "providerReachabilityStatus": "reachable",
+        "lastRejectionReason": None,
+        "lastRejectionAt": None,
         "rotationState": "grace_active",
         "graceUntil": grace_until.isoformat(),
         "previousSecretDeliveriesDuringGrace": 1,
@@ -1057,6 +1161,157 @@ def test_create_snapshot_enqueues_workspace_scoped_task_when_redis_is_enabled(
     assert captured["kwargs"]["workspace_id"] == str(workspace_id)
     assert captured["kwargs"]["connection_id"] == connection_id
     assert uuid.UUID(captured["kwargs"]["sync_run_id"])
+
+
+def test_create_snapshot_rejects_duplicate_active_sync_for_same_ref(
+    tmp_path, monkeypatch
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = create_response.json()["id"]
+    captured: list[dict[str, str]] = []
+
+    def fake_send_task(name: str, kwargs: dict[str, str]) -> None:
+        captured.append(kwargs)
+
+    object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
+    monkeypatch.setattr(
+        "tci.api.routes.repository_snapshots.create_celery_app",
+        lambda settings: SimpleNamespace(send_task=fake_send_task),
+    )
+
+    first_response = client.post(
+        f"/api/repository-connections/{connection_id}/snapshots",
+        json={"reason": "manual_initial"},
+    )
+    second_response = client.post(
+        f"/api/repository-connections/{connection_id}/snapshots",
+        json={"reason": "manual_initial"},
+    )
+
+    assert first_response.status_code == 202
+    assert second_response.status_code == 409
+    assert second_response.json() == {
+        "code": "SYNC_ALREADY_ACTIVE",
+        "message": "같은 ref에 대한 스냅샷 작업이 이미 진행 중입니다.",
+    }
+    assert len(store.sync_runs) == 1
+    assert len(captured) == 1
+
+
+def test_create_snapshot_rejects_duplicate_running_sync_for_same_ref(
+    tmp_path, monkeypatch
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = create_response.json()["id"]
+    captured: list[dict[str, str]] = []
+
+    def fake_send_task(name: str, kwargs: dict[str, str]) -> None:
+        captured.append(kwargs)
+
+    object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
+    monkeypatch.setattr(
+        "tci.api.routes.repository_snapshots.create_celery_app",
+        lambda settings: SimpleNamespace(send_task=fake_send_task),
+    )
+
+    first_response = client.post(
+        f"/api/repository-connections/{connection_id}/snapshots",
+        json={"reason": "manual_initial"},
+    )
+    first_sync_run_id = uuid.UUID(first_response.json()["syncRunId"])
+    store.sync_runs[first_sync_run_id].status = SyncRunStatus.RUNNING
+    second_response = client.post(
+        f"/api/repository-connections/{connection_id}/snapshots",
+        json={"reason": "manual_initial"},
+    )
+
+    assert first_response.status_code == 202
+    assert second_response.status_code == 409
+    assert second_response.json()["code"] == "SYNC_ALREADY_ACTIVE"
+    assert len(store.sync_runs) == 1
+    assert len(captured) == 1
+
+
+def test_create_snapshot_rejects_when_pending_insert_loses_same_ref_race(
+    tmp_path, monkeypatch
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    captured: list[dict[str, str]] = []
+
+    def fake_send_task(name: str, kwargs: dict[str, str]) -> None:
+        captured.append(kwargs)
+
+    object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
+    monkeypatch.setattr(
+        "tci.api.routes.repository_snapshots.create_celery_app",
+        lambda settings: SimpleNamespace(send_task=fake_send_task),
+    )
+    store.sync_run_create_conflict_refs.add((connection_id, RefType.BRANCH, "main"))
+
+    response = client.post(
+        f"/api/repository-connections/{connection_id}/snapshots",
+        json={"reason": "manual_initial"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "SYNC_ALREADY_ACTIVE"
+    assert len(captured) == 0
+
+
+def test_create_snapshot_rejects_duplicate_pending_sync_across_manual_reasons(
+    tmp_path, monkeypatch
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(planning_input_reference_id=reference.id),
+    )
+    connection_id = create_response.json()["id"]
+    captured: list[dict[str, str]] = []
+
+    def fake_send_task(name: str, kwargs: dict[str, str]) -> None:
+        captured.append(kwargs)
+
+    object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
+    monkeypatch.setattr(
+        "tci.api.routes.repository_snapshots.create_celery_app",
+        lambda settings: SimpleNamespace(send_task=fake_send_task),
+    )
+
+    first_response = client.post(
+        f"/api/repository-connections/{connection_id}/snapshots",
+        json={"reason": "manual_initial"},
+    )
+    second_response = client.post(
+        f"/api/repository-connections/{connection_id}/snapshots",
+        json={"reason": "manual_refresh"},
+    )
+
+    assert first_response.status_code == 202
+    assert second_response.status_code == 409
+    assert len(store.sync_runs) == 1
+    assert len(captured) == 1
 
 
 def test_create_snapshot_defaults_to_manual_initial_when_body_is_missing(

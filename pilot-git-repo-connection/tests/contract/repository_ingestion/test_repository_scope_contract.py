@@ -377,3 +377,46 @@ def test_runtime_and_feature_contract_document_exclude_binary_scope_field(
     ][1]["properties"]["latestScopeRule"]
     assert baseline_latest_scope_shape == runtime_latest_scope_shape
     assert feature_latest_scope_shape == runtime_latest_scope_shape
+
+
+def test_runtime_and_feature_contract_document_operator_auth_and_webhook_health(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, _store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    repo_root = Path(__file__).resolve().parents[4]
+
+    runtime_openapi = client.get("/openapi.json").json()
+    runtime_security = runtime_openapi["security"]
+    runtime_security_schemes = runtime_openapi["components"]["securitySchemes"]
+    runtime_webhook_health = runtime_openapi["components"]["schemas"]["WebhookHealth"]
+    feature_contract = yaml.safe_load(
+        (
+            repo_root
+            / "specs/002-gitlab-onprem-connection/contracts/repository-ingestion.openapi.yaml"
+        ).read_text()
+    )
+    baseline_contract = yaml.safe_load(
+        (
+            repo_root
+            / "specs/001-git-repo-connection/contracts/repository-ingestion.openapi.yaml"
+        ).read_text()
+    )
+
+    for contract in (baseline_contract, feature_contract):
+        assert contract["security"] == runtime_security
+        assert contract["components"]["securitySchemes"] == runtime_security_schemes
+        assert (
+            contract["components"]["schemas"]["WebhookHealth"]
+            == runtime_webhook_health
+        )
+        webhook_paths = [
+            path
+            for path in contract["paths"]
+            if path.startswith("/api/webhooks/")
+        ]
+        assert webhook_paths
+        for contract_path in webhook_paths:
+            runtime_path = contract_path.replace("{connectionId}", "{connection_id}")
+            assert contract["paths"][contract_path]["post"]["security"] == []
+            assert runtime_openapi["paths"][runtime_path]["post"]["security"] == []

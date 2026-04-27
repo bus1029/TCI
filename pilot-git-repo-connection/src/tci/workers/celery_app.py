@@ -27,6 +27,8 @@ def create_celery_app(settings: Settings) -> Celery:
         task_default_queue=REPOSITORY_INGESTION_QUEUE_NAME,
         task_queues=build_repository_ingestion_queues(),
         task_routes=REPOSITORY_INGESTION_TASK_ROUTES,
+        task_acks_late=True,
+        task_reject_on_worker_lost=True,
     )
     register_repository_ingestion_tasks(app)
     return app

@@ -3,8 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import AbstractContextManager, asynccontextmanager
 from dataclasses import dataclass
+from typing import Any
 
 from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -63,8 +65,10 @@ from tci.web.routes.repository_connections import (
 )
 from tci.api.routes.repository_events import router as repository_events_router
 from tci.api.routes.github_webhooks import router as github_webhooks_router
+from tci.api.routes.gitlab_webhooks import router as gitlab_webhooks_router
 from tci.web.routes.repository_scope import router as repository_scope_web_router
 from tci.web.routes.repository_events import router as repository_events_web_router
+from tci.web.routes.operator_session import router as operator_session_web_router
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,10 +154,141 @@ def create_app(
     app.include_router(repository_connections_router)
     app.include_router(repository_events_router)
     app.include_router(github_webhooks_router)
+    app.include_router(gitlab_webhooks_router)
     app.include_router(repository_scope_router)
     app.include_router(repository_snapshots_router)
     app.include_router(repository_connections_web_router)
     app.include_router(repository_connection_detail_web_router)
     app.include_router(repository_scope_web_router)
     app.include_router(repository_events_web_router)
+    app.include_router(operator_session_web_router)
+    app.openapi = lambda: _custom_openapi(app)  # type: ignore[method-assign]
     return app
+
+
+def _custom_openapi(app: FastAPI) -> dict[str, Any]:
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        openapi_version=app.openapi_version,
+        summary=app.summary,
+        description=app.description,
+        routes=app.routes,
+    )
+    components = schema.setdefault("components", {})
+    security_schemes = components.setdefault("securitySchemes", {})
+    schemas = components.setdefault("schemas", {})
+    security_schemes.update(
+        {
+            "OperatorHeaderToken": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-TCI-Operator-Token",
+                "description": (
+                    "Management API operator token configured by "
+                    "TCI_OPERATOR_API_TOKEN."
+                ),
+            },
+            "OperatorBearerToken": {
+                "type": "http",
+                "scheme": "bearer",
+                "description": (
+                    "Same operator token supplied as an Authorization bearer token."
+                ),
+            },
+            "OperatorCookieToken": {
+                "type": "apiKey",
+                "in": "cookie",
+                "name": "tci_operator_token",
+                "description": (
+                    "Short-lived signed browser operator session cookie issued by "
+                    "/operator/session."
+                ),
+            },
+        }
+    )
+    operator_security: list[dict[str, list[str]]] = [
+        {"OperatorHeaderToken": []},
+        {"OperatorBearerToken": []},
+        {"OperatorCookieToken": []},
+    ]
+    schema.setdefault("security", operator_security)
+    schemas["WebhookHealth"] = {
+        "type": "object",
+        "properties": {
+            "webhookStatus": {
+                "type": "string",
+                "enum": [
+                    "healthy",
+                    "missing_secret",
+                    "secret_mismatch_detected",
+                    "signature_invalid_recently",
+                ],
+            },
+            "providerReachabilityStatus": {
+                "type": "string",
+                "enum": [
+                    "reachable",
+                    "unreachable_recently",
+                    "tls_failed_recently",
+                    "dns_failed_recently",
+                ],
+            },
+            "lastRejectionReason": {
+                "type": "string",
+                "enum": ["secret_missing", "secret_mismatch", "signature_invalid"],
+                "nullable": True,
+            },
+            "lastRejectionAt": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": True,
+            },
+            "rotationState": {
+                "type": "string",
+                "enum": ["not_rotating", "grace_active", "grace_expired"],
+            },
+            "graceUntil": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": True,
+            },
+            "previousSecretDeliveriesDuringGrace": {
+                "type": "integer",
+                "minimum": 0,
+            },
+            "lastPreviousSecretAcceptedAt": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": True,
+            },
+        },
+    }
+    detail_schema = schemas.get("RepositoryConnectionDetailResponse")
+    if isinstance(detail_schema, dict):
+        detail_properties = detail_schema.get("properties")
+        if isinstance(detail_properties, dict):
+            detail_properties["webhookHealth"] = {
+                "anyOf": [
+                    {"$ref": "#/components/schemas/WebhookHealth"},
+                    {"type": "null"},
+                ],
+                "title": "Webhookhealth",
+            }
+    paths = schema.get("paths", {})
+    if isinstance(paths, dict):
+        for path, operations in paths.items():
+            if not path.startswith("/api/"):
+                continue
+            if not isinstance(operations, dict):
+                continue
+            for operation in operations.values():
+                if isinstance(operation, dict):
+                    if path.startswith("/api/webhooks/"):
+                        operation["security"] = []
+                    else:
+                        operation.setdefault("security", operator_security)
+    app.openapi_schema = schema
+    return app.openapi_schema

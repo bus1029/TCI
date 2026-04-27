@@ -321,12 +321,16 @@ def _serialize_webhook_health(connection) -> dict[str, object] | None:
         connection, "last_previous_secret_accepted_at", None
     )
     return {
-        "status": _enum_value(getattr(connection, "webhook_health_state", None))
+        "webhookStatus": _enum_value(getattr(connection, "webhook_health_state", None))
         or "healthy",
-        "lastRejectedReason": _enum_value(
+        "providerReachabilityStatus": _enum_value(
+            getattr(connection, "provider_reachability_status", None)
+        )
+        or "reachable",
+        "lastRejectionReason": _enum_value(
             getattr(connection, "last_webhook_rejection_reason", None)
         ),
-        "lastRejectedAt": _format_datetime(
+        "lastRejectionAt": _format_datetime(
             getattr(connection, "last_webhook_rejected_at", None)
         ),
         "rotationState": _serialize_rotation_state(connection),

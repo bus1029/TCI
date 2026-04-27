@@ -22,7 +22,9 @@ def _build_test_settings(project_root: Path):
         database_url=None,
         redis_url=None,
         credential_encryption_key=None,
+        operator_api_token="test-operator-token",
         gitlab_self_managed_allowed_hosts=(),
+        gitlab_webhook_trusted_proxy_hosts=(),
     )
 
 
@@ -59,10 +61,15 @@ def test_snapshot_archive_store_creates_canonical_archive_and_writes_files(
 
     assert archive.archive_path == f".runtime/code-snapshots/{snapshot_id}"
     assert archive.absolute_path == settings.code_snapshot_root / str(snapshot_id)
-    assert (archive.absolute_path / "src" / "app.py").read_bytes() == b"print('hello')\n"
+    assert (
+        archive.absolute_path / "src" / "app.py"
+    ).read_bytes() == b"print('hello')\n"
     assert (archive.absolute_path / "docs" / "guide.md").read_bytes() == b"# guide\n"
     assert archive.files[0].archive_blob_path == "src/app.py"
-    assert archive.files[0].content_sha256 == hashlib.sha256(b"print('hello')\n").hexdigest()
+    assert (
+        archive.files[0].content_sha256
+        == hashlib.sha256(b"print('hello')\n").hexdigest()
+    )
     assert archive.files[1].archive_blob_path == "docs/guide.md"
     assert archive.files[1].content_sha256 == hashlib.sha256(b"# guide\n").hexdigest()
 
@@ -330,7 +337,9 @@ def test_snapshot_manifest_writer_persists_traceability_and_file_metadata(
         SnapshotArchiveEntryDraft,
         SnapshotArchiveStore,
     )
-    from tci.infrastructure.snapshots.snapshot_manifest_writer import SnapshotManifestWriter
+    from tci.infrastructure.snapshots.snapshot_manifest_writer import (
+        SnapshotManifestWriter,
+    )
 
     settings = _build_test_settings(tmp_path)
     planning_input_reference_id = uuid.uuid4()
@@ -394,7 +403,9 @@ def test_snapshot_manifest_writer_rejects_snapshot_id_mismatch(tmp_path: Path) -
         SnapshotArchiveEntryDraft,
         SnapshotArchiveStore,
     )
-    from tci.infrastructure.snapshots.snapshot_manifest_writer import SnapshotManifestWriter
+    from tci.infrastructure.snapshots.snapshot_manifest_writer import (
+        SnapshotManifestWriter,
+    )
 
     settings = _build_test_settings(tmp_path)
     archive_snapshot_id = uuid.uuid4()
@@ -434,7 +445,9 @@ def test_snapshot_manifest_writer_rejects_manifest_overwrite(tmp_path: Path) -> 
         SnapshotArchiveEntryDraft,
         SnapshotArchiveStore,
     )
-    from tci.infrastructure.snapshots.snapshot_manifest_writer import SnapshotManifestWriter
+    from tci.infrastructure.snapshots.snapshot_manifest_writer import (
+        SnapshotManifestWriter,
+    )
 
     settings = _build_test_settings(tmp_path)
     snapshot_id = uuid.uuid4()

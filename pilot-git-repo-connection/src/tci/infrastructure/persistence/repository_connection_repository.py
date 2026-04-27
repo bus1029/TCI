@@ -563,6 +563,34 @@ class RepositoryConnectionRepository:
         self._session.refresh(connection)
         return connection
 
+    def record_processed_event_preserving_webhook_health(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        event_id: uuid.UUID,
+        processed_at: datetime,
+    ) -> RepositoryConnection:
+        connection = self._require_any(connection_id=connection_id)
+        connection.last_processed_event_id = event_id
+        connection.last_processed_event_at = processed_at
+        self._session.flush()
+        self._session.refresh(connection)
+        return connection
+
+    def record_webhook_delivery_failure(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        event_id: uuid.UUID,
+        failed_at: datetime,
+    ) -> RepositoryConnection:
+        connection = self._require_any(connection_id=connection_id)
+        connection.last_processed_event_id = event_id
+        connection.last_processed_event_at = failed_at
+        self._session.flush()
+        self._session.refresh(connection)
+        return connection
+
     def _require(
         self, *, workspace_id: uuid.UUID, connection_id: uuid.UUID
     ) -> RepositoryConnection:
