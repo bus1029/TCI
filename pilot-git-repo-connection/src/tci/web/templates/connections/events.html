@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>이벤트 타임라인</title>
+  </head>
+  <body>
+    <main>
+      <a href="/connections/{{ connection.id }}?workspaceId={{ workspace_id }}"
+        >상세로 돌아가기</a
+      >
+
+      <h1>이벤트 타임라인</h1>
+      <p>{{ connection.remoteUrl }}</p>
+      <p>Webhook 상태: {{ connection.webhookHealth.webhookStatus if connection.webhookHealth else "미설정" }}</p>
+
+      {% if events %}
+      <ul>
+        {% for event in events %}
+        <li>
+          <p>Delivery: {{ event.providerDeliveryId }}</p>
+          <p>이벤트 유형: {{ event.providerEventType }}</p>
+          <p>대상: {{ event.targetKey }}</p>
+          <p>처리 결정: {{ event.processingDecision }}</p>
+          <p>처리 상태: {{ event.processingStatus }}</p>
+          <p>서명 revision 상태: {{ event.verifiedSecretRevisionStatus or "없음" }}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p>아직 기록된 이벤트가 없습니다.</p>
+      {% endif %}
+    </main>
+  </body>
+</html>

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>저장소 연결 상세</title>
+  </head>
+  <body>
+    <main>
+      <a href="/connections?workspaceId={{ workspace_id }}">목록으로 돌아가기</a>
+
+      <h1>저장소 연결 상세</h1>
+      <p>{{ connection.provider }} / {{ connection.transport }}</p>
+      <p>{{ connection.remoteUrl }}</p>
+      <p>상태: {{ connection.status }}</p>
+      <p>기본 ref: {{ connection.defaultRefType }} {{ connection.defaultRefName }}</p>
+      {% if connection.providerInstanceUrl %}
+      <p>GitLab 인스턴스: {{ connection.providerInstanceUrl }}</p>
+      {% endif %}
+      {% if connection.providerProjectPath %}
+      <p>GitLab 프로젝트 경로: {{ connection.providerProjectPath }}</p>
+      {% endif %}
+      <p>
+        <a href="/connections/{{ connection.id }}/scope?workspaceId={{ workspace_id }}"
+          >수집 범위 설정</a
+        >
+      </p>
+
+      <section>
+        <h2>최근 스냅샷 상태</h2>
+        <p>마지막 성공 시각: {{ connection.lastSuccessfulSnapshotAt or "없음" }}</p>
+        <p>마지막 실패 시각: {{ connection.lastFailedSyncAt or "없음" }}</p>
+        {% if connection.latestSnapshot %}
+        <p>최신 스냅샷 ID: {{ connection.latestSnapshot.id }}</p>
+        <p>최신 스냅샷 ref: {{ connection.latestSnapshot.requestedRefName }}</p>
+        {% else %}
+        <p>아직 생성된 스냅샷이 없습니다.</p>
+        {% endif %}
+        {% if connection.latestSyncRun %}
+        <p>최근 실행 상태: {{ connection.latestSyncRun.status }}</p>
+        <p>최근 실행 ID: {{ connection.latestSyncRun.id }}</p>
+        {% else %}
+        <p>아직 실행된 동기화가 없습니다.</p>
+        {% endif %}
+      </section>
+
+      <section>
+        <h2>최근 처리 이벤트</h2>
+        {% if connection.lastProcessedEvent %}
+        <p>이벤트 유형: {{ connection.lastProcessedEvent.providerEventType }}</p>
+        <p>대상: {{ connection.lastProcessedEvent.targetKey }}</p>
+        <p>처리 결정: {{ connection.lastProcessedEvent.processingDecision }}</p>
+        <p>처리 시각: {{ connection.lastProcessedEvent.processedAt or "없음" }}</p>
+        {% else %}
+        <p>아직 처리된 이벤트가 없습니다.</p>
+        {% endif %}
+        <p>
+          <a href="/connections/{{ connection.id }}/events?workspaceId={{ workspace_id }}"
+            >이벤트 타임라인 보기</a
+          >
+        </p>
+      </section>
+
+      <section>
+        <h2>Webhook 상태</h2>
+        {% if connection.webhookHealth %}
+        <p>상태: {{ connection.webhookHealth.webhookStatus }}</p>
+        <p>회전 상태: {{ connection.webhookHealth.rotationState }}</p>
+        <p>grace 종료: {{ connection.webhookHealth.graceUntil or "없음" }}</p>
+        <p>
+          grace 중 이전 secret delivery:
+          {{ connection.webhookHealth.previousSecretDeliveriesDuringGrace }}
+        </p>
+        <p>
+          마지막 이전 secret 허용 시각:
+          {{ connection.webhookHealth.lastPreviousSecretAcceptedAt or "없음" }}
+        </p>
+        {% else %}
+        <p>등록된 webhook secret 정보가 없습니다.</p>
+        {% endif %}
+      </section>
+
+      <section>
+        <h2>추가 ref 안내</h2>
+        <p>{{ connection.additionalRefGuidance.message }}</p>
+        <ul>
+          {% for option in connection.additionalRefGuidance.options %}
+          <li>{{ option.label }}</li>
+          {% endfor %}
+        </ul>
+      </section>
+
+      <section>
+        <h2>추적성 패널</h2>
+        <p>승인된 스펙: {{ connection.traceability.planningInputReference.approvedSpecPath }}</p>
+        <p>승인된 계획: {{ connection.traceability.planningInputReference.approvedPlanPath }}</p>
+        <p>계획 입력 참조: {{ connection.traceability.planningInputReference.id }}</p>
+        <p>활성 수집 규칙: {{ connection.traceability.activeScopeRuleVersionId or "없음" }}</p>
+        <p>최신 스냅샷: {{ connection.traceability.latestSnapshotId or "없음" }}</p>
+      </section>
+    </main>
+  </body>
+</html>
