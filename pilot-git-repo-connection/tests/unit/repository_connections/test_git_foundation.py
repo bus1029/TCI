@@ -5,6 +5,8 @@ from collections.abc import Sequence
 import logging
 from pathlib import Path
 import subprocess
+from threading import Event
+import time
 import uuid
 from unittest.mock import MagicMock
 
@@ -12,9 +14,11 @@ import pytest
 
 from tci.api.problem_details import ProblemCode
 from tci.infrastructure.persistence.models import (
+    CredentialType,
     DefaultRefType,
     PlanningInputSourceType,
     RefType,
+    RepositoryTransport,
 )
 
 _GIT_TEST_HOME: Path | None = None
@@ -34,8 +38,14 @@ def _configure_git_test_home(tmp_path_factory: pytest.TempPathFactory) -> None:
 
 
 def _git_test_env() -> dict[str, str]:
-    if _GIT_TEST_HOME is None or _GIT_TEST_XDG_HOME is None or _GIT_TEST_GLOBAL_CONFIG is None:
-        raise RuntimeError("Git test environment must be configured before subprocess calls.")
+    if (
+        _GIT_TEST_HOME is None
+        or _GIT_TEST_XDG_HOME is None
+        or _GIT_TEST_GLOBAL_CONFIG is None
+    ):
+        raise RuntimeError(
+            "Git test environment must be configured before subprocess calls."
+        )
 
     base_env = {
         key: value for key, value in os.environ.items() if not key.startswith("GIT_")
@@ -189,7 +199,9 @@ def test_planning_input_reference_repository_rejects_path_traversal_segments() -
         repository.create(draft)
 
 
-def test_planning_input_reference_repository_create_persists_reference_and_calls_session_lifecycle() -> None:
+def test_planning_input_reference_repository_create_persists_reference_and_calls_session_lifecycle() -> (
+    None
+):
     from tci.infrastructure.persistence.planning_input_reference_repository import (
         PlanningInputReferenceDraft,
         PlanningInputReferenceRepository,
@@ -221,7 +233,9 @@ def test_planning_input_reference_repository_create_persists_reference_and_calls
     assert reference.approved_plan_path == draft.approved_plan_path
 
 
-def test_planning_input_reference_repository_get_returns_reference_for_same_workspace() -> None:
+def test_planning_input_reference_repository_get_returns_reference_for_same_workspace() -> (
+    None
+):
     from tci.infrastructure.persistence.planning_input_reference_repository import (
         PlanningInputReferenceRepository,
     )
@@ -248,7 +262,9 @@ def test_planning_input_reference_repository_get_returns_reference_for_same_work
     assert loaded.id == reference_id
 
 
-def test_planning_input_reference_repository_get_returns_none_for_different_workspace() -> None:
+def test_planning_input_reference_repository_get_returns_none_for_different_workspace() -> (
+    None
+):
     from tci.infrastructure.persistence.planning_input_reference_repository import (
         PlanningInputReferenceRepository,
     )
@@ -317,6 +333,29 @@ def test_git_ref_resolver_redacts_https_token_from_runtime_error() -> None:
         )
 
 
+def test_git_ref_resolver_redacts_http_token_from_runtime_error() -> None:
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult, GitRefResolver
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        return GitCommandResult(
+            returncode=1,
+            stdout="",
+            stderr="fatal: could not access http://x-access-token:secret-token@gitlab.example.com/acme/repo.git",
+        )
+
+    resolver = GitRefResolver(runner=runner)
+
+    with pytest.raises(RuntimeError) as error_info:
+        resolver.resolve(
+            remote_url="http://gitlab.example.com/example/repo.git",
+            ref_type=DefaultRefType.BRANCH,
+            ref_name="main",
+        )
+
+    assert "REDACTED" in str(error_info.value)
+    assert "secret-token" not in str(error_info.value)
+
+
 def test_git_readonly_validator_redacts_https_token_from_error_detail() -> None:
     from tci.infrastructure.git.git_readonly_validator import GitReadonlyValidator
     from tci.infrastructure.git.git_ref_resolver import GitCommandResult
@@ -330,6 +369,25 @@ def test_git_readonly_validator_redacts_https_token_from_error_detail() -> None:
 
     validator = GitReadonlyValidator(runner=runner)
     result = validator.probe(remote_url="https://github.com/example/repo.git")
+
+    assert result.problem_code == ProblemCode.CONNECTION_AUTH_FAILED
+    assert "REDACTED" in result.detail
+    assert "secret-token" not in result.detail
+
+
+def test_git_readonly_validator_redacts_http_token_from_error_detail() -> None:
+    from tci.infrastructure.git.git_readonly_validator import GitReadonlyValidator
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        return GitCommandResult(
+            returncode=1,
+            stdout="",
+            stderr="fatal: Authentication failed for http://x-access-token:secret-token@gitlab.example.com/acme/repo.git",
+        )
+
+    validator = GitReadonlyValidator(runner=runner)
+    result = validator.probe(remote_url="http://gitlab.example.com/example/repo.git")
 
     assert result.problem_code == ProblemCode.CONNECTION_AUTH_FAILED
     assert "REDACTED" in result.detail
@@ -351,7 +409,9 @@ def test_git_ref_resolver_resolves_local_bare_branch_head_sha_with_subprocess_ru
     _run_git(["git", "commit", "-m", "initial"], cwd=worktree_path)
     _run_git(["git", "remote", "add", "origin", str(remote_path)], cwd=worktree_path)
     _run_git(["git", "push", "origin", "main"], cwd=worktree_path)
-    expected_sha = _run_git(["git", "rev-parse", "HEAD"], cwd=worktree_path).stdout.strip()
+    expected_sha = _run_git(
+        ["git", "rev-parse", "HEAD"], cwd=worktree_path
+    ).stdout.strip()
 
     resolver = GitRefResolver(runner=_subprocess_git_runner)
 
@@ -368,7 +428,10 @@ def test_git_ref_resolver_prefers_peeled_commit_for_annotated_tag() -> None:
     from tci.infrastructure.git.git_ref_resolver import GitCommandResult, GitRefResolver
 
     def runner(command: Sequence[str]) -> GitCommandResult:
-        assert command[-2:] == ("refs/tags/release-2026.04", "refs/tags/release-2026.04^{}")
+        assert command[-2:] == (
+            "refs/tags/release-2026.04",
+            "refs/tags/release-2026.04^{}",
+        )
         return GitCommandResult(
             returncode=0,
             stdout=(
@@ -407,7 +470,9 @@ def test_git_ref_resolver_resolves_local_annotated_tag_to_peeled_commit_with_sub
     _run_git(["git", "tag", "-a", "v1.0.0", "-m", "release"], cwd=worktree_path)
     _run_git(["git", "remote", "add", "origin", str(remote_path)], cwd=worktree_path)
     _run_git(["git", "push", "origin", "main", "v1.0.0"], cwd=worktree_path)
-    expected_sha = _run_git(["git", "rev-parse", "HEAD"], cwd=worktree_path).stdout.strip()
+    expected_sha = _run_git(
+        ["git", "rev-parse", "HEAD"], cwd=worktree_path
+    ).stdout.strip()
 
     resolver = GitRefResolver(runner=_subprocess_git_runner)
 
@@ -421,7 +486,10 @@ def test_git_ref_resolver_resolves_local_annotated_tag_to_peeled_commit_with_sub
 
 
 def test_git_ref_resolver_raises_default_ref_not_found() -> None:
-    from tci.infrastructure.git.git_ref_resolver import GitCommandResult, GitRefNotFoundError
+    from tci.infrastructure.git.git_ref_resolver import (
+        GitCommandResult,
+        GitRefNotFoundError,
+    )
     from tci.infrastructure.git.git_ref_resolver import GitRefResolver
 
     def runner(command: Sequence[str]) -> GitCommandResult:
@@ -439,7 +507,9 @@ def test_git_ref_resolver_raises_default_ref_not_found() -> None:
     assert error_info.value.problem_code is ProblemCode.DEFAULT_REF_NOT_FOUND
 
 
-def test_git_ref_resolver_logs_missing_ref_details(caplog: pytest.LogCaptureFixture) -> None:
+def test_git_ref_resolver_logs_missing_ref_details(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     from tci.infrastructure.git.git_ref_resolver import (
         GitCommandResult,
         GitRefNotFoundError,
@@ -495,7 +565,10 @@ def test_git_ref_resolver_normalizes_branch_ref_type_from_sync_run() -> None:
 
 
 def test_git_ref_resolver_maps_permission_denied_to_connection_auth_failed() -> None:
-    from tci.infrastructure.git.git_ref_resolver import GitCommandResult, GitConnectionAuthError
+    from tci.infrastructure.git.git_ref_resolver import (
+        GitCommandResult,
+        GitConnectionAuthError,
+    )
     from tci.infrastructure.git.git_ref_resolver import GitRefResolver
 
     def runner(command: Sequence[str]) -> GitCommandResult:
@@ -552,8 +625,334 @@ def test_git_ref_resolver_logs_redacted_git_failure_details(
     assert "secret-token" not in caplog.text
 
 
+def test_build_git_env_isolates_ambient_git_config_and_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tci.infrastructure.git.git_command_env import build_git_env
+
+    monkeypatch.setenv("HOME", "/tmp/host-home")
+    monkeypatch.setenv("XDG_CONFIG_HOME", "/tmp/host-xdg")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/tmp/host-home/.gitconfig")
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", "/tmp/system-gitconfig")
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "0")
+    monkeypatch.setenv("GIT_SSH_COMMAND", "ssh -oProxyCommand=evil")
+    monkeypatch.setenv("SSH_AUTH_SOCK", "/tmp/host-agent.sock")
+
+    git_env = build_git_env()
+
+    assert "HOME" not in git_env
+    assert "XDG_CONFIG_HOME" not in git_env
+    assert "SSH_AUTH_SOCK" not in git_env
+    assert git_env["GIT_CONFIG_GLOBAL"] == os.devnull
+    assert git_env["GIT_CONFIG_SYSTEM"] == os.devnull
+    assert git_env["GIT_CONFIG_NOSYSTEM"] == "1"
+    assert git_env["GIT_SSH_COMMAND"] == "ssh -oBatchMode=yes"
+
+
+def test_https_credential_binding_uses_git_header_env_not_remote_url() -> None:
+    from tci.domain.services.repository_connection_support import bind_git_credential
+    from tci.infrastructure.git.git_command_env import current_git_command_environment
+
+    remote_url = "https://github.com/acme/private-repo.git"
+
+    with bind_git_credential(
+        remote_url=remote_url,
+        transport=RepositoryTransport.HTTPS,
+        credential_type=CredentialType.HTTPS_PAT,
+        credential_secret="secret-token",
+    ) as bound_remote_url:
+        git_env = current_git_command_environment()
+
+        assert bound_remote_url == remote_url
+        assert "secret-token" not in bound_remote_url
+        assert "secret-token" not in str(git_env)
+        assert "GIT_ASKPASS" in git_env
+        assert "TCI_GIT_ASKPASS_SOCKET" in git_env
+        username = subprocess.run(
+            (git_env["GIT_ASKPASS"], "Username for https://github.com"),
+            capture_output=True,
+            check=True,
+            env={**os.environ, **git_env},
+            text=True,
+        )
+        password = subprocess.run(
+            (git_env["GIT_ASKPASS"], "Password for https://x-access-token@github.com"),
+            capture_output=True,
+            check=True,
+            env={**os.environ, **git_env},
+            text=True,
+        )
+
+        assert username.stdout == "x-access-token\n"
+        assert password.stdout == "secret-token\n"
+
+    assert current_git_command_environment() == {}
+
+
+def test_http_credential_binding_uses_askpass_not_remote_url() -> None:
+    from tci.domain.services.repository_connection_support import bind_git_credential
+    from tci.infrastructure.git.git_command_env import current_git_command_environment
+
+    remote_url = "http://gitlab.example.com/acme/private-repo.git"
+
+    with bind_git_credential(
+        remote_url=remote_url,
+        transport=RepositoryTransport.HTTP,
+        credential_type=CredentialType.HTTPS_PAT,
+        credential_secret="secret-token",
+    ) as bound_remote_url:
+        git_env = current_git_command_environment()
+
+        assert bound_remote_url == remote_url
+        assert "secret-token" not in bound_remote_url
+        assert "secret-token" not in str(git_env)
+        assert "GIT_ASKPASS" in git_env
+        username = subprocess.run(
+            (git_env["GIT_ASKPASS"], "Username for http://gitlab.example.com"),
+            capture_output=True,
+            check=True,
+            env={**os.environ, **git_env},
+            text=True,
+        )
+        password = subprocess.run(
+            (
+                git_env["GIT_ASKPASS"],
+                "Password for http://x-access-token@gitlab.example.com",
+            ),
+            capture_output=True,
+            check=True,
+            env={**os.environ, **git_env},
+            text=True,
+        )
+
+        assert username.stdout == "x-access-token\n"
+        assert password.stdout == "secret-token\n"
+
+    assert current_git_command_environment() == {}
+
+
+def test_http_credential_binding_supports_multiple_git_commands() -> None:
+    from tci.domain.services.repository_connection_support import bind_git_credential
+    from tci.infrastructure.git.git_command_env import current_git_command_environment
+
+    with bind_git_credential(
+        remote_url="http://gitlab.example.com/acme/private-repo.git",
+        transport=RepositoryTransport.HTTP,
+        credential_type=CredentialType.HTTPS_PAT,
+        credential_secret="secret-token",
+    ):
+        git_env = current_git_command_environment()
+
+        for _ in range(3):
+            username = subprocess.run(
+                (git_env["GIT_ASKPASS"], "Username for http://gitlab.example.com"),
+                capture_output=True,
+                check=True,
+                env={**os.environ, **git_env},
+                text=True,
+            )
+            password = subprocess.run(
+                (
+                    git_env["GIT_ASKPASS"],
+                    "Password for http://x-access-token@gitlab.example.com",
+                ),
+                capture_output=True,
+                check=True,
+                env={**os.environ, **git_env},
+                text=True,
+            )
+
+            assert username.stdout == "x-access-token\n"
+            assert password.stdout == "secret-token\n"
+
+    assert current_git_command_environment() == {}
+
+
+def test_https_askpass_environment_waits_for_server_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tci.domain.services import repository_connection_support as support
+
+    server_ready = Event()
+
+    def fake_serve_https_askpass(**kwargs) -> None:
+        time.sleep(0.05)
+        kwargs["ready_event"].set()
+        server_ready.set()
+
+    monkeypatch.setattr(support, "_serve_https_askpass", fake_serve_https_askpass)
+
+    with support._https_askpass_environment(credential_secret="secret-token"):
+        assert server_ready.is_set()
+
+
+def test_https_askpass_environment_surfaces_server_startup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tci.domain.services import repository_connection_support as support
+    from tci.domain.services.repository_connection_support import (
+        RepositoryConnectionProblem,
+    )
+
+    def fake_serve_https_askpass(**kwargs) -> None:
+        kwargs["startup_errors"].append(OSError("bind failed"))
+        kwargs["ready_event"].set()
+
+    monkeypatch.setattr(support, "_serve_https_askpass", fake_serve_https_askpass)
+
+    with pytest.raises(RepositoryConnectionProblem) as error_info:
+        with support._https_askpass_environment(credential_secret="secret-token"):
+            pass
+
+    assert error_info.value.problem_code is ProblemCode.CONNECTION_AUTH_FAILED
+
+
+def test_ssh_credential_binding_uses_agent_without_private_key_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tci.domain.services.repository_connection_support import bind_git_credential
+    from tci.infrastructure.git.git_command_env import current_git_command_environment
+
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+
+    def fake_run(
+        command: tuple[str, ...],
+        *,
+        capture_output: bool,
+        check: bool,
+        text: bool,
+        env: dict[str, str],
+        input: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((command, input))
+        if command == ("ssh-agent", "-s"):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout="SSH_AUTH_SOCK=/tmp/tci-agent.sock; export SSH_AUTH_SOCK;\n"
+                "SSH_AGENT_PID=12345; export SSH_AGENT_PID;\n",
+                stderr="",
+            )
+        if command == ("ssh-add", "-"):
+            assert input == "PRIVATE KEY\n"
+            assert env["SSH_AUTH_SOCK"] == "/tmp/tci-agent.sock"
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        if command == ("ssh-agent", "-k"):
+            assert env["SSH_AGENT_PID"] == "12345"
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with bind_git_credential(
+        remote_url="ssh://git@gitlab.example.com/group/repo.git",
+        transport=RepositoryTransport.SSH,
+        credential_type=CredentialType.SSH_PRIVATE_KEY,
+        credential_secret="PRIVATE KEY",
+    ) as bound_remote_url:
+        git_env = current_git_command_environment()
+
+        assert bound_remote_url == "ssh://git@gitlab.example.com/group/repo.git"
+        assert "SSH_AUTH_SOCK" not in git_env
+        assert "SSH_AGENT_PID" not in git_env
+        assert "-F /dev/null" in git_env["GIT_SSH_COMMAND"]
+        assert "-oIdentitiesOnly=yes" in git_env["GIT_SSH_COMMAND"]
+        assert "-oIdentityAgent=/tmp/tci-agent.sock" in git_env["GIT_SSH_COMMAND"]
+        assert "-oIdentityFile=none" in git_env["GIT_SSH_COMMAND"]
+        assert "PRIVATE KEY" not in str(git_env)
+
+    assert [call[0] for call in calls] == [
+        ("ssh-agent", "-s"),
+        ("ssh-add", "-"),
+        ("ssh-agent", "-k"),
+    ]
+    assert current_git_command_environment() == {}
+
+
+def test_ssh_credential_cleanup_failure_does_not_fail_successful_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tci.domain.services.repository_connection_support import bind_git_credential
+
+    def fake_run(
+        command: tuple[str, ...],
+        *,
+        capture_output: bool,
+        check: bool,
+        text: bool,
+        env: dict[str, str],
+        input: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        if command == ("ssh-agent", "-s"):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout="SSH_AUTH_SOCK=/tmp/tci-agent.sock; export SSH_AUTH_SOCK;\n"
+                "SSH_AGENT_PID=12345; export SSH_AGENT_PID;\n",
+                stderr="",
+            )
+        if command == ("ssh-add", "-"):
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        if command == ("ssh-agent", "-k"):
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="failed")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with bind_git_credential(
+        remote_url="ssh://git@gitlab.example.com/group/repo.git",
+        transport=RepositoryTransport.SSH,
+        credential_type=CredentialType.SSH_PRIVATE_KEY,
+        credential_secret="PRIVATE KEY",
+    ):
+        pass
+
+
+def test_ssh_credential_cleanup_failure_preserves_body_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tci.domain.services.repository_connection_support import bind_git_credential
+
+    def fake_run(
+        command: tuple[str, ...],
+        *,
+        capture_output: bool,
+        check: bool,
+        text: bool,
+        env: dict[str, str],
+        input: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        if command == ("ssh-agent", "-s"):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout="SSH_AUTH_SOCK=/tmp/tci-agent.sock; export SSH_AUTH_SOCK;\n"
+                "SSH_AGENT_PID=12345; export SSH_AGENT_PID;\n",
+                stderr="",
+            )
+        if command == ("ssh-add", "-"):
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        if command == ("ssh-agent", "-k"):
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="failed")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="git operation failed"):
+        with bind_git_credential(
+            remote_url="ssh://git@gitlab.example.com/group/repo.git",
+            transport=RepositoryTransport.SSH,
+            credential_type=CredentialType.SSH_PRIVATE_KEY,
+            credential_secret="PRIVATE KEY",
+        ):
+            raise RuntimeError("git operation failed")
+
+
 def test_git_ref_resolver_maps_repository_not_found_to_connection_auth_failed() -> None:
-    from tci.infrastructure.git.git_ref_resolver import GitCommandResult, GitConnectionAuthError
+    from tci.infrastructure.git.git_ref_resolver import (
+        GitCommandResult,
+        GitConnectionAuthError,
+    )
     from tci.infrastructure.git.git_ref_resolver import GitRefResolver
 
     def runner(command: Sequence[str]) -> GitCommandResult:
@@ -589,6 +988,31 @@ def test_git_readonly_validator_accepts_readonly_probe_result() -> None:
     validator = GitReadonlyValidator(runner=runner)
 
     result = validator.probe(remote_url="https://github.com/example/repo.git")
+
+    assert result.is_read_only is True
+    assert result.problem_code is None
+
+
+def test_git_readonly_validator_accepts_gitlab_upload_denied_probe_as_readonly() -> (
+    None
+):
+    from tci.infrastructure.git.git_readonly_validator import GitReadonlyValidator
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        return GitCommandResult(
+            returncode=128,
+            stdout="",
+            stderr=(
+                "remote: You are not allowed to upload code.\n"
+                "fatal: unable to access 'http://gitlab.example.com/group/repo.git/': "
+                "The requested URL returned error: 403\n"
+            ),
+        )
+
+    validator = GitReadonlyValidator(runner=runner)
+
+    result = validator.probe(remote_url="http://gitlab.example.com/group/repo.git")
 
     assert result.is_read_only is True
     assert result.problem_code is None
@@ -635,7 +1059,9 @@ def test_git_readonly_validator_reports_auth_failure_for_invalid_credential() ->
     assert result.problem_code is ProblemCode.CONNECTION_AUTH_FAILED
 
 
-def test_git_readonly_validator_keeps_unknown_probe_failures_out_of_auth_bucket() -> None:
+def test_git_readonly_validator_keeps_unknown_probe_failures_out_of_auth_bucket() -> (
+    None
+):
     from tci.infrastructure.git.git_readonly_validator import GitReadonlyValidator
     from tci.infrastructure.git.git_ref_resolver import GitCommandResult
 

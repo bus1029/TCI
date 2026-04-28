@@ -164,8 +164,8 @@
 - credential 만료/취소: 연결 상태를 `reauth_required`로 전환하고 이후 자동 수집을 중단한다.
 - 기본 ref 삭제/이름 변경: 연결 상태를 `ref_missing`으로 전환하고 운영자에게 새 ref 선택을 요구한다.
 - webhook secret 누락: 연결 상태를 `webhook_unconfigured`로 표기하고 delivery는 `secret_missing` 거부 사유로 기록한다.
-- webhook secret 불일치: 연결 상태는 `active`를 유지하되 `webhookHealth.status = secret_mismatch_detected`로 노출하고 delivery는 `secret_mismatch` 거부 사유로 기록한다.
-- 기타 서명 검증 실패: delivery는 `signature_invalid` 거부 사유로 기록하고 `webhookHealth.status = signature_invalid_recently`를 갱신한다.
+- webhook secret 불일치: 연결 상태는 `active`를 유지하되 `webhookHealth.webhookStatus = secret_mismatch_detected`로 노출하고 delivery는 `secret_mismatch` 거부 사유로 기록한다.
+- 기타 서명 검증 실패: delivery는 `signature_invalid` 거부 사유로 기록하고 `webhookHealth.webhookStatus = signature_invalid_recently`를 갱신한다.
 - 범위 규칙 결과가 0개 파일: 저장 시 경고, 실행 시 `NO_INCLUDED_FILES` 실패로 종료한다.
 - `FR-012` 운영 요약은 connection detail에 `lastSuccessfulSnapshotAt`, `lastFailedSyncAt`, `lastProcessedEvent`를 제공하고, 상세 이력은 event timeline 조회로 분리한다.
 
@@ -200,7 +200,7 @@
 | 기본 ref 삭제/변경 | 다음 검증 또는 수집 시 `ref_missing`으로 전환하고 새 ref 선택 전까지 snapshot job 차단 |
 | credential 회전 | 새 revision 활성화, 직전 revision 24시간 grace, 이후 자동 폐기 |
 | webhook secret 회전 | current + previous revision 허용, grace 종료 후 previous reject |
-| secret mismatch 상태 표현 | 연결은 `active` 유지, `webhookHealth.status = secret_mismatch_detected`, event rejection reason은 `secret_mismatch` |
+| secret mismatch 상태 표현 | 연결은 `active` 유지, `webhookHealth.webhookStatus = secret_mismatch_detected`, event rejection reason은 `secret_mismatch` |
 | 빈 수집 결과 | 저장 시 warning, 실행 시 hard fail(`NO_INCLUDED_FILES`) |
 | 바이너리/대용량 예외 | v1에서는 사용자 예외 규칙이 있어도 수집 불가, 후속 범위로 남김 |
 | FR-012 요약 책임 | connection detail은 최근 성공/실패 시각과 마지막 처리 이벤트 요약 제공, 상세 이력은 event timeline 조회가 담당 |

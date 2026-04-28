@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 
 from tci.infrastructure.persistence.models import (
     DomainEventType,
@@ -10,6 +10,9 @@ from tci.infrastructure.persistence.models import (
     RefType,
     SyncTriggerType,
 )
+
+
+MAX_GITHUB_REF_NAME_CHARS = 255
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,8 +39,7 @@ def parse_github_event_payload(
         repository = {}
     repository_full_name = _read_nullable_string(repository.get("full_name"))
     if event_name == "push":
-        raw_ref = str(payload.get("ref", ""))
-        ref_name = raw_ref.removeprefix("refs/heads/") if raw_ref else None
+        ref_type, ref_name = _read_github_push_ref(payload.get("ref"))
         return ParsedGitHubEvent(
             provider_event_type=ProviderEventType.PUSH,
             provider_action=None,
@@ -47,7 +49,7 @@ def parse_github_event_payload(
             target_key="default_ref",
             target_ref_name=ref_name,
             target_head_sha=_read_nullable_string(payload.get("after")),
-            requested_ref_type=RefType.BRANCH,
+            requested_ref_type=ref_type,
             requested_ref_name=ref_name,
             trigger_type=SyncTriggerType.WEBHOOK_PUSH,
             occurred_at=received_at,
@@ -61,7 +63,7 @@ def parse_github_event_payload(
         head = pull_request.get("head") or {}
         if not isinstance(head, dict):
             head = {}
-        head_ref = _read_nullable_string(head.get("ref"))
+        head_ref = _read_ref_name(head.get("ref"))
         head_sha = _read_nullable_string(head.get("sha"))
         return ParsedGitHubEvent(
             provider_event_type=ProviderEventType.PULL_REQUEST,
@@ -99,3 +101,26 @@ def _read_nullable_string(value: object) -> str | None:
     if isinstance(value, str):
         return value
     return str(value)
+
+
+def _read_ref_name(value: object) -> str | None:
+    ref_name = _read_nullable_string(value)
+    if ref_name is not None and len(ref_name) > MAX_GITHUB_REF_NAME_CHARS:
+        raise ValueError("GitHub webhook ref 이름이 너무 깁니다.")
+    return ref_name
+
+
+def _read_github_push_ref(value: object) -> tuple[RefType, str]:
+    if not isinstance(value, str):
+        raise ValueError("GitHub webhook ref 형식이 올바르지 않습니다.")
+    if value.startswith("refs/heads/"):
+        ref_name = _read_ref_name(value.removeprefix("refs/heads/"))
+        ref_type = RefType.BRANCH
+    elif value.startswith("refs/tags/"):
+        ref_name = _read_ref_name(value.removeprefix("refs/tags/"))
+        ref_type = RefType.TAG
+    else:
+        raise ValueError("GitHub webhook ref 형식이 올바르지 않습니다.")
+    if not ref_name:
+        raise ValueError("GitHub webhook ref 형식이 올바르지 않습니다.")
+    return ref_type, ref_name

@@ -53,6 +53,7 @@ CREDENTIAL_REVISION_STATUS = sa.Enum(
 SCOPE_RULE_WARNING_STATE = sa.Enum(
     "ok",
     "empty_result_risk",
+    "preview_failed",
     "over_broad_include",
     name="scope_rule_warning_state",
 )

@@ -15,6 +15,7 @@ class ProblemCode(StrEnum):
     WEBHOOK_SECRET_MISSING = "WEBHOOK_SECRET_MISSING"
     WEBHOOK_SECRET_MISMATCH = "WEBHOOK_SECRET_MISMATCH"
     STALE_HEAD_SHA_SKIPPED = "STALE_HEAD_SHA_SKIPPED"
+    SYNC_ALREADY_ACTIVE = "SYNC_ALREADY_ACTIVE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +34,7 @@ _PROBLEM_DETAILS = {
     ProblemCode.UNSUPPORTED_PROVIDER: ProblemDetailDefinition(
         code=ProblemCode.UNSUPPORTED_PROVIDER,
         status_code=400,
-        message="v1에서는 GitHub Cloud 저장소만 지원합니다.",
+        message="지원하지 않는 저장소 provider입니다.",
     ),
     ProblemCode.READ_WRITE_CREDENTIAL_NOT_ALLOWED: ProblemDetailDefinition(
         code=ProblemCode.READ_WRITE_CREDENTIAL_NOT_ALLOWED,
@@ -74,6 +75,11 @@ _PROBLEM_DETAILS = {
         code=ProblemCode.STALE_HEAD_SHA_SKIPPED,
         status_code=409,
         message="최신 HEAD가 아닌 이벤트는 스냅샷 갱신 대상에서 제외됩니다.",
+    ),
+    ProblemCode.SYNC_ALREADY_ACTIVE: ProblemDetailDefinition(
+        code=ProblemCode.SYNC_ALREADY_ACTIVE,
+        status_code=409,
+        message="같은 ref에 대한 동기화 작업이 이미 진행 중입니다.",
     ),
 }
 

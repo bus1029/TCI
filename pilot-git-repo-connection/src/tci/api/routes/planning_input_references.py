@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 
+from tci.api.operator_auth import require_operator_auth
 from tci.api.problem_details import ProblemCode, problem_details_for
 from tci.api.schemas.planning_input_reference import (
     CreatePlanningInputReferenceRequest,
@@ -16,10 +17,16 @@ from tci.domain.services.create_planning_input_reference import (
     CreatePlanningInputReferenceCommand,
     create_planning_input_reference,
 )
-from tci.domain.services.repository_connection_support import RepositoryConnectionProblem
+from tci.domain.services.repository_connection_support import (
+    RepositoryConnectionProblem,
+)
 
 
-router = APIRouter(prefix="/api/planning-input-references", tags=["PlanningInputReferences"])
+router = APIRouter(
+    prefix="/api/planning-input-references",
+    tags=["PlanningInputReferences"],
+    dependencies=[Depends(require_operator_auth)],
+)
 
 
 @router.post(

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import secrets
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
 import uuid
 
+from tci.api.operator_auth import require_operator_auth
 from tci.api.problem_details import ProblemCode, problem_details_for
 from tci.api.schemas.repository_connection import (
     CreateRepositoryConnectionRequest,
+    RepositoryConnectionDetailResponse,
     UpdateRepositoryConnectionRequest,
     serialize_repository_connection,
     serialize_repository_connection_detail,
@@ -25,7 +27,9 @@ from tci.domain.services.create_repository_connection import (
 from tci.domain.services.get_repository_connection_detail import (
     get_repository_connection_detail,
 )
-from tci.domain.services.repository_connection_support import RepositoryConnectionProblem
+from tci.domain.services.repository_connection_support import (
+    RepositoryConnectionProblem,
+)
 from tci.domain.services.rotate_webhook_secret import (
     RotateWebhookSecretCommand,
     rotate_webhook_secret,
@@ -36,7 +40,11 @@ from tci.domain.services.update_default_ref import (
 )
 
 
-router = APIRouter(prefix="/api/repository-connections", tags=["RepositoryConnections"])
+router = APIRouter(
+    prefix="/api/repository-connections",
+    tags=["RepositoryConnections"],
+    dependencies=[Depends(require_operator_auth)],
+)
 
 
 def generate_webhook_secret() -> str:
@@ -76,10 +84,15 @@ def create_repository_connection_route(
     except RepositoryConnectionProblem as error:
         return _problem_response(error)
 
-    return JSONResponse(status_code=201, content=serialize_repository_connection(connection))
+    return JSONResponse(
+        status_code=201, content=serialize_repository_connection(connection)
+    )
 
 
-@router.get("/{connection_id}")
+@router.get(
+    "/{connection_id}",
+    responses={200: {"model": RepositoryConnectionDetailResponse}},
+)
 def get_repository_connection_route(
     connection_id: uuid.UUID,
     request: Request,
@@ -100,7 +113,9 @@ def get_repository_connection_route(
             dependencies=request.app.state.dependencies,
         )
     except LookupError:
-        return JSONResponse(status_code=404, content={"detail": "저장소 연결을 찾을 수 없습니다."})
+        return JSONResponse(
+            status_code=404, content={"detail": "저장소 연결을 찾을 수 없습니다."}
+        )
 
     return serialize_repository_connection_detail(connection)
 
@@ -141,7 +156,9 @@ def update_repository_connection_route(
     except RepositoryConnectionProblem as error:
         return _problem_response(error)
     except LookupError:
-        return JSONResponse(status_code=404, content={"detail": "저장소 연결을 찾을 수 없습니다."})
+        return JSONResponse(
+            status_code=404, content={"detail": "저장소 연결을 찾을 수 없습니다."}
+        )
 
     return serialize_repository_connection(connection)
 
@@ -167,7 +184,9 @@ def verify_repository_connection_route(
             dependencies=request.app.state.dependencies,
         )
     except LookupError:
-        return JSONResponse(status_code=404, content={"detail": "저장소 연결을 찾을 수 없습니다."})
+        return JSONResponse(
+            status_code=404, content={"detail": "저장소 연결을 찾을 수 없습니다."}
+        )
 
     settings = request.app.state.settings
     if not settings.redis_url:
@@ -221,7 +240,9 @@ def issue_repository_webhook_secret_route(
             dependencies=request.app.state.dependencies,
         )
     except LookupError:
-        return JSONResponse(status_code=404, content={"detail": "저장소 연결을 찾을 수 없습니다."})
+        return JSONResponse(
+            status_code=404, content={"detail": "저장소 연결을 찾을 수 없습니다."}
+        )
     except RepositoryConnectionProblem as error:
         return _problem_response(error)
 

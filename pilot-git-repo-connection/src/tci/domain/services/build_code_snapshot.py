@@ -5,11 +5,14 @@ from datetime import UTC, datetime
 import shutil
 import uuid
 
+from sqlalchemy.exc import IntegrityError
+
 from tci.api.problem_details import ProblemCode
 from tci.domain.services.repository_connection_support import (
     RepositoryConnectionProblem,
     bind_git_credential,
     decrypt_secret_from_storage,
+    ensure_gitlab_self_managed_host_allowed,
 )
 from tci.domain.services.scope_filter_engine import (
     filter_snapshot_entries,
@@ -24,6 +27,7 @@ from tci.infrastructure.persistence.models import (
     DefaultRefType,
     RefType,
     RepositoryConnectionStatus,
+    RepositoryProvider,
     SyncFailureCode,
     SyncRunStatus,
 )
@@ -40,6 +44,8 @@ class BuildCodeSnapshotCommand:
 class SnapshotBuildContext:
     connection_id: uuid.UUID
     planning_input_reference_id: uuid.UUID
+    provider: RepositoryProvider
+    provider_instance_url: str | None
     remote_url: str
     transport: object
     requested_ref_type: object
@@ -49,7 +55,17 @@ class SnapshotBuildContext:
     encrypted_secret: str | None
 
 
-def build_code_snapshot(command, *, dependencies):
+class _ScopeChangedDuringSnapshotWrite(RuntimeError):
+    pass
+
+
+def build_code_snapshot(
+    command,
+    *,
+    dependencies,
+    _allow_running_retry: bool = False,
+    _scope_retry_count: int = 1,
+):
     if dependencies.session_factory is None:
         raise RuntimeError("코드 스냅샷을 생성하려면 데이터베이스 세션이 필요합니다.")
 
@@ -67,18 +83,21 @@ def build_code_snapshot(command, *, dependencies):
         if snapshot is None:
             raise LookupError("완료된 스냅샷 실행의 결과를 찾을 수 없습니다.")
         return snapshot
-    if context.sync_run_status is not SyncRunStatus.PENDING:
+    if context.sync_run_status is SyncRunStatus.RUNNING and _allow_running_retry:
+        pass
+    elif context.sync_run_status is not SyncRunStatus.PENDING:
         raise RepositoryConnectionProblem(
             ProblemCode.INVALID_INPUT,
             "대기 중인 스냅샷 실행만 처리할 수 있습니다.",
         )
 
-    _mark_sync_run_running(
-        workspace_id=command.workspace_id,
-        connection_id=command.connection_id,
-        sync_run_id=command.sync_run_id,
-        dependencies=dependencies,
-    )
+    if context.sync_run_status is SyncRunStatus.PENDING:
+        _mark_sync_run_running(
+            workspace_id=command.workspace_id,
+            connection_id=command.connection_id,
+            sync_run_id=command.sync_run_id,
+            dependencies=dependencies,
+        )
 
     if context.credential_type is None or context.encrypted_secret is None:
         return _fail_snapshot_build(
@@ -92,6 +111,13 @@ def build_code_snapshot(command, *, dependencies):
         )
 
     try:
+        ensure_gitlab_self_managed_host_allowed(
+            provider=context.provider,
+            provider_instance_url=context.provider_instance_url,
+            settings=dependencies.settings,
+            transport=context.transport,
+            remote_url=context.remote_url,
+        )
         credential_secret = decrypt_secret_from_storage(
             context.encrypted_secret,
             settings=dependencies.settings,
@@ -116,12 +142,27 @@ def build_code_snapshot(command, *, dependencies):
                     else context.remote_url
                 ),
             )
-            materialized_snapshot = dependencies.git_mirror_manager.read_snapshot_entries(
-                mirror=mirror,
-                commit_sha=resolved_ref.commit_sha,
+            scope_rule_version = _ensure_default_scope_rule_version(
+                workspace_id=command.workspace_id,
+                connection_id=command.connection_id,
+                dependencies=dependencies,
+            )
+            materialized_snapshot = (
+                dependencies.git_mirror_manager.read_snapshot_entries(
+                    mirror=mirror,
+                    commit_sha=resolved_ref.commit_sha,
+                    include_binary=not scope_rule_version.exclude_binary,
+                    include_paths=scope_rule_version.include_paths,
+                    exclude_paths=scope_rule_version.exclude_paths,
+                    allowed_file_types=scope_rule_version.allowed_file_types,
+                    blocked_file_types=scope_rule_version.blocked_file_types,
+                    max_file_size_bytes=scope_rule_version.max_file_size_bytes,
+                )
             )
     except Exception as error:
-        failure_code, connection_status, failure_message = _classify_snapshot_failure(error)
+        failure_code, connection_status, failure_message = _classify_snapshot_failure(
+            error
+        )
         return _fail_snapshot_build(
             workspace_id=command.workspace_id,
             connection_id=command.connection_id,
@@ -132,34 +173,33 @@ def build_code_snapshot(command, *, dependencies):
             dependencies=dependencies,
         )
 
-    if not materialized_snapshot.entries:
-        return _fail_snapshot_build(
-            workspace_id=command.workspace_id,
-            connection_id=command.connection_id,
-            sync_run_id=command.sync_run_id,
-            failure_code=SyncFailureCode.NO_INCLUDED_FILES,
-            failure_message="기본 수집 정책을 적용한 결과 스냅샷에 포함할 파일이 없습니다.",
-            connection_status=None,
-            dependencies=dependencies,
-        )
-
-    scope_rule_version = _ensure_active_scope_rule_version(
-        workspace_id=command.workspace_id,
-        connection_id=command.connection_id,
-        dependencies=dependencies,
-    )
     filtered_entries = filter_snapshot_entries(
         entries=materialized_snapshot.entries,
         rule_set=rule_set_from_scope_rule(scope_rule_version),
     )
-    if not filtered_entries:
-        return _fail_snapshot_build(
+
+    if not materialized_snapshot.entries:
+        return _fail_empty_snapshot_build(
             workspace_id=command.workspace_id,
             connection_id=command.connection_id,
             sync_run_id=command.sync_run_id,
-            failure_code=SyncFailureCode.NO_INCLUDED_FILES,
+            failure_message=_no_materialized_entries_message(scope_rule_version),
+            scope_rule_version_id=scope_rule_version.id,
+            command=command,
+            context=context,
+            scope_retry_count=_scope_retry_count,
+            dependencies=dependencies,
+        )
+    if not filtered_entries:
+        return _fail_empty_snapshot_build(
+            workspace_id=command.workspace_id,
+            connection_id=command.connection_id,
+            sync_run_id=command.sync_run_id,
             failure_message="범위 규칙을 적용한 결과 스냅샷에 포함할 파일이 없습니다.",
-            connection_status=None,
+            scope_rule_version_id=scope_rule_version.id,
+            command=command,
+            context=context,
+            scope_retry_count=_scope_retry_count,
             dependencies=dependencies,
         )
 
@@ -200,9 +240,18 @@ def build_code_snapshot(command, *, dependencies):
             sync_run_repository = dependencies.repository_sync_run_repository_factory(
                 session
             )
-            connection_repository = dependencies.repository_connection_repository_factory(
-                session
+            connection_repository = (
+                dependencies.repository_connection_repository_factory(session)
             )
+            active_scope_rule = connection_repository.ensure_default_scope_rule_version(
+                workspace_id=command.workspace_id,
+                connection_id=context.connection_id,
+                created_by=command.workspace_id,
+            )
+            if active_scope_rule.id != scope_rule_version.id:
+                raise _ScopeChangedDuringSnapshotWrite(
+                    "범위 규칙이 스냅샷 생성 중 변경되었습니다. 다시 시도하세요."
+                )
             snapshot = snapshot_repository.create(
                 draft=CodeSnapshotDraft(
                     id=snapshot_id,
@@ -242,6 +291,36 @@ def build_code_snapshot(command, *, dependencies):
                 succeeded_at=now,
             )
             return snapshot
+    except _ScopeChangedDuringSnapshotWrite as error:
+        shutil.rmtree(archive.absolute_path, ignore_errors=True)
+        if _scope_retry_count > 0:
+            return build_code_snapshot(
+                command,
+                dependencies=dependencies,
+                _allow_running_retry=True,
+                _scope_retry_count=_scope_retry_count - 1,
+            )
+        return _fail_snapshot_build(
+            workspace_id=command.workspace_id,
+            connection_id=command.connection_id,
+            sync_run_id=command.sync_run_id,
+            failure_code=SyncFailureCode.MIRROR_SYNC_FAILED,
+            failure_message=str(error),
+            connection_status=None,
+            dependencies=dependencies,
+        )
+    except RepositoryConnectionProblem:
+        shutil.rmtree(archive.absolute_path, ignore_errors=True)
+        raise
+    except IntegrityError:
+        shutil.rmtree(archive.absolute_path, ignore_errors=True)
+        snapshot = _load_existing_snapshot(
+            sync_run_id=command.sync_run_id,
+            dependencies=dependencies,
+        )
+        if snapshot is not None:
+            return snapshot
+        raise
     except Exception as error:
         shutil.rmtree(archive.absolute_path, ignore_errors=True)
         return _fail_snapshot_build(
@@ -256,14 +335,22 @@ def build_code_snapshot(command, *, dependencies):
 
 
 def _load_snapshot_context(
-    *, workspace_id: uuid.UUID, connection_id: uuid.UUID, sync_run_id: uuid.UUID, dependencies
+    *,
+    workspace_id: uuid.UUID,
+    connection_id: uuid.UUID,
+    sync_run_id: uuid.UUID,
+    dependencies,
 ):
     with dependencies.session_factory() as session:
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )
-        credential_repository = dependencies.credential_revision_repository_factory(session)
-        sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
+        credential_repository = dependencies.credential_revision_repository_factory(
+            session
+        )
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(
+            session
+        )
         connection = connection_repository.get(
             workspace_id=workspace_id,
             connection_id=connection_id,
@@ -282,13 +369,17 @@ def _load_snapshot_context(
         return SnapshotBuildContext(
             connection_id=connection.id,
             planning_input_reference_id=connection.planning_input_reference_id,
+            provider=connection.provider,
+            provider_instance_url=connection.provider_instance_url,
             remote_url=connection.remote_url,
             transport=connection.transport,
             requested_ref_type=sync_run.requested_ref_type,
             requested_ref_name=sync_run.requested_ref_name,
             sync_run_status=sync_run.status,
             credential_type=(
-                None if credential_revision is None else credential_revision.credential_type
+                None
+                if credential_revision is None
+                else credential_revision.credential_type
             ),
             encrypted_secret=(
                 None
@@ -299,10 +390,16 @@ def _load_snapshot_context(
 
 
 def _mark_sync_run_running(
-    *, workspace_id: uuid.UUID, connection_id: uuid.UUID, sync_run_id: uuid.UUID, dependencies
+    *,
+    workspace_id: uuid.UUID,
+    connection_id: uuid.UUID,
+    sync_run_id: uuid.UUID,
+    dependencies,
 ) -> None:
     with dependencies.session_factory() as session:
-        sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(
+            session
+        )
         sync_run_repository.mark_running(
             connection_id=connection_id,
             sync_run_id=sync_run_id,
@@ -330,21 +427,79 @@ def _ensure_default_scope_rule_version(
         )
 
 
-def _ensure_active_scope_rule_version(
-    *, workspace_id: uuid.UUID, connection_id: uuid.UUID, dependencies
+def _no_materialized_entries_message(scope_rule_version) -> str:
+    if not scope_rule_version.is_auto_default:
+        return "범위 규칙을 적용한 결과 스냅샷에 포함할 파일이 없습니다."
+    return "기본 수집 정책을 적용한 결과 스냅샷에 포함할 파일이 없습니다."
+
+
+def _fail_empty_snapshot_build(
+    *,
+    workspace_id: uuid.UUID,
+    connection_id: uuid.UUID,
+    sync_run_id: uuid.UUID,
+    failure_message: str,
+    scope_rule_version_id: uuid.UUID,
+    command,
+    context,
+    scope_retry_count: int,
+    dependencies,
 ):
+    now = datetime.now(tz=UTC)
     with dependencies.session_factory() as session:
-        scope_rule_repository = dependencies.scope_rule_repository_factory(session)
-        scope_rule = scope_rule_repository.get_active_for_connection(
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(
+            session
+        )
+        connection_repository = dependencies.repository_connection_repository_factory(
+            session
+        )
+        active_scope_rule = connection_repository.ensure_default_scope_rule_version(
+            workspace_id=workspace_id,
+            connection_id=context.connection_id,
+            created_by=workspace_id,
+        )
+        if active_scope_rule.id != scope_rule_version_id:
+            should_retry = scope_retry_count > 0
+        else:
+            should_retry = False
+            sync_run_repository.mark_failed(
+                connection_id=connection_id,
+                sync_run_id=sync_run_id,
+                failure_code=SyncFailureCode.NO_INCLUDED_FILES,
+                failure_message=failure_message,
+                completed_at=now,
+            )
+            connection_repository.record_sync_failure(
+                workspace_id=workspace_id,
+                connection_id=connection_id,
+                failed_at=now,
+                status=None,
+            )
+    if scope_retry_count > 0:
+        if not should_retry:
+            raise RepositoryConnectionProblem(
+                ProblemCode.NO_INCLUDED_FILES,
+                failure_message,
+            )
+        return build_code_snapshot(
+            command,
+            dependencies=dependencies,
+            _allow_running_retry=True,
+            _scope_retry_count=scope_retry_count - 1,
+        )
+    if should_retry:
+        return _fail_snapshot_build(
             workspace_id=workspace_id,
             connection_id=connection_id,
+            sync_run_id=sync_run_id,
+            failure_code=SyncFailureCode.MIRROR_SYNC_FAILED,
+            failure_message="범위 규칙이 스냅샷 생성 중 변경되었습니다. 다시 시도하세요.",
+            connection_status=None,
+            dependencies=dependencies,
         )
-        if scope_rule is not None:
-            return scope_rule
-    return _ensure_default_scope_rule_version(
-        workspace_id=workspace_id,
-        connection_id=connection_id,
-        dependencies=dependencies,
+    raise RepositoryConnectionProblem(
+        ProblemCode.NO_INCLUDED_FILES,
+        failure_message,
     )
 
 
@@ -363,6 +518,12 @@ def _classify_snapshot_failure(
             SyncFailureCode.REF_NOT_FOUND,
             RepositoryConnectionStatus.REF_MISSING,
             str(error) or "기본 분석 대상 ref를 찾을 수 없습니다.",
+        )
+    if problem_code == ProblemCode.INVALID_INPUT:
+        return (
+            SyncFailureCode.MIRROR_SYNC_FAILED,
+            None,
+            str(error) or "스냅샷 생성 요청이 유효하지 않습니다.",
         )
     if isinstance(error, RepositoryConnectionProblem):
         return (
@@ -394,18 +555,26 @@ def _fail_snapshot_build(
     dependencies,
 ):
     problem = RepositoryConnectionProblem(
-        ProblemCode.CONNECTION_AUTH_FAILED
-        if failure_code is SyncFailureCode.AUTH_FAILED
-        else ProblemCode.DEFAULT_REF_NOT_FOUND
-        if failure_code is SyncFailureCode.REF_NOT_FOUND
-        else ProblemCode.NO_INCLUDED_FILES
-        if failure_code is SyncFailureCode.NO_INCLUDED_FILES
-        else ProblemCode.INVALID_INPUT,
+        (
+            ProblemCode.CONNECTION_AUTH_FAILED
+            if failure_code is SyncFailureCode.AUTH_FAILED
+            else (
+                ProblemCode.DEFAULT_REF_NOT_FOUND
+                if failure_code is SyncFailureCode.REF_NOT_FOUND
+                else (
+                    ProblemCode.NO_INCLUDED_FILES
+                    if failure_code is SyncFailureCode.NO_INCLUDED_FILES
+                    else ProblemCode.INVALID_INPUT
+                )
+            )
+        ),
         failure_message,
     )
     now = datetime.now(tz=UTC)
     with dependencies.session_factory() as session:
-        sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(
+            session
+        )
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )

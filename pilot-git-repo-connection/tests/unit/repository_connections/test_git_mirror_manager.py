@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Sequence
+import io
 from pathlib import Path
 import subprocess
 import uuid
@@ -27,8 +28,14 @@ def _configure_git_test_home(tmp_path_factory: pytest.TempPathFactory) -> None:
 
 
 def _git_test_env() -> dict[str, str]:
-    if _GIT_TEST_HOME is None or _GIT_TEST_XDG_HOME is None or _GIT_TEST_GLOBAL_CONFIG is None:
-        raise RuntimeError("Git test environment must be configured before subprocess calls.")
+    if (
+        _GIT_TEST_HOME is None
+        or _GIT_TEST_XDG_HOME is None
+        or _GIT_TEST_GLOBAL_CONFIG is None
+    ):
+        raise RuntimeError(
+            "Git test environment must be configured before subprocess calls."
+        )
 
     base_env = {
         key: value for key, value in os.environ.items() if not key.startswith("GIT_")
@@ -90,6 +97,10 @@ def _build_test_settings(project_root: Path):
         database_url=None,
         redis_url=None,
         credential_encryption_key=None,
+        operator_api_token="test-operator-token",
+        gitlab_self_managed_allowed_hosts=(),
+        gitlab_webhook_trusted_proxy_hosts=(),
+        allow_insecure_gitlab_http=False,
     )
 
 
@@ -109,7 +120,9 @@ def test_git_mirror_manager_creates_canonical_bare_mirror_under_settings_root(
     _run_git(["git", "commit", "-m", "initial"], cwd=worktree_path)
     _run_git(["git", "remote", "add", "origin", str(remote_path)], cwd=worktree_path)
     _run_git(["git", "push", "origin", "main"], cwd=worktree_path)
-    expected_sha = _run_git(["git", "rev-parse", "HEAD"], cwd=worktree_path).stdout.strip()
+    expected_sha = _run_git(
+        ["git", "rev-parse", "HEAD"], cwd=worktree_path
+    ).stdout.strip()
     settings = _build_test_settings(tmp_path)
     manager = GitMirrorManager(settings=settings, runner=_subprocess_git_runner)
 
@@ -123,7 +136,12 @@ def test_git_mirror_manager_creates_canonical_bare_mirror_under_settings_root(
     assert mirror.absolute_path == settings.git_mirror_root / f"{connection_id}.git"
     assert mirror.absolute_path.is_dir()
     bare = _run_git(
-        ["git", f"--git-dir={mirror.absolute_path}", "rev-parse", "--is-bare-repository"],
+        [
+            "git",
+            f"--git-dir={mirror.absolute_path}",
+            "rev-parse",
+            "--is-bare-repository",
+        ],
         cwd=tmp_path,
     ).stdout.strip()
     mirrored_sha = _run_git(
@@ -196,15 +214,429 @@ def test_git_mirror_manager_fetches_latest_remote_head_into_existing_mirror(
     _run_git(["git", "add", "README.md"], cwd=worktree_path)
     _run_git(["git", "commit", "-m", "update"], cwd=worktree_path)
     _run_git(["git", "push", "origin", "main"], cwd=worktree_path)
-    expected_sha = _run_git(["git", "rev-parse", "HEAD"], cwd=worktree_path).stdout.strip()
+    expected_sha = _run_git(
+        ["git", "rev-parse", "HEAD"], cwd=worktree_path
+    ).stdout.strip()
 
-    manager.ensure_synced_mirror(connection_id=connection_id, remote_url=str(remote_path))
+    manager.ensure_synced_mirror(
+        connection_id=connection_id, remote_url=str(remote_path)
+    )
 
     mirrored_sha = _run_git(
         ["git", f"--git-dir={mirror.absolute_path}", "rev-parse", "refs/heads/main"],
         cwd=tmp_path,
     ).stdout.strip()
     assert mirrored_sha == expected_sha
+
+
+def test_git_mirror_manager_skips_binary_blob_by_default_before_scope_filtering(
+    tmp_path: Path,
+) -> None:
+    from tci.infrastructure.git.git_mirror_manager import GitMirrorManager
+
+    remote_path = tmp_path / "remote.git"
+    worktree_path = tmp_path / "worktree"
+    connection_id = uuid.uuid4()
+    worktree_path.mkdir()
+    _run_git(["git", "init", "--bare", str(remote_path)], cwd=tmp_path)
+    _run_git(["git", "init", "-b", "main"], cwd=worktree_path)
+    (worktree_path / "src").mkdir()
+    (worktree_path / "src" / "main.py").write_text("print('hello')\n", encoding="utf-8")
+    (worktree_path / "assets").mkdir()
+    (worktree_path / "assets" / "logo.bin").write_bytes(b"\x00binary")
+    _run_git(["git", "add", "src/main.py", "assets/logo.bin"], cwd=worktree_path)
+    _run_git(["git", "commit", "-m", "add source and binary"], cwd=worktree_path)
+    _run_git(["git", "remote", "add", "origin", str(remote_path)], cwd=worktree_path)
+    _run_git(["git", "push", "origin", "main"], cwd=worktree_path)
+    commit_sha = _run_git(
+        ["git", "rev-parse", "HEAD"], cwd=worktree_path
+    ).stdout.strip()
+    settings = _build_test_settings(tmp_path)
+    manager = GitMirrorManager(settings=settings, runner=_subprocess_git_runner)
+    mirror = manager.ensure_synced_mirror(
+        connection_id=connection_id,
+        remote_url=str(remote_path),
+    )
+
+    snapshot = manager.read_snapshot_entries(mirror=mirror, commit_sha=commit_sha)
+
+    assert [entry.path for entry in snapshot.entries] == ["src/main.py"]
+
+
+def test_git_mirror_manager_materializes_binary_blob_when_scope_allows_binary(
+    tmp_path: Path,
+) -> None:
+    from tci.infrastructure.git.git_mirror_manager import GitMirrorManager
+
+    remote_path = tmp_path / "remote.git"
+    worktree_path = tmp_path / "worktree"
+    connection_id = uuid.uuid4()
+    worktree_path.mkdir()
+    _run_git(["git", "init", "--bare", str(remote_path)], cwd=tmp_path)
+    _run_git(["git", "init", "-b", "main"], cwd=worktree_path)
+    (worktree_path / "src").mkdir()
+    (worktree_path / "src" / "main.py").write_text("print('hello')\n", encoding="utf-8")
+    (worktree_path / "assets").mkdir()
+    (worktree_path / "assets" / "logo.bin").write_bytes(b"\x00binary")
+    _run_git(["git", "add", "src/main.py", "assets/logo.bin"], cwd=worktree_path)
+    _run_git(["git", "commit", "-m", "add source and binary"], cwd=worktree_path)
+    _run_git(["git", "remote", "add", "origin", str(remote_path)], cwd=worktree_path)
+    _run_git(["git", "push", "origin", "main"], cwd=worktree_path)
+    commit_sha = _run_git(
+        ["git", "rev-parse", "HEAD"], cwd=worktree_path
+    ).stdout.strip()
+    settings = _build_test_settings(tmp_path)
+    manager = GitMirrorManager(settings=settings, runner=_subprocess_git_runner)
+    mirror = manager.ensure_synced_mirror(
+        connection_id=connection_id,
+        remote_url=str(remote_path),
+    )
+
+    snapshot = manager.read_snapshot_entries(
+        mirror=mirror,
+        commit_sha=commit_sha,
+        include_binary=True,
+    )
+
+    assert [entry.path for entry in snapshot.entries] == [
+        "assets/logo.bin",
+        "src/main.py",
+    ]
+    assert snapshot.entries[0].content == b"\x00binary"
+
+
+def test_git_mirror_manager_skips_large_blob_even_when_scope_allows_binary(
+    tmp_path: Path,
+) -> None:
+    from tci.infrastructure.git.git_mirror_manager import GitMirrorManager
+
+    remote_path = tmp_path / "remote.git"
+    worktree_path = tmp_path / "worktree"
+    connection_id = uuid.uuid4()
+    worktree_path.mkdir()
+    _run_git(["git", "init", "--bare", str(remote_path)], cwd=tmp_path)
+    _run_git(["git", "init", "-b", "main"], cwd=worktree_path)
+    (worktree_path / "assets").mkdir()
+    (worktree_path / "assets" / "large.bin").write_bytes(b"x" * ((5 * 1024 * 1024) + 1))
+    _run_git(["git", "add", "assets/large.bin"], cwd=worktree_path)
+    _run_git(["git", "commit", "-m", "add large binary"], cwd=worktree_path)
+    _run_git(["git", "remote", "add", "origin", str(remote_path)], cwd=worktree_path)
+    _run_git(["git", "push", "origin", "main"], cwd=worktree_path)
+    commit_sha = _run_git(
+        ["git", "rev-parse", "HEAD"], cwd=worktree_path
+    ).stdout.strip()
+    settings = _build_test_settings(tmp_path)
+    manager = GitMirrorManager(settings=settings, runner=_subprocess_git_runner)
+    mirror = manager.ensure_synced_mirror(
+        connection_id=connection_id,
+        remote_url=str(remote_path),
+    )
+
+    snapshot = manager.read_snapshot_entries(
+        mirror=mirror,
+        commit_sha=commit_sha,
+        include_binary=True,
+    )
+
+    assert snapshot.entries == ()
+
+
+def test_git_mirror_manager_skips_hard_excluded_paths_before_blob_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tci.infrastructure.git.git_mirror_manager import GitMirrorManager
+
+    remote_path = tmp_path / "remote.git"
+    worktree_path = tmp_path / "worktree"
+    connection_id = uuid.uuid4()
+    worktree_path.mkdir()
+    _run_git(["git", "init", "--bare", str(remote_path)], cwd=tmp_path)
+    _run_git(["git", "init", "-b", "main"], cwd=worktree_path)
+    (worktree_path / "node_modules").mkdir()
+    (worktree_path / "node_modules" / "pkg.js").write_text(
+        "ignored\n", encoding="utf-8"
+    )
+    (worktree_path / "src").mkdir()
+    (worktree_path / "src" / "main.py").write_text("print('hello')\n", encoding="utf-8")
+    _run_git(["git", "add", "node_modules/pkg.js", "src/main.py"], cwd=worktree_path)
+    _run_git(["git", "commit", "-m", "add ignored dependency"], cwd=worktree_path)
+    _run_git(["git", "remote", "add", "origin", str(remote_path)], cwd=worktree_path)
+    _run_git(["git", "push", "origin", "main"], cwd=worktree_path)
+    commit_sha = _run_git(
+        ["git", "rev-parse", "HEAD"], cwd=worktree_path
+    ).stdout.strip()
+    ignored_blob_sha = _run_git(
+        ["git", "hash-object", "node_modules/pkg.js"], cwd=worktree_path
+    ).stdout.strip()
+    settings = _build_test_settings(tmp_path)
+    manager = GitMirrorManager(settings=settings, runner=_subprocess_git_runner)
+    mirror = manager.ensure_synced_mirror(
+        connection_id=connection_id,
+        remote_url=str(remote_path),
+    )
+    original_read_blob = manager._read_git_blob_bytes
+
+    def read_blob_fails_for_hard_excluded_path(**kwargs):
+        if kwargs["blob_sha"] == ignored_blob_sha:
+            raise AssertionError("hard-excluded blob was materialized")
+        return original_read_blob(**kwargs)
+
+    monkeypatch.setattr(
+        manager, "_read_git_blob_bytes", read_blob_fails_for_hard_excluded_path
+    )
+
+    snapshot = manager.read_snapshot_entries(mirror=mirror, commit_sha=commit_sha)
+
+    assert [entry.path for entry in snapshot.entries] == ["src/main.py"]
+
+
+def test_git_mirror_manager_reaps_tree_process_when_snapshot_read_aborts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tci.infrastructure.git import git_mirror_manager
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult
+    from tci.infrastructure.git.git_mirror_manager import (
+        GitMirrorManager,
+        GitMirrorSyncError,
+        ManagedGitMirror,
+    )
+
+    read_fd, write_fd = os.pipe()
+    os.write(write_fd, b"100644 blob abc123 12\tREADME.md\0")
+    stderr = io.BytesIO()
+    fake_processes: list[FakeLsTreeProcess] = []
+
+    class FakeLsTreeProcess:
+        def __init__(self) -> None:
+            self.stdout = os.fdopen(read_fd, "rb", buffering=0)
+            self.stderr = stderr
+            self.returncode: int | None = None
+            self.killed = False
+            self.communicated = False
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def kill(self) -> None:
+            self.killed = True
+            self.returncode = -9
+
+        def communicate(self, timeout=None):
+            self.communicated = True
+            try:
+                os.close(write_fd)
+            except OSError:
+                pass
+            return b"", b""
+
+    def fake_popen(*args, **kwargs):
+        process = FakeLsTreeProcess()
+        fake_processes.append(process)
+        return process
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        if command[2] == "rev-parse":
+            return GitCommandResult(returncode=0, stdout="tree-sha\n", stderr="")
+        raise AssertionError(f"unexpected command: {command}")
+
+    manager = GitMirrorManager(settings=_build_test_settings(tmp_path), runner=runner)
+
+    def aborting_read_blob(**kwargs):
+        raise GitMirrorSyncError("abort snapshot read")
+
+    monkeypatch.setattr(git_mirror_manager.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(manager, "_read_git_blob_bytes", aborting_read_blob)
+
+    with pytest.raises(GitMirrorSyncError):
+        manager.read_snapshot_entries(
+            mirror=ManagedGitMirror(
+                connection_id=uuid.uuid4(),
+                mirror_path=".runtime/git-mirrors/test.git",
+                absolute_path=tmp_path / "test.git",
+            ),
+            commit_sha="commit-sha",
+        )
+
+    assert len(fake_processes) == 1
+    assert fake_processes[0].killed is True
+    assert fake_processes[0].communicated is True
+
+
+def test_git_mirror_manager_limits_scope_filtered_candidate_count_before_blob_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tci.infrastructure.git import git_mirror_manager
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult
+    from tci.infrastructure.git.git_mirror_manager import (
+        GitMirrorManager,
+        GitMirrorSyncError,
+        ManagedGitMirror,
+    )
+
+    monkeypatch.setattr(git_mirror_manager, "MAX_SNAPSHOT_CANDIDATE_COUNT", 2)
+
+    def iter_tree_entries(**kwargs):
+        yield "100644 blob one 1\tmisc/one.txt"
+        yield "100644 blob two 1\tmisc/two.txt"
+        yield "100644 blob three 1\tmisc/three.txt"
+
+    read_blob_shas: list[str] = []
+
+    def read_blob(**kwargs):
+        if kwargs["blob_sha"] == "three":
+            raise AssertionError("candidate cap should trip before third blob read")
+        read_blob_shas.append(kwargs["blob_sha"])
+        return None
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        if command[2] == "rev-parse":
+            return GitCommandResult(returncode=0, stdout="tree-sha\n", stderr="")
+        raise AssertionError(f"unexpected command: {command}")
+
+    manager = GitMirrorManager(settings=_build_test_settings(tmp_path), runner=runner)
+    monkeypatch.setattr(manager, "_iter_git_tree_entries", iter_tree_entries)
+    monkeypatch.setattr(manager, "_read_git_blob_bytes", read_blob)
+
+    with pytest.raises(GitMirrorSyncError, match="후보 파일 수"):
+        manager.read_snapshot_entries(
+            mirror=ManagedGitMirror(
+                connection_id=uuid.uuid4(),
+                mirror_path=".runtime/git-mirrors/test.git",
+                absolute_path=tmp_path / "test.git",
+            ),
+            commit_sha="commit-sha",
+            include_paths=["misc/**"],
+        )
+    assert read_blob_shas == ["one", "two"]
+
+
+def test_git_mirror_manager_does_not_count_scope_filtered_paths_toward_candidate_cap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tci.infrastructure.git import git_mirror_manager
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult
+    from tci.infrastructure.git.git_mirror_manager import (
+        GitMirrorManager,
+        ManagedGitMirror,
+    )
+
+    monkeypatch.setattr(git_mirror_manager, "MAX_SNAPSHOT_CANDIDATE_COUNT", 1)
+
+    def iter_tree_entries(**kwargs):
+        yield "100644 blob ignored 1\tmisc/one.txt"
+        yield "100644 blob ignored 1\tmisc/two.txt"
+        yield "100644 blob included 1\tsrc/main.py"
+
+    def read_blob(**kwargs):
+        return b"ok"
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        if command[2] == "rev-parse":
+            return GitCommandResult(returncode=0, stdout="tree-sha\n", stderr="")
+        raise AssertionError(f"unexpected command: {command}")
+
+    manager = GitMirrorManager(settings=_build_test_settings(tmp_path), runner=runner)
+    monkeypatch.setattr(manager, "_iter_git_tree_entries", iter_tree_entries)
+    monkeypatch.setattr(manager, "_read_git_blob_bytes", read_blob)
+
+    snapshot = manager.read_snapshot_entries(
+        mirror=ManagedGitMirror(
+            connection_id=uuid.uuid4(),
+            mirror_path=".runtime/git-mirrors/test.git",
+            absolute_path=tmp_path / "test.git",
+        ),
+        commit_sha="commit-sha",
+        include_paths=["src/**"],
+    )
+
+    assert [entry.path for entry in snapshot.entries] == ["src/main.py"]
+
+
+def test_git_mirror_manager_does_not_count_hard_excluded_paths_toward_candidate_cap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tci.infrastructure.git import git_mirror_manager
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult
+    from tci.infrastructure.git.git_mirror_manager import (
+        GitMirrorManager,
+        ManagedGitMirror,
+    )
+
+    monkeypatch.setattr(git_mirror_manager, "MAX_SNAPSHOT_CANDIDATE_COUNT", 1)
+
+    def iter_tree_entries(**kwargs):
+        yield "100644 blob ignored 1\tnode_modules/pkg.js"
+        yield "100644 blob included 1\tsrc/main.py"
+
+    def read_blob(**kwargs):
+        return b"ok"
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        if command[2] == "rev-parse":
+            return GitCommandResult(returncode=0, stdout="tree-sha\n", stderr="")
+        raise AssertionError(f"unexpected command: {command}")
+
+    manager = GitMirrorManager(settings=_build_test_settings(tmp_path), runner=runner)
+    monkeypatch.setattr(manager, "_iter_git_tree_entries", iter_tree_entries)
+    monkeypatch.setattr(manager, "_read_git_blob_bytes", read_blob)
+
+    snapshot = manager.read_snapshot_entries(
+        mirror=ManagedGitMirror(
+            connection_id=uuid.uuid4(),
+            mirror_path=".runtime/git-mirrors/test.git",
+            absolute_path=tmp_path / "test.git",
+        ),
+        commit_sha="commit-sha",
+    )
+
+    assert [entry.path for entry in snapshot.entries] == ["src/main.py"]
+
+
+def test_git_mirror_manager_caps_raw_tree_entries_before_scope_filtering(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tci.infrastructure.git import git_mirror_manager
+    from tci.infrastructure.git.git_ref_resolver import GitCommandResult
+    from tci.infrastructure.git.git_mirror_manager import (
+        GitMirrorSyncError,
+        GitMirrorManager,
+        ManagedGitMirror,
+    )
+
+    monkeypatch.setattr(git_mirror_manager, "MAX_SNAPSHOT_TREE_ENTRY_COUNT", 2)
+
+    def iter_tree_entries(**kwargs):
+        yield "100644 blob ignored 1\tnode_modules/one.js"
+        yield "100644 blob ignored 1\tnode_modules/two.js"
+        yield "100644 blob ignored 1\tnode_modules/three.js"
+
+    def read_blob(**kwargs):
+        raise AssertionError("raw tree cap should trip before blob reads")
+
+    def runner(command: Sequence[str]) -> GitCommandResult:
+        if command[2] == "rev-parse":
+            return GitCommandResult(returncode=0, stdout="tree-sha\n", stderr="")
+        raise AssertionError(f"unexpected command: {command}")
+
+    manager = GitMirrorManager(settings=_build_test_settings(tmp_path), runner=runner)
+    monkeypatch.setattr(manager, "_iter_git_tree_entries", iter_tree_entries)
+    monkeypatch.setattr(manager, "_read_git_blob_bytes", read_blob)
+
+    with pytest.raises(GitMirrorSyncError, match="Git tree entry"):
+        manager.read_snapshot_entries(
+            mirror=ManagedGitMirror(
+                connection_id=uuid.uuid4(),
+                mirror_path=".runtime/git-mirrors/test.git",
+                absolute_path=tmp_path / "test.git",
+            ),
+            commit_sha="commit-sha",
+        )
 
 
 def test_git_mirror_manager_updates_origin_when_remote_url_changes(
@@ -225,7 +657,9 @@ def test_git_mirror_manager_updates_origin_when_remote_url_changes(
     (worktree_one_path / "README.md").write_text("remote one", encoding="utf-8")
     _run_git(["git", "add", "README.md"], cwd=worktree_one_path)
     _run_git(["git", "commit", "-m", "remote one"], cwd=worktree_one_path)
-    _run_git(["git", "remote", "add", "origin", str(remote_one_path)], cwd=worktree_one_path)
+    _run_git(
+        ["git", "remote", "add", "origin", str(remote_one_path)], cwd=worktree_one_path
+    )
     _run_git(["git", "push", "origin", "main"], cwd=worktree_one_path)
 
     _run_git(["git", "init", "--bare", str(remote_two_path)], cwd=tmp_path)
@@ -233,9 +667,13 @@ def test_git_mirror_manager_updates_origin_when_remote_url_changes(
     (worktree_two_path / "README.md").write_text("remote two", encoding="utf-8")
     _run_git(["git", "add", "README.md"], cwd=worktree_two_path)
     _run_git(["git", "commit", "-m", "remote two"], cwd=worktree_two_path)
-    _run_git(["git", "remote", "add", "origin", str(remote_two_path)], cwd=worktree_two_path)
+    _run_git(
+        ["git", "remote", "add", "origin", str(remote_two_path)], cwd=worktree_two_path
+    )
     _run_git(["git", "push", "origin", "main"], cwd=worktree_two_path)
-    expected_sha = _run_git(["git", "rev-parse", "HEAD"], cwd=worktree_two_path).stdout.strip()
+    expected_sha = _run_git(
+        ["git", "rev-parse", "HEAD"], cwd=worktree_two_path
+    ).stdout.strip()
 
     settings = _build_test_settings(tmp_path)
     manager = GitMirrorManager(settings=settings, runner=_subprocess_git_runner)
@@ -250,7 +688,13 @@ def test_git_mirror_manager_updates_origin_when_remote_url_changes(
     )
 
     configured_origin = _run_git(
-        ["git", f"--git-dir={mirror.absolute_path}", "config", "--get", "remote.origin.url"],
+        [
+            "git",
+            f"--git-dir={mirror.absolute_path}",
+            "config",
+            "--get",
+            "remote.origin.url",
+        ],
         cwd=tmp_path,
     ).stdout.strip()
     mirrored_sha = _run_git(
@@ -261,10 +705,13 @@ def test_git_mirror_manager_updates_origin_when_remote_url_changes(
     assert mirrored_sha == expected_sha
 
 
-def test_git_mirror_manager_restores_origin_after_temporary_authenticated_fetch_failure(
+def test_git_mirror_manager_uses_clean_remote_url_for_existing_fetch(
     tmp_path: Path,
 ) -> None:
-    from tci.infrastructure.git.git_mirror_manager import GitMirrorManager, GitMirrorSyncError
+    from tci.infrastructure.git.git_mirror_manager import (
+        GitMirrorManager,
+        GitMirrorSyncError,
+    )
     from tci.infrastructure.git.git_ref_resolver import GitCommandResult
 
     connection_id = uuid.uuid4()
@@ -285,7 +732,11 @@ def test_git_mirror_manager_restores_origin_after_temporary_authenticated_fetch_
             )
         if command[-4:-1] == ("remote", "set-url", "origin"):
             return GitCommandResult(returncode=0, stdout="", stderr="")
-        if command[-3:] == ("fetch", "--prune", "origin"):
+        if command[-3:] == ("config", "remote.origin.fetch", "+refs/*:refs/*"):
+            return GitCommandResult(returncode=0, stdout="", stderr="")
+        if command[-3:] == ("config", "remote.origin.mirror", "true"):
+            return GitCommandResult(returncode=0, stdout="", stderr="")
+        if command[2:4] == ("fetch", "--prune"):
             return GitCommandResult(
                 returncode=128,
                 stdout="",
@@ -298,21 +749,27 @@ def test_git_mirror_manager_restores_origin_after_temporary_authenticated_fetch_
     with pytest.raises(GitMirrorSyncError):
         manager.ensure_synced_mirror(
             connection_id=connection_id,
-            remote_url="https://x-access-token:secret@github.com/acme/sample-repo.git",
-            restore_remote_url="https://github.com/acme/sample-repo.git",
+            remote_url="https://github.com/acme/sample-repo.git",
         )
 
-    assert commands[-1] == (
-        "git",
-        f"--git-dir={target_path}",
-        "remote",
-        "set-url",
-        "origin",
-        "https://github.com/acme/sample-repo.git",
+    assert any(
+        command[-4:]
+        == (
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com/acme/sample-repo.git",
+        )
+        for command in commands
     )
+    assert any(
+        command[2:4] == ("fetch", "--prune") and command[4] == "origin"
+        for command in commands
+    )
+    assert not any("x-access-token:secret" in " ".join(command) for command in commands)
 
 
-def test_git_mirror_manager_restores_origin_after_new_temporary_authenticated_clone(
+def test_git_mirror_manager_uses_clean_remote_url_for_new_fetch(
     tmp_path: Path,
 ) -> None:
     from tci.infrastructure.git.git_mirror_manager import GitMirrorManager
@@ -324,10 +781,18 @@ def test_git_mirror_manager_restores_origin_after_new_temporary_authenticated_cl
 
     def runner(command: Sequence[str]) -> GitCommandResult:
         commands.append(tuple(command))
-        if command[:3] == ("git", "clone", "--mirror"):
+        if command[:3] == ("git", "init", "--bare"):
             Path(command[-1]).mkdir(parents=True)
             return GitCommandResult(returncode=0, stdout="", stderr="")
-        if command[-4:-1] == ("remote", "set-url", "origin"):
+        if command[-3:] == ("config", "--get", "remote.origin.url"):
+            return GitCommandResult(returncode=1, stdout="", stderr="")
+        if command[-4:-1] == ("remote", "add", "origin"):
+            return GitCommandResult(returncode=0, stdout="", stderr="")
+        if command[-3:] == ("config", "remote.origin.fetch", "+refs/*:refs/*"):
+            return GitCommandResult(returncode=0, stdout="", stderr="")
+        if command[-3:] == ("config", "remote.origin.mirror", "true"):
+            return GitCommandResult(returncode=0, stdout="", stderr="")
+        if command[2:4] == ("fetch", "--prune"):
             return GitCommandResult(returncode=0, stdout="", stderr="")
         raise AssertionError(f"unexpected command: {command}")
 
@@ -335,17 +800,34 @@ def test_git_mirror_manager_restores_origin_after_new_temporary_authenticated_cl
 
     manager.ensure_synced_mirror(
         connection_id=connection_id,
-        remote_url="https://x-access-token:secret@github.com/acme/sample-repo.git",
-        restore_remote_url="https://github.com/acme/sample-repo.git",
+        remote_url="https://github.com/acme/sample-repo.git",
     )
 
-    assert commands[-1][-1] == "https://github.com/acme/sample-repo.git"
+    assert all(command[:3] != ("git", "clone", "--mirror") for command in commands)
+    assert any(
+        command[-4:]
+        == (
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/sample-repo.git",
+        )
+        for command in commands
+    )
+    assert any(
+        command[2:4] == ("fetch", "--prune") and command[4] == "origin"
+        for command in commands
+    )
+    assert not any("x-access-token:secret" in " ".join(command) for command in commands)
 
 
 def test_git_mirror_manager_rejects_non_bare_existing_target_path(
     tmp_path: Path,
 ) -> None:
-    from tci.infrastructure.git.git_mirror_manager import GitMirrorManager, GitMirrorSyncError
+    from tci.infrastructure.git.git_mirror_manager import (
+        GitMirrorManager,
+        GitMirrorSyncError,
+    )
 
     connection_id = uuid.uuid4()
     settings = _build_test_settings(tmp_path)
@@ -364,7 +846,10 @@ def test_git_mirror_manager_rejects_non_bare_existing_target_path(
 def test_git_mirror_manager_maps_auth_like_fetch_failure_to_auth_error(
     tmp_path: Path,
 ) -> None:
-    from tci.infrastructure.git.git_mirror_manager import GitMirrorAuthError, GitMirrorManager
+    from tci.infrastructure.git.git_mirror_manager import (
+        GitMirrorAuthError,
+        GitMirrorManager,
+    )
     from tci.infrastructure.git.git_ref_resolver import GitCommandResult
 
     connection_id = uuid.uuid4()
@@ -391,7 +876,10 @@ def test_git_mirror_manager_maps_auth_like_fetch_failure_to_auth_error(
 def test_git_mirror_manager_maps_repository_not_found_to_auth_error(
     tmp_path: Path,
 ) -> None:
-    from tci.infrastructure.git.git_mirror_manager import GitMirrorAuthError, GitMirrorManager
+    from tci.infrastructure.git.git_mirror_manager import (
+        GitMirrorAuthError,
+        GitMirrorManager,
+    )
     from tci.infrastructure.git.git_ref_resolver import GitCommandResult
 
     connection_id = uuid.uuid4()

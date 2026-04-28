@@ -29,12 +29,17 @@ def test_package_scaffold_modules_are_importable() -> None:
     import tci.web  # noqa: F401
 
 
-def test_load_settings_uses_project_runtime_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_settings_uses_project_runtime_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("TCI_PROJECT_ROOT", raising=False)
     monkeypatch.delenv("TCI_RUNTIME_ROOT", raising=False)
     monkeypatch.delenv("TCI_GIT_MIRROR_ROOT", raising=False)
     monkeypatch.delenv("TCI_CODE_SNAPSHOT_ROOT", raising=False)
     monkeypatch.delenv("TCI_TEMPLATE_ROOT", raising=False)
+    monkeypatch.delenv("TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS", raising=False)
+    monkeypatch.delenv("TCI_GITLAB_WEBHOOK_TRUSTED_PROXY_HOSTS", raising=False)
+    monkeypatch.delenv("TCI_ALLOW_INSECURE_GITLAB_HTTP", raising=False)
 
     settings = load_settings()
     expected_root = _expected_project_root()
@@ -44,6 +49,77 @@ def test_load_settings_uses_project_runtime_defaults(monkeypatch: pytest.MonkeyP
     assert settings.git_mirror_root == expected_root / ".runtime" / "git-mirrors"
     assert settings.code_snapshot_root == expected_root / ".runtime" / "code-snapshots"
     assert settings.template_root == expected_root / "src" / "tci" / "web" / "templates"
+    assert settings.gitlab_self_managed_allowed_hosts == ()
+    assert settings.gitlab_webhook_trusted_proxy_hosts == ()
+    assert settings.allow_insecure_gitlab_http is False
+
+
+def test_load_settings_parses_gitlab_self_managed_allowed_hosts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("TCI_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv(
+        "TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS",
+        "GitLab.Example.Com., GitLab.Example.Com.:8443, localhost, 192.168.10.20",
+    )
+
+    settings = load_settings()
+
+    assert settings.gitlab_self_managed_allowed_hosts == (
+        "gitlab.example.com",
+        "gitlab.example.com:8443",
+        "localhost",
+        "192.168.10.20",
+    )
+
+
+def test_load_settings_parses_gitlab_webhook_trusted_proxy_hosts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("TCI_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv(
+        "TCI_GITLAB_WEBHOOK_TRUSTED_PROXY_HOSTS",
+        "Proxy.Example.Com.:443, 10.0.0.10, 2001:db8::1, [2001:db8::2]:8443",
+    )
+
+    settings = load_settings()
+
+    assert settings.gitlab_webhook_trusted_proxy_hosts == (
+        "proxy.example.com",
+        "10.0.0.10",
+        "2001:db8::1",
+        "2001:db8::2",
+    )
+
+
+@pytest.mark.parametrize("raw_value", ["1", "true", "TRUE", "yes", "on"])
+def test_load_settings_allows_insecure_gitlab_http_only_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    raw_value: str,
+) -> None:
+    monkeypatch.setenv("TCI_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("TCI_ALLOW_INSECURE_GITLAB_HTTP", raw_value)
+
+    settings = load_settings()
+
+    assert settings.allow_insecure_gitlab_http is True
+
+
+@pytest.mark.parametrize("raw_value", ["0", "false", "off", ""])
+def test_load_settings_disables_insecure_gitlab_http_by_default_values(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    raw_value: str,
+) -> None:
+    monkeypatch.setenv("TCI_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("TCI_ALLOW_INSECURE_GITLAB_HTTP", raw_value)
+
+    settings = load_settings()
+
+    assert settings.allow_insecure_gitlab_http is False
 
 
 def test_load_settings_allows_runtime_path_overrides(
@@ -110,7 +186,9 @@ def test_load_settings_rejects_runtime_paths_outside_project_root(
         load_settings()
 
 
-def test_runtime_directories_are_listed_for_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runtime_directories_are_listed_for_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("TCI_PROJECT_ROOT", raising=False)
     monkeypatch.delenv("TCI_RUNTIME_ROOT", raising=False)
     monkeypatch.delenv("TCI_GIT_MIRROR_ROOT", raising=False)
@@ -198,7 +276,9 @@ def test_load_settings_prefers_module_checkout_over_foreign_pyproject(
 ) -> None:
     foreign_project_root = tmp_path / "foreign-project"
     foreign_project_root.mkdir()
-    (foreign_project_root / "pyproject.toml").write_text("[project]\nname='foreign'\n", encoding="utf-8")
+    (foreign_project_root / "pyproject.toml").write_text(
+        "[project]\nname='foreign'\n", encoding="utf-8"
+    )
     monkeypatch.delenv("TCI_PROJECT_ROOT", raising=False)
     monkeypatch.chdir(foreign_project_root)
 
@@ -230,13 +310,65 @@ def test_load_settings_rejects_invalid_credential_encryption_key(
         load_settings()
 
 
+def test_load_settings_rejects_short_operator_api_token(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("TCI_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("TCI_OPERATOR_API_TOKEN", "short")
+
+    with pytest.raises(RuntimeError, match="TCI_OPERATOR_API_TOKEN"):
+        load_settings()
+
+
+def test_load_settings_rejects_operator_api_token_with_outer_whitespace(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("TCI_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("TCI_OPERATOR_API_TOKEN", " test-operator-token ")
+
+    with pytest.raises(RuntimeError, match="TCI_OPERATOR_API_TOKEN"):
+        load_settings()
+
+
+def test_load_settings_rejects_low_entropy_production_operator_api_token(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("TCI_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("TCI_ENV", "production")
+    monkeypatch.setenv("TCI_OPERATOR_API_TOKEN", "test-operator-token")
+
+    with pytest.raises(RuntimeError, match="TCI_OPERATOR_API_TOKEN"):
+        load_settings()
+
+
+def test_load_settings_accepts_high_entropy_production_operator_api_token(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("TCI_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("TCI_ENV", "production")
+    monkeypatch.setenv(
+        "TCI_OPERATOR_API_TOKEN",
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-",
+    )
+
+    settings = load_settings()
+
+    assert settings.operator_api_token is not None
+
+
 def test_get_settings_prefers_module_checkout_over_foreign_pyproject_cache(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     foreign_project_root = tmp_path / "foreign-project"
     foreign_project_root.mkdir()
-    (foreign_project_root / "pyproject.toml").write_text("[project]\nname='foreign'\n", encoding="utf-8")
+    (foreign_project_root / "pyproject.toml").write_text(
+        "[project]\nname='foreign'\n", encoding="utf-8"
+    )
     monkeypatch.delenv("TCI_PROJECT_ROOT", raising=False)
     monkeypatch.chdir(foreign_project_root)
     get_settings.cache_clear()

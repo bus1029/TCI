@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
 
+from tci.api.operator_auth import require_operator_auth
 from tci.api.schemas.repository_connection import serialize_repository_event
 from tci.domain.services.list_repository_events import list_repository_events
 
@@ -14,6 +15,7 @@ from .repository_connections import _extract_workspace_id
 router = APIRouter(
     prefix="/api/repository-connections/{connection_id}/events",
     tags=["RepositoryEvents"],
+    dependencies=[Depends(require_operator_auth)],
 )
 
 

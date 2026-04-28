@@ -114,11 +114,8 @@ def test_previous_secret_delivery_is_rejected_after_grace_expiry(tmp_path) -> No
         f"/connections/{connection_id}/events?workspaceId={workspace_id}"
     )
 
-    assert webhook_response.status_code == 401
-    assert webhook_response.json() == {
-        "code": "WEBHOOK_SECRET_MISMATCH",
-        "message": "등록된 webhook secret과 요청 서명이 일치하지 않습니다.",
-    }
+    assert webhook_response.status_code == 202
+    assert webhook_response.json() == {"status": "accepted"}
     assert detail_response.status_code == 200
     assert "상태: secret_mismatch_detected" in detail_response.text
     assert "회전 상태: grace_expired" in detail_response.text
@@ -178,7 +175,7 @@ def test_bad_replay_does_not_overwrite_last_processed_event_or_health(
         f"/connections/{connection_id}/events?workspaceId={workspace_id}"
     )
 
-    assert replay_response.status_code == 401
+    assert replay_response.status_code == 202
     assert detail_response.status_code == 200
     assert "상태: healthy" in detail_response.text
     assert "이벤트 유형: push" in detail_response.text

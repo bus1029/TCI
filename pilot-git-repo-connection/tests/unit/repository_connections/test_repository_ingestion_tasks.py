@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 import uuid
 
 import pytest
@@ -34,6 +35,15 @@ def test_repository_ingestion_tasks_expose_stable_task_names_and_queue_names() -
             "queue": REPOSITORY_INGESTION_QUEUE_NAME
         },
     }
+
+
+def test_celery_app_uses_late_ack_for_repository_ingestion_tasks() -> None:
+    from tci.workers.celery_app import create_celery_app
+
+    app = create_celery_app(SimpleNamespace(redis_url="redis://example"))
+
+    assert app.conf.task_acks_late is True
+    assert app.conf.task_reject_on_worker_lost is True
 
 
 def test_verify_repository_connection_task_delegates_to_domain_service(

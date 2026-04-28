@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
 
+from tci.api.operator_auth import require_operator_auth
 from tci.api.schemas.repository_connection import serialize_repository_connection_detail
 from tci.domain.services.get_repository_connection_detail import (
     get_repository_connection_detail,
@@ -13,7 +14,11 @@ from tci.domain.services.get_repository_connection_detail import (
 from ._common import build_template_context, extract_workspace_id_from_query
 
 
-router = APIRouter(tags=["RepositoryConnectionDetailWeb"], include_in_schema=False)
+router = APIRouter(
+    tags=["RepositoryConnectionDetailWeb"],
+    include_in_schema=False,
+    dependencies=[Depends(require_operator_auth)],
+)
 
 
 @router.get("/connections/{connection_id}")

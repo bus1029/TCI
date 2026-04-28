@@ -59,9 +59,9 @@
 
 1. 잘못된 secret으로 서명한 요청을 보낸다.
 2. `RepositoryEvent.signature_status = secret_mismatch`, `rejection_reason = secret_mismatch`, `processing_status = rejected`가 기록되는지 확인한다.
-3. 연결 상세 조회에서 `webhookHealth.status = secret_mismatch_detected`와 마지막 거부 시각이 보이는지 확인한다.
+3. 연결 상세 조회에서 `webhookHealth.webhookStatus = secret_mismatch_detected`와 `webhookHealth.lastRejectionAt`이 보이는지 확인한다.
 4. payload를 변조해 HMAC이 깨진 요청을 보내고 `signature_status = signature_invalid`, `rejection_reason = signature_invalid`가 기록되는지 확인한다.
-5. secret이 없는 연결에 webhook을 보내면 `webhookHealth.status = missing_secret`와 `rejectionReason = secret_missing` 이벤트가 기록되는지 확인한다.
+5. secret이 없는 연결에 webhook을 보내면 `webhookHealth.webhookStatus = missing_secret`와 `rejectionReason = secret_missing` 이벤트가 기록되는지 확인한다.
 
 ### 7. 운영 상태 전이 회귀
 

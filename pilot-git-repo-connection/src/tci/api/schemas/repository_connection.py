@@ -6,7 +6,7 @@ import uuid
 from pydantic import Field
 
 from tci.api.schemas._base import CamelModel
-from tci.api.schemas.repository_scope import serialize_scope_rule
+from tci.api.schemas.repository_scope import ScopeRuleResponse, serialize_scope_rule
 
 
 class CredentialInput(CamelModel):
@@ -44,8 +44,36 @@ class CreateRepositorySnapshotRequest(CamelModel):
     reason: str = Field(default="manual_initial", min_length=1)
 
 
+class RepositoryConnectionResponse(CamelModel):
+    id: str
+    provider: str
+    remote_url: str = Field(alias="remoteUrl")
+    transport: str
+    default_ref_type: str = Field(alias="defaultRefType")
+    default_ref_name: str = Field(alias="defaultRefName")
+    status: str
+    last_verified_at: str | None = Field(alias="lastVerifiedAt")
+    provider_instance_url: str | None = Field(default=None, alias="providerInstanceUrl")
+    provider_project_path: str | None = Field(default=None, alias="providerProjectPath")
+
+
+class RepositoryConnectionDetailResponse(RepositoryConnectionResponse):
+    latest_scope_rule: ScopeRuleResponse | None = Field(alias="latestScopeRule")
+    last_successful_snapshot_at: str | None = Field(alias="lastSuccessfulSnapshotAt")
+    last_failed_sync_at: str | None = Field(alias="lastFailedSyncAt")
+    last_processed_event_at: str | None = Field(alias="lastProcessedEventAt")
+    last_processed_event: dict[str, object] | None = Field(alias="lastProcessedEvent")
+    latest_snapshot: dict[str, object] | None = Field(alias="latestSnapshot")
+    latest_sync_run: dict[str, object] | None = Field(alias="latestSyncRun")
+    traceability: dict[str, object]
+    additional_ref_guidance: dict[str, object] = Field(alias="additionalRefGuidance")
+    webhook_health: dict[str, object] | None = Field(
+        default=None, alias="webhookHealth"
+    )
+
+
 def serialize_repository_connection(connection) -> dict[str, object]:
-    return {
+    payload = {
         "id": str(connection.id),
         "provider": connection.provider.value,
         "remoteUrl": connection.remote_url,
@@ -55,6 +83,14 @@ def serialize_repository_connection(connection) -> dict[str, object]:
         "status": connection.status.value,
         "lastVerifiedAt": _format_datetime(connection.last_verified_at),
     }
+    if connection.provider.value == "gitlab_self_managed":
+        payload.update(
+            {
+                "providerInstanceUrl": connection.provider_instance_url,
+                "providerProjectPath": connection.provider_project_path,
+            }
+        )
+    return payload
 
 
 def serialize_repository_connection_detail(connection) -> dict[str, object]:
@@ -69,13 +105,17 @@ def serialize_repository_connection_detail(connection) -> dict[str, object]:
     payload.update(
         {
             "latestScopeRule": (
-                None if latest_scope_rule is None else serialize_scope_rule(latest_scope_rule)
+                None
+                if latest_scope_rule is None
+                else serialize_scope_rule(latest_scope_rule)
             ),
             "lastSuccessfulSnapshotAt": _format_datetime(
                 connection.last_successful_snapshot_at
             ),
             "lastFailedSyncAt": _format_datetime(connection.last_failed_sync_at),
-            "lastProcessedEventAt": _format_datetime(connection.last_processed_event_at),
+            "lastProcessedEventAt": _format_datetime(
+                connection.last_processed_event_at
+            ),
             "lastProcessedEvent": _serialize_last_processed_event(last_processed_event),
             "latestSnapshot": _serialize_latest_snapshot_summary(latest_snapshot),
             "latestSyncRun": _serialize_latest_sync_run_summary(latest_sync_run),
@@ -245,7 +285,9 @@ def _serialize_latest_sync_run_summary(sync_run) -> dict[str, object] | None:
         "requestedRefType": sync_run.requested_ref_type.value,
         "requestedRefName": sync_run.requested_ref_name,
         "resolvedCommitSha": sync_run.resolved_commit_sha,
-        "failureCode": None if sync_run.failure_code is None else sync_run.failure_code.value,
+        "failureCode": (
+            None if sync_run.failure_code is None else sync_run.failure_code.value
+        ),
         "failureMessage": sync_run.failure_message,
         "startedAt": _format_datetime(sync_run.started_at),
         "completedAt": _format_datetime(sync_run.completed_at),
@@ -272,22 +314,33 @@ def _serialize_webhook_health(connection) -> dict[str, object] | None:
         and getattr(connection, "last_processed_event_id", None) is None
     ):
         return None
-    previous_secret_deliveries = getattr(connection, "previous_secret_deliveries_during_grace", 0)
+    previous_secret_deliveries = getattr(
+        connection, "previous_secret_deliveries_during_grace", 0
+    )
     last_previous_secret_accepted_at = getattr(
         connection, "last_previous_secret_accepted_at", None
     )
     return {
-        "status": _enum_value(getattr(connection, "webhook_health_state", None)) or "healthy",
-        "lastRejectedReason": _enum_value(
+        "webhookStatus": _enum_value(getattr(connection, "webhook_health_state", None))
+        or "healthy",
+        "providerReachabilityStatus": _enum_value(
+            getattr(connection, "provider_reachability_status", None)
+        )
+        or "reachable",
+        "lastRejectionReason": _enum_value(
             getattr(connection, "last_webhook_rejection_reason", None)
         ),
-        "lastRejectedAt": _format_datetime(
+        "lastRejectionAt": _format_datetime(
             getattr(connection, "last_webhook_rejected_at", None)
         ),
         "rotationState": _serialize_rotation_state(connection),
-        "graceUntil": _format_datetime(getattr(connection, "webhook_secret_grace_until", None)),
+        "graceUntil": _format_datetime(
+            getattr(connection, "webhook_secret_grace_until", None)
+        ),
         "previousSecretDeliveriesDuringGrace": previous_secret_deliveries,
-        "lastPreviousSecretAcceptedAt": _format_datetime(last_previous_secret_accepted_at),
+        "lastPreviousSecretAcceptedAt": _format_datetime(
+            last_previous_secret_accepted_at
+        ),
     }
 
 

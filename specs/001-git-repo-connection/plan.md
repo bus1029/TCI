@@ -58,9 +58,9 @@
 | credential 만료/취소 | 연결 상태를 `reauth_required`로 바꾸고, 운영자가 자격 증명을 다시 등록하기 전까지 신규 검증과 수집을 차단한다. |
 | 기본 ref 삭제/이름 변경 | 다음 검증 또는 수집 시 연결 상태를 `ref_missing`으로 바꾸고, 운영자가 새 기본 ref를 고르기 전까지 신규 sync run을 차단한다. |
 | 추가 브랜치/태그 상시 분석 | 현재 연결이 기본 ref 1개만 지원함을 UI/API에서 명시하고, `새 연결 생성` 또는 `기본 ref 교체` 중 하나를 선택하게 한다. |
-| secret 누락 | 연결의 canonical 상태는 유지하고, delivery는 `secret_missing` 거부 사유로 기록하며 `webhookHealth.status = missing_secret`로 노출한다. |
-| secret 불일치 | 연결의 canonical 상태는 `active`를 유지하되 `webhookHealth.status = secret_mismatch_detected`로 노출하고, 운영자에게 저장된 secret과 GitHub 설정을 함께 재설정하라고 안내한다. |
-| 기타 서명 실패 | delivery는 `signature_invalid`로 기록하고 최근 실패 상태를 `webhookHealth.status = signature_invalid_recently`로 노출한다. |
+| secret 누락 | 연결의 canonical 상태는 유지하고, delivery는 `secret_missing` 거부 사유로 기록하며 `webhookHealth.webhookStatus = missing_secret`로 노출한다. |
+| secret 불일치 | 연결의 canonical 상태는 `active`를 유지하되 `webhookHealth.webhookStatus = secret_mismatch_detected`로 노출하고, 운영자에게 저장된 secret과 GitHub 설정을 함께 재설정하라고 안내한다. |
+| 기타 서명 실패 | delivery는 `signature_invalid`로 기록하고 최근 실패 상태를 `webhookHealth.webhookStatus = signature_invalid_recently`로 노출한다. |
 | webhook secret 회전 | 새 secret을 활성화할 때 직전 secret은 `previous_grace` 상태로 24시간 유지한다. grace 기간에는 current/previous 둘 다 서명 검증에 사용할 수 있으며, 어떤 secret이 검증에 쓰였는지 이벤트에 남긴다. grace 종료 후 previous secret은 자동 거부 대상으로 전환한다. |
 | Commit 이벤트 의미 | GitHub의 별도 commit webhook을 전제하지 않고 Push/PR payload 안의 commit 메타데이터를 `commit_recorded` 도메인 이벤트로 분리 저장한다. |
 | 빈 수집 결과 | 규칙 저장 시 `empty_result_risk` 경고를 반환하고, 실제 스냅샷 실행에서는 `NO_INCLUDED_FILES`로 실패 처리한다. |

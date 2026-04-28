@@ -1,18 +1,22 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from pydantic import ValidationError
 
+from tci.api.operator_auth import require_operator_auth
 from tci.api.schemas.repository_connection import CreateRepositoryConnectionRequest
 from tci.domain.services.create_repository_connection import (
     CreateRepositoryConnectionCommand,
     create_repository_connection,
 )
 from tci.domain.services.list_repository_connections import list_repository_connections
-from tci.domain.services.repository_connection_support import RepositoryConnectionProblem
+from tci.domain.services.repository_connection_support import (
+    RepositoryConnectionProblem,
+)
 
 from ._common import (
+    FormBodyTooLarge,
     build_template_context,
     enforce_same_origin,
     extract_workspace_id_from_query,
@@ -20,7 +24,11 @@ from ._common import (
 )
 
 
-router = APIRouter(tags=["RepositoryConnectionsWeb"], include_in_schema=False)
+router = APIRouter(
+    tags=["RepositoryConnectionsWeb"],
+    include_in_schema=False,
+    dependencies=[Depends(require_operator_auth)],
+)
 
 
 @router.get("/connections")
@@ -47,7 +55,10 @@ async def create_repository_connection_page(request: Request):
     if same_origin_error is not None:
         return same_origin_error
 
-    form_data = await parse_simple_form_body(request)
+    try:
+        form_data = await parse_simple_form_body(request)
+    except FormBodyTooLarge:
+        return PlainTextResponse("요청 본문이 너무 큽니다.", status_code=413)
     try:
         payload = CreateRepositoryConnectionRequest.model_validate(
             {
