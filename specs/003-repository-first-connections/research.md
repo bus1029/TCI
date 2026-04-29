@@ -41,16 +41,17 @@
 
 ## 결정 4: create API는 planningInputReferenceId를 제거하고 workspace header를 기준으로 생성한다
 
-**Decision**: `POST /api/repository-connections`는 `X-TCI-Workspace-Id`와 provider/remote/credential/default ref 입력만으로 connection을 생성한다. `planningInputReferenceId`는 신규 contract에서 제거하며, 구 클라이언트가 이 필드 또는 동등한 planning/spec/plan 참조 필드를 보내면 요청을 거부하고 저장하지 않는다.
+**Decision**: `POST /api/repository-connections`는 `X-TCI-Workspace-Id`와 provider/remote/credential/default ref 입력만으로 connection을 생성한다. `planningInputReferenceId`, `planningInputReference`, `planningTrace`, `traceability.planningInputReference`, `approvedSpecPath`, `approvedPlanPath`, `specPath`, `planPath`는 신규 contract에서 제거하며, 구 클라이언트가 이 필드 또는 동등한 planning/spec/plan 참조 필드를 보내면 요청을 거부하고 저장하지 않는다.
 
 **Rationale**:
 - 현 route는 이미 workspace header를 요구한다.
 - create service가 planning reference를 조회해 workspace를 재확인하는 역할을 하고 있으나, 새 모델에서는 connection 자체의 `workspace_id`가 canonical이다.
 - obsolete field를 무시하면 클라이언트가 planning trace가 저장된다고 오해할 수 있으므로 validation error로 빠르게 드러내는 편이 안전하다.
 - 새 happy path는 field 없이 성공해야 한다.
+- 기존 GitHub/GitLab 호환성은 provider별 remote 검증, credential 검증, webhook/event/snapshot 의미와 기존 legacy row 운영 보존을 뜻하며, 새 create 요청에서 planning/spec/plan 참조를 계속 받는 것을 포함하지 않는다.
 
 **Alternatives considered**:
-- `planningInputReferenceId` optional 유지: client가 계속 보낼 유인이 남고 시작점 전환이 흐려진다.
+- planning/spec/plan 참조 필드 optional 유지: client가 계속 보낼 유인이 남고 시작점 전환이 흐려진다.
 - `planningInputReferenceId`를 조용히 ignore: 데이터 손상은 피하지만 client migration 실패를 숨긴다.
 - 새 endpoint 추가: 같은 기능의 create endpoint가 둘로 갈라져 호환성 테스트가 복잡해진다.
 

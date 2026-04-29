@@ -33,5 +33,6 @@
 ## Notes
 
 - Validation passed after remediation for active-baseline status, US1/US3 scope boundary, and SC-001 evidence measurability.
+- Validation refreshed after cross-artifact analysis remediation for legacy create compatibility wording, obsolete planning field scope, and planning-free snapshot path coverage.
 - No clarification markers remain.
 - Existing GitHub/GitLab compatibility is explicitly covered by User Story 2, FR-005 through FR-009, FR-014 through FR-016, and SC-003/SC-006.

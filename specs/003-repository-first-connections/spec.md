@@ -27,6 +27,9 @@
 - Q: SC-001의 표본/분모를 어떻게 고정할 것인가? → A: 대표 운영자 3명이 GitHub 1회와 GitLab 1회씩 총 6회 수행하고, 6회 중 5회 이상 10분 이내 성공해야 한다.
 - Q: SC-004의 사용자 구분 성공률은 어떻게 측정할 것인가? → A: 대표 운영자 3명이 mixed-provider 화면에서 20개 식별 과제를 수행하고, 총 60개 중 57개 이상 정답이어야 한다.
 - Q: FR-003b의 workspace shared read-only credential 경계는 어디까지 검증해야 하는가? → A: 생성, 검증, 수집, 이벤트 처리, 상태 조회, 재검증 모두 shared read-only credential만 허용해야 한다.
+- Q: 기존 GitHub/GitLab 생성 흐름 호환성은 구 planning 기반 create payload 수락까지 포함하는가? → A: 아니다. 기존 provider 의미와 기존 연결 운영만 유지하고, 새 create payload의 planning 참조는 거부한다.
+- Q: 새 create 요청에서 거부할 planning/spec/plan 참조 필드는 무엇인가? → A: `planningInputReferenceId`, `planningInputReference`, `planningTrace`, `traceability.planningInputReference`, `approvedSpecPath`, `approvedPlanPath`, `specPath`, `planPath`를 포함해 planning/spec/plan 출처를 전달하는 동등 필드를 거부한다.
+- Q: planning trace가 없는 새 연결에서 snapshot 범위는 어디까지 보장해야 하는가? → A: 연결 검증, 수집 시작, snapshot 생성, snapshot 상세 traceability, 상태 조회가 모두 정상 동작해야 한다.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -98,7 +101,7 @@
 
 - **FR-001**: 시스템은 워크스페이스 생성 이후 해당 워크스페이스에서 저장소 연결을 시작할 수 있게 해야 한다.
 - **FR-002**: 시스템은 새 저장소 연결 생성 시 계획 입력, 승인된 spec, 승인된 plan 참조를 요구하거나 저장하지 않아야 한다.
-- **FR-002a**: 시스템은 새 저장소 연결 생성 요청에 `planningInputReferenceId` 또는 동등한 planning/spec/plan 참조 필드가 포함되면 해당 요청을 거부하고, 해당 값을 새 연결에 저장하지 않아야 한다.
+- **FR-002a**: 시스템은 새 저장소 연결 생성 요청에 `planningInputReferenceId`, `planningInputReference`, `planningTrace`, `traceability.planningInputReference`, `approvedSpecPath`, `approvedPlanPath`, `specPath`, `planPath` 또는 동등한 planning/spec/plan 출처 참조 필드가 포함되면 해당 요청을 거부하고, 해당 값을 새 연결에 저장하지 않아야 한다.
 - **FR-003**: 시스템은 GitHub 저장소 연결과 GitLab 저장소 연결을 모두 워크스페이스 기반 시작 흐름에서 선택 가능한 대상으로 제공해야 한다.
 - **FR-003a**: 시스템은 저장소 연결 대상 선택 시 접근 가능한 후보 목록 선택과 수동 저장소 URL 입력을 모두 지원해야 한다.
 - **FR-003b**: 시스템은 후보 목록 조회에 사용자 개인 provider 권한을 사용할 수 있지만, 생성된 저장소 연결의 생성, 검증, 수집, 이벤트 처리, 상태 조회, 재검증은 워크스페이스 공유 읽기 전용 권한만으로 운영해야 한다.
@@ -108,8 +111,8 @@
 - **FR-005**: 시스템은 기존 계획/spec/plan 참조가 있는 GitHub 및 GitLab 연결의 이력과 운영 상태를 보존해야 한다.
 - **FR-006**: 시스템은 기존 계획/spec/plan 참조를 기존 연결에만 남는 선택적 legacy 이력 정보로 취급해야 하며, 새 워크스페이스 기반 연결에는 새 planning trace를 생성하지 않아야 한다.
 - **FR-007**: 시스템은 연결 상세에서 연결 출처가 워크스페이스 기반인지, 기존 계획 기반 이력을 포함하는지 사용자가 이해할 수 있게 표시해야 한다.
-- **FR-008**: 시스템은 기존 GitHub Cloud 연결의 생성, 상태 조회, 이벤트 조회, 스냅샷 조회 흐름을 새 시작점 전환 이후에도 유지해야 한다.
-- **FR-009**: 시스템은 기존 온프레미스 GitLab 연결의 생성, 상태 조회, 이벤트 조회, 스냅샷 조회 흐름을 새 시작점 전환 이후에도 유지해야 한다.
+- **FR-008**: 시스템은 기존 GitHub Cloud 연결의 provider별 remote 검증, credential 검증, 상태 조회, 이벤트 조회, 스냅샷 조회, webhook 처리 의미를 새 시작점 전환 이후에도 유지해야 한다. 단, 새 저장소 연결 생성 요청의 planning/spec/plan 참조 필드 수락은 호환성 범위에 포함하지 않는다.
+- **FR-009**: 시스템은 기존 온프레미스 GitLab 연결의 provider별 remote 검증, credential 검증, 상태 조회, 이벤트 조회, 스냅샷 조회, webhook 처리 의미를 새 시작점 전환 이후에도 유지해야 한다. 단, 새 저장소 연결 생성 요청의 planning/spec/plan 참조 필드 수락은 호환성 범위에 포함하지 않는다.
 - **FR-010**: 시스템은 한 워크스페이스 안에서 동일 provider와 동일 저장소가 후보 목록 또는 수동 URL 입력 중 어떤 경로로 제출되더라도 중복 연결되지 않도록 해야 한다.
 - **FR-011**: 시스템은 GitHub와 GitLab 저장소가 같은 이름이나 유사한 경로를 가져도 provider별 연결, 상태, 이벤트, 스냅샷, 이력을 분리해 보여줘야 한다.
 - **FR-012**: 시스템은 사용자가 접근 권한이 없는 저장소를 연결하려 할 때 연결 생성을 완료하지 않고 권한 문제와 해결 방법을 알려줘야 한다.
@@ -120,7 +123,7 @@
 - **FR-014a**: 시스템은 기존 planning 기반 연결의 기존 `workspace_id`를 워크스페이스 기반 모델의 canonical 귀속으로 사용해야 한다.
 - **FR-014b**: 시스템은 기존 `workspace_id`가 없거나 일관되지 않아 귀속이 불명확한 기존 연결을 삭제하거나 숨기지 않고 별도 호환성 상태로 표시해야 한다.
 - **FR-015**: 시스템은 새 워크스페이스 기반 연결과 기존 계획 기반 연결이 함께 있는 경우에도 동일한 provider별 운영 행동을 제공해야 한다.
-- **FR-016**: 시스템은 새 연결에 계획/spec/plan 참조가 저장되지 않아도 연결 검증, 수집 시작, 상태 조회가 정상 흐름으로 처리되게 해야 한다.
+- **FR-016**: 시스템은 새 연결에 계획/spec/plan 참조가 저장되지 않아도 연결 검증, 수집 시작, snapshot 생성, snapshot 상세 traceability, 상태 조회가 정상 흐름으로 처리되게 해야 한다.
 
 ### Key Entities
 

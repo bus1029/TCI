@@ -7,7 +7,7 @@
 핵심 원칙:
 
 - 새 `RepositoryConnection`은 `planning_input_reference_id = null`이 정상이다.
-- 새 create request에 `planningInputReferenceId` 또는 동등한 planning/spec/plan 참조 필드가 있으면 connection을 만들지 않는다.
+- 새 create request에 `planningInputReferenceId`, `planningInputReference`, `planningTrace`, `traceability.planningInputReference`, `approvedSpecPath`, `approvedPlanPath`, `specPath`, `planPath` 또는 동등한 planning/spec/plan 참조 필드가 있으면 connection을 만들지 않는다.
 - 기존 planning 기반 연결은 planning reference를 legacy provenance로 보존한다.
 - `workspace_id`가 connection의 canonical workspace 귀속이다.
 - 개인 provider grant는 candidate discovery에만 사용하고 repository operation credential로 저장하지 않는다.
@@ -92,7 +92,7 @@
 **Validation Rules**:
 
 - New workspace-based connections MUST store `planning_input_reference_id = null`.
-- New workspace-based create requests MUST reject obsolete planning/spec/plan reference fields before persistence.
+- New workspace-based create requests MUST reject obsolete planning/spec/plan reference fields before persistence. The explicit rejection set includes `planningInputReferenceId`, `planningInputReference`, `planningTrace`, `traceability.planningInputReference`, `approvedSpecPath`, `approvedPlanPath`, `specPath`, and `planPath`; equivalent provenance fields are also invalid.
 - Existing rows with non-null `planning_input_reference_id` remain valid.
 - `(workspace_id, provider, canonical_repository_key)` must be unique for active/non-deleted connections.
 - Candidate-selected and manual URL create paths must compute the same `canonical_repository_key`.
@@ -196,7 +196,7 @@ legacy_unassigned -> legacy_planning or workspace_repository after operator repa
 
 **Changes**:
 
-- Snapshot detail traceability must allow `planningInputReference = null`.
+- Snapshot creation, snapshot manifest traceability, snapshot detail loading, and snapshot detail serialization must allow `planningInputReference = null`.
 - Snapshot lineage remains reconstructable through `connectionId`, `scopeRuleVersionId`, `syncRunId`, and `triggerEventId`.
 
 ### 10. ConnectionOrigin

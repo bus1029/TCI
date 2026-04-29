@@ -30,20 +30,20 @@
 - [ ] T003 [P] Add Alembic migration regression tests for FR-002/FR-005/FR-006 nullable planning references and preserved legacy rows in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_migration.py`
 - [ ] T004 [P] Add model/unit tests for FR-007/FR-014 connection origin classification in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_origin.py`
 - [ ] T005 [P] Add serializer unit tests for FR-006/FR-007 nullable `planningInputReference` and `origin` blocks in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_serialization.py`
-- [ ] T006 [P] Add snapshot traceability unit tests for FR-016 connections with and without legacy planning references in `pilot-git-repo-connection/tests/unit/repository_connections/test_snapshot_traceability.py`
+- [ ] T006 [P] Add snapshot creation/detail/traceability unit tests for FR-016 connections with and without legacy planning references in `pilot-git-repo-connection/tests/unit/repository_connections/test_snapshot_traceability.py`
 - [ ] T007 [P] Add repository operation credential boundary unit tests for FR-003b covering create, verify, collect, event, status, and reverify paths in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_operation_credentials.py`
 
 ### Implementation for Foundational Work
 
 - [ ] T008 Add Alembic migration for FR-002/FR-005/FR-006 making `repository_connections.planning_input_reference_id` nullable and preserving existing values in `pilot-git-repo-connection/alembic/versions/003_repository_first_connections.py`
 - [ ] T009 Update SQLAlchemy models for FR-006/FR-007 nullable planning reference and connection origin support in `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
-- [ ] T010 Update repository connection draft/create persistence for FR-002/FR-010 to allow null planning reference and enforce workspace/provider/repository duplicate keys in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
+- [ ] T010 Update repository connection draft/create persistence for FR-002/FR-010 to allow null planning reference and enforce nullable-safe workspace/provider/repository duplicate constraints in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
 - [ ] T011 Update connection detail/list persistence loading for FR-004/FR-014/FR-016 to tolerate missing planning reference in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
-- [ ] T012 Update traceability builder for FR-006/FR-016 to return optional legacy planning provenance in `pilot-git-repo-connection/src/tci/domain/services/build_traceability_reference.py`
+- [ ] T012 Update traceability builder for FR-006/FR-016 to return optional legacy planning provenance for connection and snapshot paths in `pilot-git-repo-connection/src/tci/domain/services/build_traceability_reference.py`
 - [ ] T013 Update repository connection schemas and serializers for FR-006/FR-007 nullable traceability and `origin` in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
-- [ ] T014 Update repository-first OpenAPI contract for FR-002a/FR-003b/FR-012b nullable planning trace, obsolete field rejection, and shared credential operation boundary in `specs/003-repository-first-connections/contracts/repository-first-connections.openapi.yaml`
+- [ ] T014 Update repository-first OpenAPI contract for FR-002a/FR-003b/FR-012b nullable planning trace, explicit obsolete planning field rejection matrix, and shared credential operation boundary in `specs/003-repository-first-connections/contracts/repository-first-connections.openapi.yaml`
 - [ ] T015 Update shared connection test helpers for FR-002/FR-005/FR-014 workspace-first and legacy-planning fixture creation in `pilot-git-repo-connection/tests/support/repository_connection_testkit.py`
-- [ ] T016 Record foundational FR-002/FR-006/FR-007/FR-014/FR-016 migration/model/serializer verification commands in `specs/003-repository-first-connections/delivery-evidence.md`
+- [ ] T016 Record foundational FR-002/FR-006/FR-007/FR-014/FR-016 migration/model/serializer/snapshot-path verification commands in `specs/003-repository-first-connections/delivery-evidence.md`
 
 **Checkpoint**: Foundation ready. New connections can be represented without planning trace, legacy connections can still be loaded, and credential boundary tests exist for all repository operation paths.
 
@@ -58,7 +58,7 @@
 ### Tests for User Story 1
 
 - [ ] T017 [P] [US1] Add contract tests for `POST /api/repository-connections` succeeding without `planningInputReferenceId` in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
-- [ ] T018 [P] [US1] Add contract tests proving `POST /api/repository-connections` rejects obsolete `planningInputReferenceId` and creates no connection in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
+- [ ] T018 [P] [US1] Add contract tests proving `POST /api/repository-connections` rejects each obsolete planning/spec/plan reference field and creates no connection in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
 - [ ] T019 [P] [US1] Add contract tests proving shared read-only credential is required for create and is reflected in permission problem responses in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
 - [ ] T020 [P] [US1] Add GitHub workspace-first create/detail/snapshot integration test in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_connection_flow.py`
 - [ ] T021 [P] [US1] Add GitLab workspace-first create/detail/snapshot integration test in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_connection_flow.py`
@@ -66,11 +66,11 @@
 
 ### Implementation for User Story 1
 
-- [ ] T023 [US1] Remove `planningInputReferenceId` from create request validation and reject obsolete planning reference fields in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
+- [ ] T023 [US1] Remove planning/spec/plan reference fields from create request validation and reject `planningInputReferenceId`, `planningInputReference`, `planningTrace`, `traceability`, `approvedSpecPath`, `approvedPlanPath`, `specPath`, and `planPath` in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
 - [ ] T024 [US1] Update create route to build connection command from workspace header and repository fields only in `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
 - [ ] T025 [US1] Update create command/service to skip planning reference lookup and store null planning reference for new rows in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
 - [ ] T026 [US1] Ensure manual URL create path still uses existing GitHub/GitLab parser, allowlist, shared read-only credential validator, and mirror sync in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
-- [ ] T027 [US1] Update only snapshot traceability serialization to work when connection planning reference is null, without redesigning snapshot creation rules, in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
+- [ ] T027 [US1] Update planning-free snapshot creation/detail serialization to work when connection planning reference is null, without redesigning snapshot creation rules, across `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py`, `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`, `pilot-git-repo-connection/src/tci/domain/services/get_code_snapshot_detail.py`, and `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
 - [ ] T028 [US1] Update operator create route to remove planning input selection requirement in `pilot-git-repo-connection/src/tci/web/routes/repository_connections.py`
 - [ ] T029 [US1] Update operator connection create template to show workspace repository connection fields without planning input controls in `pilot-git-repo-connection/src/tci/web/templates/connections/create.html`
 - [ ] T030 [US1] Record US1 GitHub/GitLab workspace-first, obsolete-field rejection, permission problem, and SC-001 six-attempt timing validation evidence in `specs/003-repository-first-connections/delivery-evidence.md`
@@ -123,8 +123,8 @@
 - [ ] T048 [P] [US3] Add operator integration test for candidate list, empty state, and manual URL fallback in `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_connection_pages.py`
 - [ ] T049 [P] [US3] Add integration test for duplicate prevention across candidate-selected and manual URL connections in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_connection_flow.py`
 - [ ] T050 [P] [US3] Add unit tests proving personal provider candidate grants are not persisted as operation credentials in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_credentials.py`
-- [ ] T051 [P] [US3] Add contract and integration tests for missing, expired, revoked, or invalid shared read-only credential create failures in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_permission_failures.py`
-- [ ] T052 [P] [US3] Add integration tests proving verify, collect, event, status, and reverify paths never use personal provider grants in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_operation_credential_boundary.py`
+- [ ] T051 [P] [US3] Add contract and integration tests for missing, expired, revoked, or invalid shared read-only credential create failures and remediation responses in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_permission_failures.py`
+- [ ] T052 [P] [US3] Add integration tests proving verify, collect, event, status, and reverify paths never use personal provider grants and return operation-appropriate remediation problems on credential boundary failure in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_operation_credential_boundary.py`
 - [ ] T053 [P] [US3] Add mixed-provider workspace integration test proving GitHub/GitLab status, event, snapshot, and history projections stay separated in `pilot-git-repo-connection/tests/integration/repository_connections/test_mixed_provider_workspace.py`
 - [ ] T054 [P] [US3] Add operator UI identification evidence fixture for SC-004 60-task provider/repository distinction rehearsal in `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_mixed_provider_identification.py`
 
@@ -135,10 +135,10 @@
 - [ ] T057 [US3] Add repository candidates API route in `pilot-git-repo-connection/src/tci/api/routes/repository_candidates.py`
 - [ ] T058 [US3] Register repository candidates route in FastAPI app in `pilot-git-repo-connection/src/tci/app.py`
 - [ ] T059 [US3] Add canonical repository identity helper for provider+normalized repository comparison in `pilot-git-repo-connection/src/tci/domain/services/repository_connection_support.py`
-- [ ] T060 [US3] Apply canonical duplicate prevention in connection create persistence in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
+- [ ] T060 [US3] Apply canonical duplicate prevention in create orchestration using the shared identity helper before persistence in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
 - [ ] T061 [US3] Enforce candidate discovery grant versus workspace shared read-only operation credential boundary in create service in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
 - [ ] T062 [US3] Enforce workspace shared read-only credential usage for verification, collection, event, status, and reverify support paths in `pilot-git-repo-connection/src/tci/domain/services/repository_connection_support.py`
-- [ ] T063 [US3] Map repository authorization, expired grant, revoked access, and shared credential validation failures to remediation problem responses in `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
+- [ ] T063 [US3] Map repository authorization, expired grant, revoked access, shared credential validation failures, and operation credential boundary failures to remediation problem responses in `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
 - [ ] T064 [US3] Update operator create route to load candidate lists, manual URL guidance, and credential failure states in `pilot-git-repo-connection/src/tci/web/routes/repository_connections.py`
 - [ ] T065 [US3] Update operator create template to render provider candidates, empty state, provider identity, manual URL fallback, and credential remediation guidance in `pilot-git-repo-connection/src/tci/web/templates/connections/create.html`
 - [ ] T066 [US3] Update operator list/detail UI to show provider, repository identity, workspace context, and origin clearly for SC-004 distinction in `pilot-git-repo-connection/src/tci/web/templates/connections/list.html`
@@ -153,7 +153,7 @@
 **Purpose**: Validate full spec coverage, update examples, and capture final evidence.
 
 - [ ] T068 [P] Update quickstart with SC-001 timing rehearsal commands, SC-004 identification rehearsal commands, actual command outputs, and any finalized test names in `specs/003-repository-first-connections/quickstart.md`
-- [ ] T069 Run FR-001/FR-002/FR-002a/FR-003/FR-003a/FR-003b/FR-003c/FR-003d/FR-016 repository-first focused contract and integration checks and record results in `specs/003-repository-first-connections/delivery-evidence.md`
+- [ ] T069 Run FR-001/FR-002/FR-002a/FR-003/FR-003a/FR-003b/FR-003c/FR-003d/FR-016 repository-first focused contract, obsolete-field matrix, planning-free snapshot path, and integration checks and record results in `specs/003-repository-first-connections/delivery-evidence.md`
 - [ ] T070 Run FR-005/FR-008/FR-009/FR-014/FR-014a/FR-014b/FR-015 existing GitHub/GitLab regression suite and record results in `specs/003-repository-first-connections/delivery-evidence.md`
 - [ ] T071 Run the SC-001 timed operator rehearsal for GitHub and GitLab workspace-first connection completion and record 6 attempts, start/end timestamps, elapsed minutes, and 5-of-6 success calculation in `specs/003-repository-first-connections/delivery-evidence.md`
 - [ ] T072 Run the SC-004 mixed-provider identification rehearsal and record 60 answers, per-task correctness, and 57-of-60 success calculation in `specs/003-repository-first-connections/delivery-evidence.md`
@@ -180,7 +180,7 @@
 
 ### Blocking Common Work
 
-The following tasks are common prerequisites and must be treated as highest-priority development work: T003-T016. They define nullable planning provenance, origin read model, shared serializer behavior, repository operation credential boundary, contract shape, and test fixture support.
+The following tasks are common prerequisites and must be treated as highest-priority development work: T003-T016. They define nullable planning provenance, origin read model, shared serializer and snapshot-path behavior, repository operation credential boundary, contract shape, and test fixture support.
 
 ---
 
@@ -198,7 +198,7 @@ The following tasks are common prerequisites and must be treated as highest-prio
 
 ```text
 Task: T017 Contract test for create without planningInputReferenceId
-Task: T018 Contract test for obsolete planningInputReferenceId rejection
+Task: T018 Contract test for obsolete planning/spec/plan reference field rejection matrix
 Task: T019 Contract test for shared read-only credential problem responses
 Task: T020 GitHub workspace-first integration test
 Task: T021 GitLab workspace-first integration test
@@ -244,8 +244,8 @@ Task: T054 Mixed-provider identification evidence fixture
 
 ### Incremental Delivery
 
-1. Foundation: nullable legacy planning relation, origin read model, serializer/test helpers, repository operation credential boundary.
-2. US1: repository-first create path, obsolete planning field rejection, permission problem responses, SC-001 evidence.
+1. Foundation: nullable legacy planning relation, origin read model, serializer/snapshot-path test helpers, repository operation credential boundary.
+2. US1: repository-first create path, obsolete planning field rejection matrix, planning-free snapshot path, permission problem responses, SC-001 evidence.
 3. US2: legacy GitHub/GitLab compatibility and canonical workspace preservation.
 4. US3: candidate list, manual URL fallback, duplicate prevention, credential boundary across operation paths, permission failure handling, mixed-provider separation, SC-004 identification evidence.
 5. Final: evidence mapping and full regression.

@@ -54,12 +54,13 @@
 3. Verify duplicate prevention returns existing connection guidance.
 4. Repeat in the opposite order.
 
-## Scenario 5: Obsolete Planning Field Rejection
+## Scenario 5: Obsolete Planning Field Rejection Matrix
 
 1. Create or choose a workspace ID.
 2. Submit `POST /api/repository-connections` with otherwise valid repository fields plus `planningInputReferenceId`.
 3. Verify the request is rejected with `code = obsolete_planning_reference`.
 4. Verify no connection row, initial sync, or snapshot job is created from the rejected request.
+5. Repeat the rejection check for `planningInputReference`, `planningTrace`, `traceability.planningInputReference`, `approvedSpecPath`, `approvedPlanPath`, `specPath`, and `planPath`.
 
 ## Scenario 6: Credential Boundary and Permission Failure
 
@@ -102,8 +103,9 @@ pytest tests/integration/repository_connections/test_gitlab_connection_lifecycle
 Add new focused tests for:
 
 - create without `planningInputReferenceId`
-- reject obsolete `planningInputReferenceId`
+- reject each obsolete planning/spec/plan reference field
 - detail/snapshot nullable planning trace
+- planning-free snapshot creation, manifest traceability, and snapshot detail loading
 - repository candidate empty state
 - personal provider grant cannot become operation credential
 - shared read-only credential failure prevents active connection creation

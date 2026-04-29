@@ -118,6 +118,13 @@ components:
       enum: [github_cloud, gitlab_self_managed]
     CreateRepositoryConnectionRequest:
       type: object
+      additionalProperties: false
+      description: >
+        Workspace-first create payload. Planning/spec/plan provenance fields are
+        obsolete on this endpoint; requests containing planningInputReferenceId,
+        planningInputReference, planningTrace, traceability, approvedSpecPath,
+        approvedPlanPath, specPath, planPath, or equivalent provenance fields
+        must be rejected before persistence.
       required:
         - provider
         - remoteUrl
@@ -146,7 +153,15 @@ components:
         credential:
           $ref: '#/components/schemas/CredentialInput'
       not:
-        required: [planningInputReferenceId]
+        anyOf:
+          - required: [planningInputReferenceId]
+          - required: [planningInputReference]
+          - required: [planningTrace]
+          - required: [traceability]
+          - required: [approvedSpecPath]
+          - required: [approvedPlanPath]
+          - required: [specPath]
+          - required: [planPath]
     CredentialInput:
       type: object
       description: Workspace shared read-only repository operation credential. Personal provider grants used for candidate discovery are not accepted here and must not be used for verification, collection, event processing, status lookup, or reverify operations.
