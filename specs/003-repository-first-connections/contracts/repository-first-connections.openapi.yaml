@@ -1,0 +1,303 @@
+openapi: 3.1.0
+info:
+  title: TCI Repository-First Connections API
+  version: 0.3.0
+  description: >
+    Workspace-based repository connection contract changes. Existing GitHub and
+    GitLab provider behavior remains compatible; planning trace is optional
+    legacy provenance.
+servers:
+  - url: https://tci.example.com
+tags:
+  - name: RepositoryConnections
+  - name: RepositoryCandidates
+security:
+  - OperatorHeaderToken: []
+  - OperatorBearerToken: []
+  - OperatorCookieToken: []
+paths:
+  /api/repository-candidates:
+    get:
+      tags: [RepositoryCandidates]
+      summary: 워크스페이스 저장소 후보 목록 조회
+      operationId: listRepositoryCandidates
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - name: provider
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/RepositoryProvider'
+      responses:
+        '200':
+          description: 후보 목록 또는 수동 입력 안내
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryCandidateListResponse'
+  /api/repository-connections:
+    post:
+      tags: [RepositoryConnections]
+      summary: 워크스페이스 기반 저장소 연결 생성
+      operationId: createRepositoryConnection
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRepositoryConnectionRequest'
+      responses:
+        '201':
+          description: 생성 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryConnectionResponse'
+        '400':
+          description: 잘못된 입력 또는 중복 연결
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+  /api/repository-connections/{connectionId}:
+    get:
+      tags: [RepositoryConnections]
+      summary: 저장소 연결 상세 조회
+      operationId: getRepositoryConnection
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ConnectionId'
+      responses:
+        '200':
+          description: 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryConnectionDetailResponse'
+components:
+  securitySchemes:
+    OperatorHeaderToken:
+      type: apiKey
+      in: header
+      name: X-TCI-Operator-Token
+    OperatorBearerToken:
+      type: http
+      scheme: bearer
+    OperatorCookieToken:
+      type: apiKey
+      in: cookie
+      name: tci_operator_token
+  parameters:
+    WorkspaceId:
+      name: X-TCI-Workspace-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ConnectionId:
+      name: connectionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    RepositoryProvider:
+      type: string
+      enum: [github_cloud, gitlab_self_managed]
+    CreateRepositoryConnectionRequest:
+      type: object
+      required:
+        - provider
+        - remoteUrl
+        - transport
+        - defaultRefType
+        - defaultRefName
+        - credential
+      properties:
+        provider:
+          $ref: '#/components/schemas/RepositoryProvider'
+        candidateId:
+          type: string
+          nullable: true
+          description: Optional opaque candidate identifier returned by candidate listing.
+        remoteUrl:
+          type: string
+          description: Manual URL or candidate-derived URL. Must not include credentials.
+        transport:
+          type: string
+          enum: [ssh, https, http]
+        defaultRefType:
+          type: string
+          enum: [branch, tag]
+        defaultRefName:
+          type: string
+        credential:
+          $ref: '#/components/schemas/CredentialInput'
+      not:
+        required: [planningInputReferenceId]
+    CredentialInput:
+      type: object
+      required: [type, secret]
+      properties:
+        type:
+          type: string
+          enum: [ssh_private_key, https_pat]
+        secret:
+          type: string
+        fingerprint:
+          type: string
+          nullable: true
+    RepositoryCandidateListResponse:
+      type: object
+      required: [items, manualUrlAllowed]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RepositoryCandidate'
+        manualUrlAllowed:
+          type: boolean
+          const: true
+        emptyReason:
+          type: string
+          enum: [provider_not_configured, no_accessible_repositories, filtered_by_provider, none]
+        guidance:
+          type: string
+    RepositoryCandidate:
+      type: object
+      required:
+        - provider
+        - providerScope
+        - repositoryOwner
+        - repositoryName
+        - providerProjectPath
+        - canonicalRepositoryKey
+        - alreadyConnected
+        - selectable
+        - accessStatus
+      properties:
+        id:
+          type: string
+          description: Opaque candidate identifier.
+        provider:
+          $ref: '#/components/schemas/RepositoryProvider'
+        providerScope:
+          type: string
+          description: Configured provider account or GitLab instance scope.
+        remoteUrl:
+          type: string
+          nullable: true
+        repositoryOwner:
+          type: string
+        repositoryName:
+          type: string
+        providerProjectPath:
+          type: string
+        canonicalRepositoryKey:
+          type: string
+        alreadyConnected:
+          type: boolean
+        existingConnectionId:
+          type: string
+          format: uuid
+          nullable: true
+        selectable:
+          type: boolean
+        accessStatus:
+          type: string
+          enum: [available, not_authorized, provider_not_configured, unknown]
+    RepositoryConnectionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          $ref: '#/components/schemas/RepositoryProvider'
+        remoteUrl:
+          type: string
+        transport:
+          type: string
+        defaultRefType:
+          type: string
+        defaultRefName:
+          type: string
+        status:
+          type: string
+          enum: [active, reauth_required, ref_missing]
+        origin:
+          $ref: '#/components/schemas/ConnectionOrigin'
+    RepositoryConnectionDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/RepositoryConnectionResponse'
+        - type: object
+          properties:
+            traceability:
+              $ref: '#/components/schemas/TraceabilityBlock'
+            lastSuccessfulSnapshotAt:
+              type: string
+              format: date-time
+              nullable: true
+            lastFailedSyncAt:
+              type: string
+              format: date-time
+              nullable: true
+            lastProcessedEvent:
+              type: object
+              nullable: true
+    ConnectionOrigin:
+      type: object
+      required: [kind, hasLegacyPlanningTrace, compatibilityState]
+      properties:
+        kind:
+          type: string
+          enum: [workspace_repository, legacy_planning, legacy_unassigned]
+        hasLegacyPlanningTrace:
+          type: boolean
+        compatibilityState:
+          type: string
+          enum: [normal, legacy_trace_preserved, workspace_assignment_unclear]
+        message:
+          type: string
+    TraceabilityBlock:
+      type: object
+      properties:
+        planningInputReference:
+          anyOf:
+            - $ref: '#/components/schemas/PlanningInputReferenceSummary'
+            - type: 'null'
+        activeScopeRuleVersionId:
+          type: string
+          format: uuid
+          nullable: true
+        latestEventId:
+          type: string
+          format: uuid
+          nullable: true
+        latestSnapshotId:
+          type: string
+          format: uuid
+          nullable: true
+    PlanningInputReferenceSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sourceReference:
+          type: string
+        approvedSpecPath:
+          type: string
+        approvedPlanPath:
+          type: string
+    ProblemResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
