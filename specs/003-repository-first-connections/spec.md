@@ -2,7 +2,7 @@
 
 **Feature Branch**: `003-repository-first-connections`  
 **Created**: 2026-04-29  
-**Status**: Draft  
+**Status**: Accepted as active scope baseline for planning and task generation
 **Input**: User description: "저장소 연결 기능이 어떤 계획 입력과 승인된 spec/plan에서 출발했는지에서 시작하는게 아니라, 기존에 개발한 GitHub이나 GitLab 연동처럼 Repository 연결에서 시작하도록 수정하고 싶다. 기존 GitHub, GitLab 연동 기능의 경우엔 항상 '어떤 계획 입력과 승인된 spec/plan에서 출발'했는지 확인하기 위한 DB 테이블 및 관련 데이터 구조가 존재함. 이젠 spec/plan에서 시작하는게 아니라 사용자가 워크스페이스를 생성하고, 생성된 워크스페이스에서 어떤 Repository(GitHub, GitLab)에 연결하면 좋을지 결정하는 구조로 변경하면 좋겠음. 기존에 개발한 GitHub 및 GitLab 연동 기능과의 호환성을 모두 고려해야 함"
 
 ## Design Input Traceability *(mandatory)*
@@ -11,6 +11,7 @@
 - **Why now**: 저장소 연결의 실제 사용자 흐름은 먼저 워크스페이스를 만들고 그 안에서 연결할 GitHub 또는 GitLab 저장소를 고르는 방식이어야 하며, 승인된 spec/plan 존재 여부가 새 저장소 연결의 선행 조건이 되면 초기 설정 흐름과 기존 GitHub/GitLab 운영 모델이 어긋난다.
 - **Scope baseline**: 워크스페이스 생성 이후 Repository 연결을 시작하는 흐름, GitHub/GitLab 저장소 선택과 연결 생성, 새 연결에서 계획 입력 및 승인된 spec/plan 참조를 필수값에서 선택적 이력으로 전환, 기존 GitHub Cloud 및 온프레미스 GitLab 연결과 이력의 호환성 유지
 - **Out of scope**: 신규 저장소 provider 추가, 저장소 코드 수집/스냅샷 생성 규칙 재설계, provider별 webhook 의미 변경, 기존 GitHub/GitLab 연결 이력 삭제, 계획/spec/plan 산출물 작성 기능 자체 변경, 자동 저장소 추천 알고리즘 도입
+- **Approval note**: 2026-04-29 세션에서 이 문서는 `003-repository-first-connections`의 현재 scope baseline으로 채택되었다. 구현 실행은 spec/plan/tasks 검토 후 별도 명시 승인 전까지 보류한다.
 
 ## Clarifications
 
@@ -33,6 +34,8 @@
 **Why this priority**: 이번 변경의 핵심 가치가 저장소 연결의 시작점을 spec/plan에서 워크스페이스와 Repository 선택으로 옮기는 것이므로, 이 흐름이 독립적으로 동작해야 MVP가 성립한다.
 
 **Independent Test**: 새 워크스페이스를 생성하고 GitHub 또는 GitLab 저장소를 선택해 연결을 완료했을 때, 계획 입력이나 승인된 spec/plan 참조 없이도 연결이 생성되고 운영 가능한 상태로 표시되는지 확인한다.
+
+**MVP Boundary**: 이 스토리의 독립 검증은 수동 URL 입력 경로와 기존 provider 검증 흐름을 통해 완료할 수 있어야 한다. 설정된 provider 계정 또는 GitLab 인스턴스에서 후보 목록을 조회하고 이미 연결된 저장소와 구분하는 판단 지원은 User Story 3에서 완성한다.
 
 **Acceptance Scenarios**:
 
@@ -128,7 +131,7 @@
 
 ### Measurable Outcomes
 
-- **SC-001**: 새 워크스페이스를 만든 사용자의 90% 이상이 계획 입력이나 승인된 spec/plan 선택 없이 GitHub 또는 GitLab 저장소 연결을 10분 이내에 완료할 수 있다.
+- **SC-001**: 대표 운영자 연결 리허설에서 새 워크스페이스를 만든 사용자의 90% 이상이 계획 입력이나 승인된 spec/plan 선택 없이 GitHub 또는 GitLab 저장소 연결을 10분 이내에 완료할 수 있음을 타임스탬프가 포함된 실행 증거로 확인한다.
 - **SC-002**: 새 저장소 연결 수락 테스트의 100%에서 계획 입력, 승인된 spec, 승인된 plan 참조를 저장하지 않아도 연결 생성과 상세 조회가 성공한다.
 - **SC-003**: 기존 GitHub Cloud 및 온프레미스 GitLab 기준선 시나리오의 100%가 시작점 전환 이후에도 추가 수동 우회 없이 성공한다.
 - **SC-004**: 혼합 provider 워크스페이스 테스트에서 사용자의 95% 이상이 GitHub 연결과 GitLab 연결을 provider 및 저장소 식별 정보 기준으로 올바르게 구분한다.
@@ -148,5 +151,6 @@
 
 ## Approval Gate
 
-- Implementation MUST NOT begin until this spec is reviewed and accepted as the active scope baseline.
-- During the initial pilot, generation of this spec does NOT authorize automatic execution of the implement phase.
+- This spec is accepted as the active scope baseline for planning and task generation in the 2026-04-29 session.
+- Implementation MUST NOT begin until the updated spec, plan, and task set are reviewed together and a human explicitly approves implementation.
+- During the initial pilot, generation or update of this spec does NOT authorize automatic execution of the implement phase.

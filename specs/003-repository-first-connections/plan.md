@@ -10,8 +10,8 @@
 ## Change Traceability
 
 **Planning Input**: 2026-04-29 사용자 요청 "저장소 연결 기능이 Repository 연결에서 시작하도록 수정하는 기술 계획", 제약 "clarify 항목은 plan에서 명확히 구체화", "기존 GitHub Cloud, GitLab 연동 기능 관련 코드와의 호환성 고려"  
-**Spec Scope Baseline**: 2026-04-29 clarify 7건이 반영된 `/specs/003-repository-first-connections/spec.md`
-**Scope Changes Since Input**: 승인된 spec 범위를 벗어나지 않는 수준에서 아래 설계 규칙을 plan 단계에서 고정한다.
+**Spec Scope Baseline**: 2026-04-29 clarify 7건과 remediation update가 반영되어 active scope baseline으로 채택된 `/specs/003-repository-first-connections/spec.md`
+**Scope Changes Since Input**: 채택된 spec baseline 범위를 벗어나지 않는 수준에서 아래 설계 규칙을 plan 단계에서 고정한다.
 
 - 새 Repository 연결 생성 payload는 `planningInputReferenceId`를 받지 않는다.
 - 구 클라이언트가 `planningInputReferenceId` 또는 동등한 planning/spec/plan 참조 필드를 보내면 요청을 거부하고 저장하지 않는다.
@@ -21,6 +21,8 @@
 - 후보 조회에 쓰이는 개인 provider 권한은 연결 운영 credential로 승격하지 않는다.
 - 새 연결 생성은 검증된 워크스페이스 공유 읽기 전용 credential이 있어야만 완료된다.
 - 기존 `workspace_id`가 있는 planning 기반 연결은 그 값을 canonical workspace 귀속으로 사용한다.
+- US1 MVP 검증은 수동 URL 입력과 기존 provider 검증 흐름으로 독립 완료할 수 있어야 하며, 후보 목록 기반 판단 지원은 US3에서 완성한다.
+- SC-001은 대표 운영자 연결 리허설의 시작/완료 타임스탬프와 성공/실패 집계로 증명한다.
 
 ## Technical Context
 
@@ -30,7 +32,7 @@
 **Testing**: `pytest`, `pytest-asyncio`, `httpx`, `schemathesis`, operator UI integration tests, existing GitHub/GitLab webhook and connection contract fixtures  
 **Target Platform**: Linux-based API/worker runtime with Git CLI access and network reachability to GitHub Cloud and configured GitLab Self-Managed instances  
 **Project Type**: Python web application with JSON API, async worker, and server-rendered operator UI  
-**Performance Goals**: 새 워크스페이스 기반 GitHub/GitLab 연결 생성부터 상세 조회까지 10분 이내 완료; 기존 GitHub/GitLab webhook 처리 기준은 유지; 후보 목록 조회는 설정된 provider 계정/인스턴스 범위에서 일반 운영 화면 사용자가 기다릴 수 있는 시간 안에 완료  
+**Performance Goals**: 새 워크스페이스 기반 GitHub/GitLab 연결 생성부터 상세 조회까지 10분 이내 완료하고 이 시간을 delivery evidence에 기록; 기존 GitHub/GitLab webhook 처리 기준은 유지; 후보 목록 조회는 설정된 provider 계정/인스턴스 범위에서 일반 운영 화면 사용자가 기다릴 수 있는 시간 안에 완료
 **Constraints**: pilot 단계로 implement auto-run 금지; `planningInputReferenceId` 필수 계약 제거는 additive compatibility가 아니라 명시적 reject로 수행; 기존 GitHub/GitLab create/detail/snapshot/event/webhook 회귀 통과; 새 연결은 planning trace를 저장하지 않음; 기존 planning trace는 삭제하지 않음; candidate 조회 credential과 연결 운영 credential 분리; 개인 provider 권한만으로 connection active 생성 금지; shared read-only credential 검증 실패 시 생성 중단과 해결 안내 제공; 한 워크스페이스 안 동일 provider+canonical repository 중복 차단; provider별 event/snapshot/history projection 분리 유지
 **Scale/Scope**: 내부 운영자가 관리하는 low hundreds 수준의 mixed-provider workspace connections, 기존 planning 기반 연결과 신규 workspace 기반 연결이 함께 존재하는 전환 기간, provider별 webhook burst와 snapshot retention은 기존 기준 유지
 
@@ -39,8 +41,8 @@
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 - [x] Planning input is linked and translated into concrete design scope.
-- [x] `spec.md` is approved for the scope implemented by this plan.
-- [x] This plan introduces no scope that is absent from the approved spec.
+- [x] `spec.md` is accepted as the active scope baseline for the work planned here.
+- [x] This plan introduces no scope that is absent from the accepted spec baseline.
 - [x] Traceability from planning input -> spec -> plan will remain intact after delivery.
 - [x] Pilot rule acknowledged: implementation will not auto-run and requires explicit human approval.
 - [x] Validation evidence required for completion is defined in this plan.
@@ -58,6 +60,8 @@
 | 권한 실패 UX/API | 접근 권한 만료, 권한 회수, shared read-only credential 검증 실패는 connection row를 active로 만들지 않고 provider별 재인증 또는 권한 수정 안내가 포함된 문제 응답/화면 상태로 표현한다. |
 | 기존 workspace 귀속 | 기존 planning 기반 연결에 저장된 `workspace_id`를 canonical workspace 귀속으로 사용한다. 값이 없거나 일관되지 않은 예외만 compatibility state로 표시한다. |
 | GitHub/GitLab 호환성 | provider별 remote parser, webhook verifier, event normalizer, snapshot pipeline은 기존 의미를 유지한다. 이 기능은 시작점/traceability/UX/API 계약을 바꾸며 provider semantics를 재설계하지 않는다. |
+| US1/US3 경계 | US1은 planning trace 없이 수동 URL 입력으로 GitHub/GitLab 연결을 만들 수 있는 MVP create/detail/snapshot 경로를 독립 검증한다. 후보 목록 조회, empty state, already-connected 구분, candidate/manual dedupe 판단 지원은 US3 범위에서 완성한다. |
+| SC-001 검증 방식 | 새 워크스페이스 생성부터 저장소 연결 상세 확인까지의 대표 운영자 리허설을 GitHub와 GitLab 각각 실행하고, 시작/완료 타임스탬프와 성공률 집계를 delivery evidence에 기록한다. |
 
 ## Project Structure
 
@@ -237,18 +241,19 @@ pilot-git-repo-connection/
   - existing planning-based GitLab row remains visible and operational under its existing `workspace_id`
   - `legacy_unassigned` fixture is visible with compatibility state
 - End-to-End
-  - new workspace -> provider candidate/manual URL -> shared read-only credential -> connection active -> snapshot -> detail timeline with no planning trace
+  - new workspace -> manual URL -> shared read-only credential -> connection active -> snapshot -> detail timeline with no planning trace, with start/end timestamps for SC-001 timing evidence
+  - new workspace -> provider candidate -> shared read-only credential -> connection active -> detail timeline with no planning trace after US3 candidate flow lands
   - mixed workspace with legacy and new connections -> list/detail/snapshot/event/history flows remain separated by provider and origin
 - Delivery evidence
-  - story/FR/SC trace coverage must include workspace-first path, credential boundary path, legacy compatibility path, mixed-provider separation path, and GitHub/GitLab provider regression evidence.
+  - story/FR/SC trace coverage must include workspace-first path, SC-001 timing evidence, credential boundary path, legacy compatibility path, mixed-provider separation path, and GitHub/GitLab provider regression evidence.
 
 ## Post-Design Constitution Check
 
 - [x] Planning input remains linked in this plan and spec artifacts even though runtime RepositoryConnection no longer stores planning trace for new rows.
-- [x] Plan scope stays inside approved spec: workspace-first connection, optional legacy trace, candidate/manual selection, credential boundary, compatibility.
+- [x] Plan scope stays inside accepted spec baseline: workspace-first connection, optional legacy trace, candidate/manual selection, credential boundary, compatibility.
 - [x] End-to-end traceability for the change itself remains via spec/plan/tasks/evidence; runtime planning trace removal applies only to RepositoryConnection domain rows.
 - [x] Pilot implementation gate remains manual; `/speckit.implement` must not auto-run.
-- [x] Validation evidence is defined for new workspace-first behavior, credential failure behavior, mixed-provider separation, and existing GitHub/GitLab regressions.
+- [x] Validation evidence is defined for new workspace-first behavior, SC-001 timing, credential failure behavior, mixed-provider separation, and existing GitHub/GitLab regressions.
 
 ## Complexity Tracking
 
@@ -258,7 +263,7 @@ pilot-git-repo-connection/
 2. API create contract removal and obsolete field rejection
 3. shared read-only credential boundary and permission failure handling
 4. detail/snapshot traceability optionalization
-5. candidate/manual URL UX path
+5. manual URL MVP path before candidate-list UX completion
 6. mixed-provider separation regression
 7. GitHub/GitLab full regression
 

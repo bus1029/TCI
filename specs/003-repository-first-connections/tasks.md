@@ -14,8 +14,8 @@
 
 **Purpose**: Create feature-specific scaffolding used by tests, evidence, and later issue/backlog conversion.
 
-- [ ] T001 Create delivery evidence scaffold for repository-first connection verification in `specs/003-repository-first-connections/delivery-evidence.md`
-- [ ] T002 [P] Add repository-first test helper skeleton for workspace/new-vs-legacy fixtures in `pilot-git-repo-connection/tests/support/repository_first_connection_testkit.py`
+- [ ] T001 Create delivery evidence scaffold mapping FR-001 through FR-016 and SC-001 through SC-007 for repository-first connection verification in `specs/003-repository-first-connections/delivery-evidence.md`
+- [ ] T002 [P] Add repository-first test helper skeleton for FR-002/FR-006/FR-014 workspace/new-vs-legacy fixtures in `pilot-git-repo-connection/tests/support/repository_first_connection_testkit.py`
 
 ---
 
@@ -27,21 +27,21 @@
 
 ### Tests for Foundational Work
 
-- [ ] T003 [P] Add Alembic migration regression tests for nullable planning references and preserved legacy rows in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_migration.py`
-- [ ] T004 [P] Add model/unit tests for connection origin classification in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_origin.py`
-- [ ] T005 [P] Add serializer unit tests for nullable `planningInputReference` and `origin` blocks in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_serialization.py`
-- [ ] T006 [P] Add snapshot traceability unit tests for connections with and without legacy planning references in `pilot-git-repo-connection/tests/unit/repository_connections/test_snapshot_traceability.py`
+- [ ] T003 [P] Add Alembic migration regression tests for FR-002/FR-005/FR-006 nullable planning references and preserved legacy rows in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_migration.py`
+- [ ] T004 [P] Add model/unit tests for FR-007/FR-014 connection origin classification in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_origin.py`
+- [ ] T005 [P] Add serializer unit tests for FR-006/FR-007 nullable `planningInputReference` and `origin` blocks in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_serialization.py`
+- [ ] T006 [P] Add snapshot traceability unit tests for FR-016 connections with and without legacy planning references in `pilot-git-repo-connection/tests/unit/repository_connections/test_snapshot_traceability.py`
 
 ### Implementation for Foundational Work
 
-- [ ] T007 Add Alembic migration making `repository_connections.planning_input_reference_id` nullable and preserving existing values in `pilot-git-repo-connection/alembic/versions/003_repository_first_connections.py`
-- [ ] T008 Update SQLAlchemy models for nullable planning reference and connection origin support in `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
-- [ ] T009 Update repository connection draft/create persistence to allow null planning reference and enforce workspace/provider/repository duplicate keys in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
-- [ ] T010 Update connection detail/list persistence loading to tolerate missing planning reference in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
-- [ ] T011 Update traceability builder to return optional legacy planning provenance in `pilot-git-repo-connection/src/tci/domain/services/build_traceability_reference.py`
-- [ ] T012 Update repository connection schemas and serializers for nullable traceability and `origin` in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
-- [ ] T013 Update shared connection test helpers for workspace-first and legacy-planning fixture creation in `pilot-git-repo-connection/tests/support/repository_connection_testkit.py`
-- [ ] T014 Record foundational migration/model/serializer verification commands in `specs/003-repository-first-connections/delivery-evidence.md`
+- [ ] T007 Add Alembic migration for FR-002/FR-005/FR-006 making `repository_connections.planning_input_reference_id` nullable and preserving existing values in `pilot-git-repo-connection/alembic/versions/003_repository_first_connections.py`
+- [ ] T008 Update SQLAlchemy models for FR-006/FR-007 nullable planning reference and connection origin support in `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
+- [ ] T009 Update repository connection draft/create persistence for FR-002/FR-010 to allow null planning reference and enforce workspace/provider/repository duplicate keys in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
+- [ ] T010 Update connection detail/list persistence loading for FR-004/FR-014/FR-016 to tolerate missing planning reference in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
+- [ ] T011 Update traceability builder for FR-006/FR-016 to return optional legacy planning provenance in `pilot-git-repo-connection/src/tci/domain/services/build_traceability_reference.py`
+- [ ] T012 Update repository connection schemas and serializers for FR-006/FR-007 nullable traceability and `origin` in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
+- [ ] T013 Update shared connection test helpers for FR-002/FR-005/FR-014 workspace-first and legacy-planning fixture creation in `pilot-git-repo-connection/tests/support/repository_connection_testkit.py`
+- [ ] T014 Record foundational FR-002/FR-006/FR-007/FR-014/FR-016 migration/model/serializer verification commands in `specs/003-repository-first-connections/delivery-evidence.md`
 
 **Checkpoint**: Foundation ready. New connections can be represented without planning trace, and legacy connections can still be loaded.
 
@@ -49,9 +49,9 @@
 
 ## Phase 3: User Story 1 - 워크스페이스에서 저장소 연결 시작 (Priority: P1)
 
-**Goal**: A workspace owner can create GitHub or GitLab repository connections without selecting or storing planning/spec/plan trace.
+**Goal**: A workspace owner can create GitHub or GitLab repository connections without selecting or storing planning/spec/plan trace; the MVP path is manual URL input, while candidate-list decision support is completed in US3.
 
-**Independent Test**: Create a new workspace connection for GitHub and GitLab without `planningInputReferenceId`, verify active/detail/snapshot behavior, reject obsolete planning reference fields, and confirm `traceability.planningInputReference = null`.
+**Independent Test**: Create a new workspace connection for GitHub and GitLab through manual URL input without `planningInputReferenceId`, verify active/detail/snapshot behavior, reject obsolete planning reference fields, confirm `traceability.planningInputReference = null`, and record start/end timestamps for SC-001 timing evidence.
 
 ### Tests for User Story 1
 
@@ -67,10 +67,10 @@
 - [ ] T021 [US1] Update create route to build connection command from workspace header and repository fields only in `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
 - [ ] T022 [US1] Update create command/service to skip planning reference lookup and store null planning reference for new rows in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
 - [ ] T023 [US1] Ensure manual URL create path still uses existing GitHub/GitLab parser, allowlist, shared read-only credential validator, and mirror sync in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
-- [ ] T024 [US1] Update snapshot creation/detail flow to work when connection planning reference is null in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
+- [ ] T024 [US1] Update only snapshot traceability serialization to work when connection planning reference is null, without redesigning snapshot creation rules, in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
 - [ ] T025 [US1] Update operator create route to remove planning input selection requirement in `pilot-git-repo-connection/src/tci/web/routes/repository_connections.py`
 - [ ] T026 [US1] Update operator connection create template to show workspace repository connection fields without planning input controls in `pilot-git-repo-connection/src/tci/web/templates/connections/create.html`
-- [ ] T027 [US1] Record US1 GitHub/GitLab workspace-first and obsolete-field rejection validation evidence in `specs/003-repository-first-connections/delivery-evidence.md`
+- [ ] T027 [US1] Record US1 GitHub/GitLab workspace-first, obsolete-field rejection, and SC-001 timing validation evidence in `specs/003-repository-first-connections/delivery-evidence.md`
 
 **Checkpoint**: User Story 1 is independently functional as MVP.
 
@@ -145,11 +145,12 @@
 
 **Purpose**: Validate full spec coverage, update contracts, and capture final evidence.
 
-- [ ] T061 [P] Update implementation contract snapshot with final request/response examples including obsolete field rejection and permission problem responses in `specs/003-repository-first-connections/contracts/repository-first-connections.openapi.yaml`
-- [ ] T062 [P] Update quickstart with actual command outputs and any finalized test names in `specs/003-repository-first-connections/quickstart.md`
-- [ ] T063 Run repository-first focused contract and integration checks and record results in `specs/003-repository-first-connections/delivery-evidence.md`
-- [ ] T064 Run existing GitHub/GitLab regression suite and record results in `specs/003-repository-first-connections/delivery-evidence.md`
-- [ ] T065 Map completed evidence back to FR-001 through FR-016, FR-002a, FR-012a, FR-012b, FR-014a, FR-014b, and SC-001 through SC-007 in `specs/003-repository-first-connections/delivery-evidence.md`
+- [ ] T061 [P] Update FR-002a/FR-012b implementation contract snapshot with final request/response examples including obsolete field rejection and permission problem responses in `specs/003-repository-first-connections/contracts/repository-first-connections.openapi.yaml`
+- [ ] T062 [P] Update quickstart with SC-001 timing rehearsal commands, actual command outputs, and any finalized test names in `specs/003-repository-first-connections/quickstart.md`
+- [ ] T063 Run FR-001/FR-002/FR-003/FR-016 repository-first focused contract and integration checks and record results in `specs/003-repository-first-connections/delivery-evidence.md`
+- [ ] T064 Run FR-005/FR-008/FR-009/FR-014/FR-015 existing GitHub/GitLab regression suite and record results in `specs/003-repository-first-connections/delivery-evidence.md`
+- [ ] T065 Run the SC-001 timed operator rehearsal for GitHub and GitLab workspace-first connection completion and record start/end timestamps plus success-rate calculation in `specs/003-repository-first-connections/delivery-evidence.md`
+- [ ] T066 Map completed evidence back to FR-001 through FR-016, FR-002a, FR-012a, FR-012b, FR-014a, FR-014b, and SC-001 through SC-007 in `specs/003-repository-first-connections/delivery-evidence.md`
 
 ---
 
@@ -185,6 +186,7 @@ The following tasks are common prerequisites and must be treated as highest-prio
 - **US3 tests**: T042, T043, T044, T045, T046, T047, T048, and T049 can run in parallel.
 - **US3 implementation**: T050 and T051 can run in parallel before route registration.
 - **Final docs**: T061 and T062 can run in parallel.
+- **Final evidence**: T063, T064, and T065 can run after selected story checkpoints pass; T066 runs after those evidence tasks.
 
 ## Parallel Example: User Story 1
 
@@ -229,7 +231,7 @@ Task: T049 Mixed-provider separation integration test
 1. Complete Phase 1 setup.
 2. Complete Phase 2 foundational nullable provenance model.
 3. Complete Phase 3 US1.
-4. Stop and validate workspace-first GitHub/GitLab create/detail/snapshot without planning trace and obsolete planning field rejection.
+4. Stop and validate workspace-first GitHub/GitLab manual URL create/detail/snapshot without planning trace, obsolete planning field rejection, and SC-001 timing evidence.
 
 ### Incremental Delivery
 
