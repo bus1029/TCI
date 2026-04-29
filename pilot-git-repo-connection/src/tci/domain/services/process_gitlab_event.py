@@ -712,8 +712,7 @@ def _pending_dispatch_is_stale(dispatch_enqueued_at: datetime) -> bool:
     if dispatch_enqueued_at.tzinfo is None:
         dispatch_enqueued_at = dispatch_enqueued_at.replace(tzinfo=UTC)
     return (
-        datetime.now(tz=UTC) - dispatch_enqueued_at
-        > PENDING_SYNC_DISPATCH_RETRY_AFTER
+        datetime.now(tz=UTC) - dispatch_enqueued_at > PENDING_SYNC_DISPATCH_RETRY_AFTER
     )
 
 

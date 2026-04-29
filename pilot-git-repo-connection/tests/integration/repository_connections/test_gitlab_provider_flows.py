@@ -24,11 +24,10 @@ pytestmark = pytest.mark.integration
 def _create_gitlab_connection(tmp_path, monkeypatch):
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),

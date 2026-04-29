@@ -179,12 +179,11 @@ def _validate_operator_api_token(
         raise RuntimeError("TCI_OPERATOR_API_TOKEN에는 앞뒤 공백을 사용할 수 없습니다.")
     if environment != "development":
         allowed_characters = (
-            "abcdefghijklmnopqrstuvwxyz"
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-            "0123456789"
-            "-_"
+            "abcdefghijklmnopqrstuvwxyz" "ABCDEFGHIJKLMNOPQRSTUVWXYZ" "0123456789" "-_"
         )
-        if len(token) < 43 or any(character not in allowed_characters for character in token):
+        if len(token) < 43 or any(
+            character not in allowed_characters for character in token
+        ):
             raise RuntimeError(
                 "production TCI_OPERATOR_API_TOKEN은 32바이트 이상 난수의 "
                 "base64url 인코딩 값이어야 합니다."

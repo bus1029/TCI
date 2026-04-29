@@ -169,6 +169,9 @@ class InMemoryRepositoryStore:
     sync_runs: dict[uuid.UUID, RepositorySyncRun] = field(default_factory=dict)
     snapshots: dict[uuid.UUID, CodeSnapshot] = field(default_factory=dict)
     webhook_rotation_lock_calls: int = 0
+    repository_identity_creation_lock_calls: int = 0
+    repository_identity_creation_lock_depth: int = 0
+    identity_lock_depth_at_ref_resolve: int = 0
     resolver_requires_bound_credential: bool = False
     auth_failure_ref_names: set[str] = field(default_factory=set)
     missing_ref_names: set[str] = field(default_factory=set)
@@ -284,6 +287,19 @@ class FakeRepositoryConnectionRepository:
             if draft.provider is RepositoryProvider.GITLAB_SELF_MANAGED
             else WebhookAuthMode.HMAC_SHA256
         )
+        for existing in self._store.connections.values():
+            if (
+                existing.workspace_id == draft.workspace_id
+                and existing.provider == draft.provider
+                and existing.provider_project_path == provider_project_path
+                and (
+                    draft.provider is RepositoryProvider.GITHUB_CLOUD
+                    or existing.provider_instance_url == provider_instance_url
+                )
+            ):
+                raise ValueError(
+                    "Repository connection already exists for this workspace."
+                )
         connection = RepositoryConnection(
             id=draft.id,
             workspace_id=draft.workspace_id,
@@ -310,6 +326,44 @@ class FakeRepositoryConnectionRepository:
         )
         self._store.connections[connection.id] = connection
         return connection
+
+    def ensure_repository_identity_available(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        provider: RepositoryProvider,
+        provider_instance_url: str | None,
+        provider_project_path: str,
+    ) -> None:
+        for existing in self._store.connections.values():
+            if (
+                existing.workspace_id == workspace_id
+                and existing.provider == provider
+                and existing.provider_project_path == provider_project_path
+                and (
+                    provider is RepositoryProvider.GITHUB_CLOUD
+                    or existing.provider_instance_url == provider_instance_url
+                )
+            ):
+                raise ValueError(
+                    "Repository connection already exists for this workspace."
+                )
+
+    @contextmanager
+    def repository_identity_creation_lock(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        provider: RepositoryProvider,
+        provider_instance_url: str | None,
+        provider_project_path: str,
+    ):
+        self._store.repository_identity_creation_lock_calls += 1
+        self._store.repository_identity_creation_lock_depth += 1
+        try:
+            yield
+        finally:
+            self._store.repository_identity_creation_lock_depth -= 1
 
     def get(
         self, *, workspace_id: uuid.UUID, connection_id: uuid.UUID
@@ -936,6 +990,9 @@ class FakeGitRefResolver:
         self, *, remote_url: str, ref_type: DefaultRefType, ref_name: str
     ) -> ResolvedGitRef:
         self._store.last_resolved_remote_url = remote_url
+        self._store.identity_lock_depth_at_ref_resolve = (
+            self._store.repository_identity_creation_lock_depth
+        )
         if (
             self._store.resolver_requires_bound_credential
             and "GIT_ASKPASS" not in current_git_command_environment()
@@ -1320,8 +1377,7 @@ class FakeRepositorySyncRunRepository:
             or (
                 sync_run.dispatch_enqueued_at is not None
                 and (
-                    stale_before is None
-                    or sync_run.dispatch_enqueued_at > stale_before
+                    stale_before is None or sync_run.dispatch_enqueued_at > stale_before
                 )
             )
         ):
@@ -1661,7 +1717,6 @@ def create_test_client(
 
 def create_connection_payload(
     *,
-    planning_input_reference_id: uuid.UUID,
     provider: str = "github_cloud",
     remote_url: str = "https://github.com/acme/sample-repo.git",
     transport: str = "https",
@@ -1671,7 +1726,6 @@ def create_connection_payload(
     credential_fingerprint: str = "pat-01",
 ) -> dict[str, Any]:
     return {
-        "planningInputReferenceId": str(planning_input_reference_id),
         "provider": provider,
         "remoteUrl": remote_url,
         "transport": transport,
@@ -1683,6 +1737,30 @@ def create_connection_payload(
             "fingerprint": credential_fingerprint,
         },
     }
+
+
+def create_obsolete_planning_connection_payload(
+    *,
+    planning_input_reference_id: uuid.UUID,
+    provider: str = "github_cloud",
+    remote_url: str = "https://github.com/acme/sample-repo.git",
+    transport: str = "https",
+    default_ref_name: str = "main",
+    credential_type: str = "https_pat",
+    credential_secret: str = "readonly-token-value",
+    credential_fingerprint: str = "pat-01",
+) -> dict[str, Any]:
+    payload = create_connection_payload(
+        provider=provider,
+        remote_url=remote_url,
+        transport=transport,
+        default_ref_name=default_ref_name,
+        credential_type=credential_type,
+        credential_secret=credential_secret,
+        credential_fingerprint=credential_fingerprint,
+    )
+    payload["planningInputReferenceId"] = str(planning_input_reference_id)
+    return payload
 
 
 def create_test_ssh_private_key(tmp_path: Path) -> str:

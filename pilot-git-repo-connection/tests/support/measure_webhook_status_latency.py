@@ -10,8 +10,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tci.infrastructure.queue.repository_ingestion_tasks import _run_webhook_sync_task
-from tests.support.repository_connection_testkit import (
+from tci.infrastructure.queue.repository_ingestion_tasks import (  # noqa: E402
+    _run_webhook_sync_task,
+)
+from tests.support.repository_connection_testkit import (  # noqa: E402
     build_github_push_payload,
     build_github_webhook_headers,
     create_connection_payload,
@@ -40,13 +42,15 @@ def measure_webhook_status_projection_latency(
 ) -> WebhookStatusLatencyMeasurement:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
-    seed_active_webhook_secret(store, connection_id=connection_id, secret="current-secret")
+    seed_active_webhook_secret(
+        store, connection_id=connection_id, secret="current-secret"
+    )
 
     task_recorder = _TaskRecorder()
     object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
@@ -115,7 +119,9 @@ def _wait_for_projection_visibility(
     deadline = time.perf_counter() + timeout_seconds
     while time.perf_counter() < deadline:
         detail_response = client.get(f"/api/repository-connections/{connection_id}")
-        events_response = client.get(f"/api/repository-connections/{connection_id}/events")
+        events_response = client.get(
+            f"/api/repository-connections/{connection_id}/events"
+        )
         assert detail_response.status_code == 200
         assert events_response.status_code == 200
 

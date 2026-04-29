@@ -3,9 +3,7 @@ from __future__ import annotations
 from tests.support.run_quickstart_validation import run_quickstart_validation
 
 
-def test_quickstart_validation_covers_release_scope_flow(
-    tmp_path, monkeypatch
-) -> None:
+def test_quickstart_validation_covers_release_scope_flow(tmp_path, monkeypatch) -> None:
     result = run_quickstart_validation(tmp_path=tmp_path, monkeypatch=monkeypatch)
 
     assert result.first_snapshot_seconds < 600

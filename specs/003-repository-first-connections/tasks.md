@@ -14,8 +14,8 @@
 
 **Purpose**: Create feature-specific scaffolding used by tests, evidence, and later issue/backlog conversion.
 
-- [ ] T001 Create delivery evidence scaffold mapping FR-001, FR-002, FR-002a, FR-003, FR-003a, FR-003b, FR-003c, FR-003d, FR-004 through FR-016, FR-012a, FR-012b, FR-014a, FR-014b, and SC-001 through SC-007 for repository-first connection verification in `specs/003-repository-first-connections/delivery-evidence.md`
-- [ ] T002 [P] Add repository-first test helper skeleton for FR-002/FR-006/FR-014 workspace/new-vs-legacy fixtures in `pilot-git-repo-connection/tests/support/repository_first_connection_testkit.py`
+- [x] T001 Create delivery evidence scaffold mapping FR-001, FR-002, FR-002a, FR-003, FR-003a, FR-003b, FR-003c, FR-003d, FR-004 through FR-016, FR-012a, FR-012b, FR-014a, FR-014b, and SC-001 through SC-007 for repository-first connection verification in `specs/003-repository-first-connections/delivery-evidence.md`
+- [x] T002 [P] Add repository-first test helper skeleton for FR-002/FR-006/FR-014 workspace/new-vs-legacy fixtures in `pilot-git-repo-connection/tests/support/repository_first_connection_testkit.py`
 
 ---
 
@@ -27,23 +27,23 @@
 
 ### Tests for Foundational Work
 
-- [ ] T003 [P] Add Alembic migration regression tests for FR-002/FR-005/FR-006 nullable planning references and preserved legacy rows in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_migration.py`
-- [ ] T004 [P] Add model/unit tests for FR-007/FR-014 connection origin classification in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_origin.py`
-- [ ] T005 [P] Add serializer unit tests for FR-006/FR-007 nullable `planningInputReference` and `origin` blocks in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_serialization.py`
-- [ ] T006 [P] Add snapshot creation/detail/traceability unit tests for FR-016 connections with and without legacy planning references in `pilot-git-repo-connection/tests/unit/repository_connections/test_snapshot_traceability.py`
-- [ ] T007 [P] Add repository operation credential boundary unit tests for FR-003b covering create, verify, collect, event, status, and reverify paths in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_operation_credentials.py`
+- [x] T003 [P] Add Alembic migration regression tests for FR-002/FR-005/FR-006 nullable planning references and preserved legacy rows in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_migration.py`
+- [x] T004 [P] Add model/unit tests for FR-007/FR-014 connection origin classification in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_origin.py`
+- [x] T005 [P] Add serializer unit tests for FR-006/FR-007 nullable `planningInputReference` and `origin` blocks in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_serialization.py`
+- [x] T006 [P] Add snapshot creation/detail/traceability unit tests for FR-016 connections with and without legacy planning references in `pilot-git-repo-connection/tests/unit/repository_connections/test_snapshot_traceability.py`
+- [x] T007 [P] Add repository operation credential boundary unit tests for FR-003b covering create, verify, collect, event, status, and reverify paths in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_operation_credentials.py`
 
 ### Implementation for Foundational Work
 
-- [ ] T008 Add Alembic migration for FR-002/FR-005/FR-006 making `repository_connections.planning_input_reference_id` nullable and preserving existing values in `pilot-git-repo-connection/alembic/versions/003_repository_first_connections.py`
-- [ ] T009 Update SQLAlchemy models for FR-006/FR-007 nullable planning reference and connection origin support in `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
-- [ ] T010 Update repository connection draft/create persistence for FR-002/FR-010 to allow null planning reference and enforce nullable-safe workspace/provider/repository duplicate constraints in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
-- [ ] T011 Update connection detail/list persistence loading for FR-004/FR-014/FR-016 to tolerate missing planning reference in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
-- [ ] T012 Update traceability builder for FR-006/FR-016 to return optional legacy planning provenance for connection and snapshot paths in `pilot-git-repo-connection/src/tci/domain/services/build_traceability_reference.py`
-- [ ] T013 Update repository connection schemas and serializers for FR-006/FR-007 nullable traceability and `origin` in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
-- [ ] T014 Update repository-first OpenAPI contract for FR-002a/FR-003b/FR-012b nullable planning trace, explicit obsolete planning field rejection matrix, and shared credential operation boundary in `specs/003-repository-first-connections/contracts/repository-first-connections.openapi.yaml`
-- [ ] T015 Update shared connection test helpers for FR-002/FR-005/FR-014 workspace-first and legacy-planning fixture creation in `pilot-git-repo-connection/tests/support/repository_connection_testkit.py`
-- [ ] T016 Record foundational FR-002/FR-006/FR-007/FR-014/FR-016 migration/model/serializer/snapshot-path verification commands in `specs/003-repository-first-connections/delivery-evidence.md`
+- [x] T008 Add Alembic migration for FR-002/FR-005/FR-006 making `repository_connections.planning_input_reference_id` nullable and preserving existing values in `pilot-git-repo-connection/alembic/versions/009_repository_first_connections.py`
+- [x] T009 Update SQLAlchemy models for FR-006/FR-007 nullable planning reference and connection origin support in `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
+- [x] T010 Update repository connection draft/create persistence for FR-002/FR-010 to allow null planning reference and enforce nullable-safe workspace/provider/repository duplicate constraints in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
+- [x] T011 Update connection detail/list persistence loading for FR-004/FR-014/FR-016 to tolerate missing planning reference in `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
+- [x] T012 Update traceability builder for FR-006/FR-016 to return optional legacy planning provenance for connection and snapshot paths in `pilot-git-repo-connection/src/tci/domain/services/build_traceability_reference.py`
+- [x] T013 Update repository connection schemas and serializers for FR-006/FR-007 nullable traceability and `origin` in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
+- [x] T014 Update repository-first OpenAPI contract for FR-002a/FR-003b/FR-012b nullable planning trace, explicit obsolete planning field rejection matrix, and shared credential operation boundary in `specs/003-repository-first-connections/contracts/repository-first-connections.openapi.yaml`
+- [x] T015 Update shared connection test helpers for FR-002/FR-005/FR-014 workspace-first and legacy-planning fixture creation in `pilot-git-repo-connection/tests/support/repository_connection_testkit.py`
+- [x] T016 Record foundational FR-002/FR-006/FR-007/FR-014/FR-016 migration/model/serializer/snapshot-path verification commands in `specs/003-repository-first-connections/delivery-evidence.md`
 
 **Checkpoint**: Foundation ready. New connections can be represented without planning trace, legacy connections can still be loaded, and credential boundary tests exist for all repository operation paths.
 

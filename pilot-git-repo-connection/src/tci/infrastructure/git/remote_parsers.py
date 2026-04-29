@@ -91,9 +91,7 @@ def _parse_gitlab_remote(
         )
     if transport in (RepositoryTransport.HTTPS, RepositoryTransport.HTTP):
         parsed_remote = _parse_url(remote_url)
-        expected_scheme = (
-            "http" if transport is RepositoryTransport.HTTP else "https"
-        )
+        expected_scheme = "http" if transport is RepositoryTransport.HTTP else "https"
         if (
             parsed_remote.scheme != expected_scheme
             or _parse_url_hostname(parsed_remote) is None

@@ -10,7 +10,9 @@ from tci.domain.services.default_scope_policy import (
     is_hard_excluded_path,
 )
 from tci.infrastructure.persistence.models import SnapshotInclusionReason
-from tci.infrastructure.snapshots.snapshot_archive_store import SnapshotArchiveEntryDraft
+from tci.infrastructure.snapshots.snapshot_archive_store import (
+    SnapshotArchiveEntryDraft,
+)
 
 
 @dataclass(frozen=True, slots=True)

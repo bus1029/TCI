@@ -141,11 +141,15 @@ def upgrade() -> None:
     )
     op.add_column(
         "repository_connections",
-        sa.Column("last_webhook_rejection_reason", WEBHOOK_REJECTION_REASON, nullable=True),
+        sa.Column(
+            "last_webhook_rejection_reason", WEBHOOK_REJECTION_REASON, nullable=True
+        ),
     )
     op.add_column(
         "repository_connections",
-        sa.Column("last_webhook_rejected_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "last_webhook_rejected_at", sa.DateTime(timezone=True), nullable=True
+        ),
     )
     op.add_column(
         "repository_connections",
@@ -324,7 +328,9 @@ def downgrade() -> None:
 
     op.drop_table("repository_event_cursors")
     op.drop_table("repository_events")
-    op.drop_index("ix_webhook_secret_rev_one_active", table_name="webhook_secret_revisions")
+    op.drop_index(
+        "ix_webhook_secret_rev_one_active", table_name="webhook_secret_revisions"
+    )
     op.drop_table("webhook_secret_revisions")
 
     op.drop_column("repository_connections", "last_processed_event_at")

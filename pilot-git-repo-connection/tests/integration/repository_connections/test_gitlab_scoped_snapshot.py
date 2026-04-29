@@ -37,7 +37,7 @@ def test_gitlab_scoped_snapshot_stamps_scope_version_and_preserves_binary_opt_in
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     store.mirror_snapshot_entries = (
         ("src/main.py", b"print('hello')\n"),
         ("assets/logo.bin", b"\x00binary"),
@@ -47,7 +47,6 @@ def test_gitlab_scoped_snapshot_stamps_scope_version_and_preserves_binary_opt_in
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),
@@ -101,14 +100,13 @@ def test_gitlab_default_ref_change_affects_future_sync_without_mutating_history(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     store.resolved_ref_commits["main"] = "a" * 40
     store.resolved_ref_commits["release/2026.04"] = "c" * 40
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),
@@ -176,13 +174,12 @@ def test_gitlab_scoped_snapshot_fails_empty_result_without_status_transition(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     store.mirror_snapshot_entries = (("src/main.py", b"print('hello')\n"),)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),

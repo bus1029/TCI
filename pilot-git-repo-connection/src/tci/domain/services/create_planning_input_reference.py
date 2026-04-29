@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from tci.api.problem_details import ProblemCode
-from tci.domain.services.repository_connection_support import RepositoryConnectionProblem
+from tci.domain.services.repository_connection_support import (
+    RepositoryConnectionProblem,
+)
 from tci.infrastructure.persistence.models import PlanningInputSourceType
 from tci.infrastructure.persistence.planning_input_reference_repository import (
     PlanningInputReferenceDraft,
@@ -22,7 +24,9 @@ class CreatePlanningInputReferenceCommand:
 
 def create_planning_input_reference(command, *, dependencies):
     if dependencies.session_factory is None:
-        raise RuntimeError("planning input reference를 생성하려면 데이터베이스 세션이 필요합니다.")
+        raise RuntimeError(
+            "planning input reference를 생성하려면 데이터베이스 세션이 필요합니다."
+        )
 
     source_type = _parse_source_type(command.source_type)
 

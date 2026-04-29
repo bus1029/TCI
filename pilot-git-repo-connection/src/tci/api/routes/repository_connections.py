@@ -69,7 +69,6 @@ def create_repository_connection_route(
         connection = create_repository_connection(
             CreateRepositoryConnectionCommand(
                 workspace_id=workspace_id,
-                planning_input_reference_id=payload.planning_input_reference_id,
                 provider=payload.provider,
                 remote_url=payload.remote_url,
                 transport=payload.transport,

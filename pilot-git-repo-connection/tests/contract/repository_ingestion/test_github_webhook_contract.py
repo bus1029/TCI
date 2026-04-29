@@ -5,7 +5,11 @@ from types import SimpleNamespace
 import uuid
 
 from tci.api.routes import github_webhooks
-from tci.infrastructure.persistence.models import RefType, SyncRunStatus, WebhookHealthState
+from tci.infrastructure.persistence.models import (
+    RefType,
+    SyncRunStatus,
+    WebhookHealthState,
+)
 from tests.support.repository_connection_testkit import (
     build_github_pull_request_payload,
     build_github_push_payload,
@@ -23,10 +27,10 @@ def test_receive_github_webhook_accepts_verified_push_and_returns_accepted_paylo
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -73,10 +77,10 @@ def test_github_pull_requests_with_same_source_branch_use_distinct_sync_keys(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -146,10 +150,10 @@ def test_github_webhook_retries_same_delivery_after_enqueue_503(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -213,10 +217,10 @@ def test_receive_github_webhook_coalesces_distinct_delivery_when_ref_sync_active
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -275,7 +279,10 @@ def test_receive_github_webhook_coalesces_distinct_delivery_when_ref_sync_active
     assert second_event.sync_run_id == first_event.sync_run_id
     assert second_event.processing_decision == "duplicate_head"
     assert second_event.processing_status == "completed"
-    assert store.event_cursors[(uuid.UUID(connection_id), "default_ref")].latest_event_id == first_event.id
+    assert (
+        store.event_cursors[(uuid.UUID(connection_id), "default_ref")].latest_event_id
+        == first_event.id
+    )
 
 
 def test_receive_github_webhook_recovers_unmarked_active_dispatch(
@@ -283,10 +290,10 @@ def test_receive_github_webhook_recovers_unmarked_active_dispatch(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -352,10 +359,10 @@ def test_receive_github_webhook_redelivers_stale_pending_dispatch_without_cleari
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -423,10 +430,10 @@ def test_receive_github_webhook_queues_followup_when_ref_sync_already_running(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -521,10 +528,10 @@ def test_receive_github_webhook_accepts_non_default_tag_push_as_record_only(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -559,11 +566,10 @@ def test_receive_github_webhook_accepts_non_default_tag_push_as_record_only(
 def test_receive_github_webhook_queues_default_tag_push(tmp_path, monkeypatch) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             default_ref_name="v1.0.0",
         )
         | {"defaultRefType": "tag"},
@@ -578,7 +584,9 @@ def test_receive_github_webhook_queues_default_tag_push(tmp_path, monkeypatch) -
     object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
     monkeypatch.setattr(
         "tci.api.routes.github_webhooks.create_celery_app",
-        lambda settings: SimpleNamespace(send_task=lambda name, kwargs: captured.append(kwargs)),
+        lambda settings: SimpleNamespace(
+            send_task=lambda name, kwargs: captured.append(kwargs)
+        ),
     )
     payload = build_github_push_payload(ref_name="v1.0.0", after_sha="3" * 40)
     payload["ref"] = "refs/tags/v1.0.0"
@@ -618,10 +626,10 @@ def test_receive_github_webhook_treats_concurrent_duplicate_insert_as_idempotent
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -665,10 +673,10 @@ def test_receive_github_webhook_rejects_oversized_non_object_and_long_delivery(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -717,10 +725,10 @@ def test_receive_github_webhook_rejects_oversized_non_object_and_long_delivery(
 def test_receive_github_webhook_rejects_malformed_json_payloads(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -768,10 +776,10 @@ def test_receive_github_webhook_rate_limits_per_connection_bucket(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -829,10 +837,10 @@ def test_receive_github_webhook_rate_limit_uses_trusted_forwarded_client(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -928,7 +936,9 @@ def test_github_webhook_rate_limit_does_not_evict_active_limited_bucket(
     )
 
 
-def test_github_webhook_rate_limit_allows_distinct_connections_from_same_source() -> None:
+def test_github_webhook_rate_limit_allows_distinct_connections_from_same_source() -> (
+    None
+):
     source_key = "203.0.113.31"
     github_webhooks._github_webhook_source_request_times.clear()
     github_webhooks._github_webhook_connection_request_times.clear()
@@ -1040,7 +1050,10 @@ def test_github_webhook_rate_limit_uses_redis_branch(monkeypatch) -> None:
         "zcard",
         f"tci:github-webhook-rate:connection:203.0.113.32:{connection_id}",
     ) in calls
-    assert ("expire", int(github_webhooks.GITHUB_WEBHOOK_RATE_LIMIT_WINDOW_SECONDS)) in calls
+    assert (
+        "expire",
+        int(github_webhooks.GITHUB_WEBHOOK_RATE_LIMIT_WINDOW_SECONDS),
+    ) in calls
 
 
 def test_receive_github_webhook_rate_limit_short_circuits_before_body_read(
@@ -1048,10 +1061,10 @@ def test_receive_github_webhook_rate_limit_short_circuits_before_body_read(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     payload = build_github_push_payload(after_sha="d" * 40)
@@ -1087,10 +1100,10 @@ def test_receive_github_webhook_production_redis_rate_limit_short_circuits_befor
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     payload = build_github_push_payload(after_sha="d" * 40)
@@ -1221,10 +1234,10 @@ def test_receive_github_webhook_recovers_when_pending_insert_races_to_running(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     seed_active_webhook_secret(
@@ -1264,10 +1277,10 @@ def test_receive_github_webhook_recovers_when_pending_insert_races_to_running(
 def test_receive_github_webhook_rejects_when_secret_is_missing(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     payload = build_github_push_payload()
@@ -1305,10 +1318,10 @@ def test_receive_github_webhook_distinguishes_secret_mismatch_from_signature_inv
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -1363,7 +1376,9 @@ def test_receive_github_webhook_distinguishes_secret_mismatch_from_signature_inv
     assert invalid_event.processing_status == "rejected"
     assert mismatch_event.sync_run_id is None
     assert invalid_event.sync_run_id is None
-    assert connection.webhook_health_state is WebhookHealthState.SIGNATURE_INVALID_RECENTLY
+    assert (
+        connection.webhook_health_state is WebhookHealthState.SIGNATURE_INVALID_RECENTLY
+    )
     assert connection.last_webhook_rejection_reason == "signature_invalid"
     assert store.sync_runs == {}
 
@@ -1371,10 +1386,10 @@ def test_receive_github_webhook_distinguishes_secret_mismatch_from_signature_inv
 def test_receive_github_webhook_rejects_repository_mismatch(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -1414,10 +1429,10 @@ def test_receive_github_webhook_rejects_invalid_ref_without_audit_event(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -1451,10 +1466,10 @@ def test_receive_github_webhook_handles_rejected_redelivery_idempotently(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(
@@ -1492,10 +1507,10 @@ def test_receive_github_webhook_bad_replay_preserves_existing_verified_secret_au
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     connection_uuid = uuid.UUID(connection_id)
@@ -1562,10 +1577,10 @@ def test_receive_github_webhook_corrected_redelivery_recovers_rejected_delivery(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     connection_uuid = uuid.UUID(connection_id)
@@ -1628,10 +1643,10 @@ def test_connection_detail_and_event_list_expose_webhook_health_and_last_process
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     seed_active_webhook_secret(

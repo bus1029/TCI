@@ -43,7 +43,7 @@ class BuildCodeSnapshotCommand:
 @dataclass(frozen=True, slots=True)
 class SnapshotBuildContext:
     connection_id: uuid.UUID
-    planning_input_reference_id: uuid.UUID
+    planning_input_reference_id: uuid.UUID | None
     provider: RepositoryProvider
     provider_instance_url: str | None
     remote_url: str

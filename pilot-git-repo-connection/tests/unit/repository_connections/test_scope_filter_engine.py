@@ -1,11 +1,18 @@
 from __future__ import annotations
 
-from tci.domain.services.scope_filter_engine import ScopeFilterRuleSet, filter_snapshot_entries
+from tci.domain.services.scope_filter_engine import (
+    ScopeFilterRuleSet,
+    filter_snapshot_entries,
+)
 from tci.infrastructure.persistence.models import SnapshotInclusionReason
-from tci.infrastructure.snapshots.snapshot_archive_store import SnapshotArchiveEntryDraft
+from tci.infrastructure.snapshots.snapshot_archive_store import (
+    SnapshotArchiveEntryDraft,
+)
 
 
-def test_scope_filter_engine_applies_include_exclude_and_file_type_in_defined_order() -> None:
+def test_scope_filter_engine_applies_include_exclude_and_file_type_in_defined_order() -> (
+    None
+):
     entries = (
         SnapshotArchiveEntryDraft(
             path="src/app.py",
@@ -49,7 +56,9 @@ def test_scope_filter_engine_applies_include_exclude_and_file_type_in_defined_or
     assert filtered_entries[0].included_by is SnapshotInclusionReason.USER_INCLUDE
 
 
-def test_scope_filter_engine_keeps_v1_hard_excluded_files_out_even_when_included() -> None:
+def test_scope_filter_engine_keeps_v1_hard_excluded_files_out_even_when_included() -> (
+    None
+):
     entries = (
         SnapshotArchiveEntryDraft(
             path="assets/logo.png",

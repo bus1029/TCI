@@ -93,7 +93,9 @@ class CodeSnapshotRepository:
         )
         return self._session.execute(statement).unique().scalar_one_or_none()
 
-    def get_latest_for_connection(self, *, connection_id: uuid.UUID) -> CodeSnapshot | None:
+    def get_latest_for_connection(
+        self, *, connection_id: uuid.UUID
+    ) -> CodeSnapshot | None:
         statement = (
             select(CodeSnapshot)
             .where(CodeSnapshot.connection_id == connection_id)

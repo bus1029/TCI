@@ -16,9 +16,7 @@ from tci.settings import Settings, get_settings
 
 def create_celery_app(settings: Settings) -> Celery:
     if not settings.redis_url:
-        raise RuntimeError(
-            "Celery 브로커를 초기화하려면 TCI_REDIS_URL이 필요합니다."
-        )
+        raise RuntimeError("Celery 브로커를 초기화하려면 TCI_REDIS_URL이 필요합니다.")
 
     app = Celery("tci", broker=settings.redis_url, backend=settings.redis_url)
     app.conf.update(

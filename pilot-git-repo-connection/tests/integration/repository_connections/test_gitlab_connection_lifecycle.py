@@ -45,7 +45,7 @@ def test_gitlab_ssh_custom_port_scope_preview_and_snapshot_build_share_allowlist
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     object.__setattr__(
         _settings(client),
         "gitlab_self_managed_allowed_hosts",
@@ -55,7 +55,6 @@ def test_gitlab_ssh_custom_port_scope_preview_and_snapshot_build_share_allowlist
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="ssh://git@192.168.10.20:2222/group/sample-repo.git",
             transport="ssh",
@@ -112,7 +111,7 @@ def test_gitlab_ssh_custom_port_requires_port_allowlist_for_each_git_access_path
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     object.__setattr__(
         _settings(client),
         "gitlab_self_managed_allowed_hosts",
@@ -121,7 +120,6 @@ def test_gitlab_ssh_custom_port_requires_port_allowlist_for_each_git_access_path
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="ssh://git@192.168.10.20:2222/group/sample-repo.git",
             transport="ssh",
@@ -217,7 +215,7 @@ def test_gitlab_ssh_custom_port_snapshot_failure_records_failed_sync_run(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     object.__setattr__(
         _settings(client),
         "gitlab_self_managed_allowed_hosts",
@@ -226,7 +224,6 @@ def test_gitlab_ssh_custom_port_snapshot_failure_records_failed_sync_run(
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="ssh://git@192.168.10.20:2222/group/sample-repo.git",
             transport="ssh",
@@ -286,11 +283,10 @@ def test_gitlab_action_required_status_blocks_manual_snapshot_collection(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),

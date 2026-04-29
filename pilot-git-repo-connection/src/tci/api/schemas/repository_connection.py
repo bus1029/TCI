@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import uuid
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from tci.api.schemas._base import CamelModel
 from tci.api.schemas.repository_scope import ScopeRuleResponse, serialize_scope_rule
@@ -16,7 +16,8 @@ class CredentialInput(CamelModel):
 
 
 class CreateRepositoryConnectionRequest(CamelModel):
-    planning_input_reference_id: uuid.UUID = Field(alias="planningInputReferenceId")
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
     provider: str = Field(min_length=1, max_length=64)
     remote_url: str = Field(alias="remoteUrl", min_length=1, max_length=2048)
     transport: str = Field(min_length=1, max_length=32)
@@ -55,6 +56,7 @@ class RepositoryConnectionResponse(CamelModel):
     last_verified_at: str | None = Field(alias="lastVerifiedAt")
     provider_instance_url: str | None = Field(default=None, alias="providerInstanceUrl")
     provider_project_path: str | None = Field(default=None, alias="providerProjectPath")
+    origin: dict[str, object]
 
 
 class RepositoryConnectionDetailResponse(RepositoryConnectionResponse):
@@ -82,6 +84,7 @@ def serialize_repository_connection(connection) -> dict[str, object]:
         "defaultRefName": connection.default_ref_name,
         "status": connection.status.value,
         "lastVerifiedAt": _format_datetime(connection.last_verified_at),
+        "origin": serialize_connection_origin(connection),
     }
     if connection.provider.value == "gitlab_self_managed":
         payload.update(
@@ -120,13 +123,9 @@ def serialize_repository_connection_detail(connection) -> dict[str, object]:
             "latestSnapshot": _serialize_latest_snapshot_summary(latest_snapshot),
             "latestSyncRun": _serialize_latest_sync_run_summary(latest_sync_run),
             "traceability": {
-                "planningInputReference": {
-                    "id": str(planning_input_reference.id),
-                    "sourceType": planning_input_reference.source_type.value,
-                    "sourceReference": planning_input_reference.source_reference,
-                    "approvedSpecPath": planning_input_reference.approved_spec_path,
-                    "approvedPlanPath": planning_input_reference.approved_plan_path,
-                },
+                "planningInputReference": _serialize_planning_input_reference(
+                    planning_input_reference
+                ),
                 "activeScopeRuleVersionId": _format_uuid(
                     connection.active_scope_rule_version_id
                 ),
@@ -218,17 +217,54 @@ def serialize_code_snapshot_detail(detail) -> dict[str, object]:
             for file in snapshot.files
         ],
         "traceability": {
-            "planningInputReference": {
-                "id": str(planning_input_reference.id),
-                "sourceType": planning_input_reference.source_type.value,
-                "sourceReference": planning_input_reference.source_reference,
-                "approvedSpecPath": planning_input_reference.approved_spec_path,
-                "approvedPlanPath": planning_input_reference.approved_plan_path,
-            },
+            "planningInputReference": _serialize_planning_input_reference(
+                planning_input_reference
+            ),
             "scopeRuleVersionId": str(snapshot.scope_rule_version_id),
             "syncRunId": str(snapshot.sync_run_id),
             "triggerEventId": _format_uuid(detail.trigger_event_id),
         },
+    }
+
+
+def serialize_connection_origin(connection) -> dict[str, object]:
+    planning_input_reference_id = getattr(
+        connection, "planning_input_reference_id", None
+    )
+    planning_input_reference = getattr(connection, "planning_input_reference", None)
+    if planning_input_reference_id is None:
+        return {
+            "kind": "workspace_repository",
+            "hasLegacyPlanningTrace": False,
+            "compatibilityState": "normal",
+            "message": "워크스페이스에서 직접 생성된 저장소 연결입니다.",
+        }
+    if planning_input_reference is not None:
+        return {
+            "kind": "legacy_planning",
+            "hasLegacyPlanningTrace": True,
+            "compatibilityState": "legacy_trace_preserved",
+            "message": "기존 planning trace가 보존된 저장소 연결입니다.",
+        }
+    return {
+        "kind": "legacy_unassigned",
+        "hasLegacyPlanningTrace": False,
+        "compatibilityState": "workspace_assignment_unclear",
+        "message": "기존 planning trace를 확인할 수 없어 호환성 확인이 필요합니다.",
+    }
+
+
+def _serialize_planning_input_reference(
+    planning_input_reference,
+) -> dict[str, str] | None:
+    if planning_input_reference is None:
+        return None
+    return {
+        "id": str(planning_input_reference.id),
+        "sourceType": planning_input_reference.source_type.value,
+        "sourceReference": planning_input_reference.source_reference,
+        "approvedSpecPath": planning_input_reference.approved_spec_path,
+        "approvedPlanPath": planning_input_reference.approved_plan_path,
     }
 
 

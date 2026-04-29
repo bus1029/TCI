@@ -13,15 +13,15 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from tci.domain.services.build_code_snapshot import (
+from tci.domain.services.build_code_snapshot import (  # noqa: E402
     BuildCodeSnapshotCommand,
     build_code_snapshot,
 )
-from tci.domain.services.create_initial_snapshot import (
+from tci.domain.services.create_initial_snapshot import (  # noqa: E402
     CreateInitialSnapshotCommand,
     create_initial_snapshot,
 )
-from tests.support.repository_connection_testkit import (
+from tests.support.repository_connection_testkit import (  # noqa: E402
     create_connection_payload,
     create_test_client,
     seed_planning_input_reference,
@@ -36,12 +36,12 @@ def main() -> None:
             tmp_path=Path(tmp_dir),
             workspace_id=workspace_id,
         )
-        reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+        seed_planning_input_reference(store, workspace_id=workspace_id)
 
         start = time.perf_counter()
         create_response = client.post(
             "/api/repository-connections",
-            json=create_connection_payload(planning_input_reference_id=reference.id),
+            json=create_connection_payload(),
         )
         connection_id = uuid.UUID(create_response.json()["id"])
         sync_run = create_initial_snapshot(
@@ -59,7 +59,9 @@ def main() -> None:
             ),
             dependencies=client.app.state.dependencies,
         )
-        client.get(f"/api/repository-connections/{connection_id}/snapshots/{snapshot.id}")
+        client.get(
+            f"/api/repository-connections/{connection_id}/snapshots/{snapshot.id}"
+        )
         elapsed = time.perf_counter() - start
 
         print(f"SC001_SECONDS={elapsed:.4f}")

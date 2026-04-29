@@ -41,9 +41,11 @@ def verify_github_webhook_signature(
             return GitHubSignatureVerificationResult(
                 matched_revision_id=getattr(candidate, "revision_id", None)
                 or getattr(candidate, "id", None),
-                matched_revision_status=getattr(candidate, "status", None)
-                if isinstance(getattr(candidate, "status", None), str)
-                else getattr(getattr(candidate, "status", None), "value", None),
+                matched_revision_status=(
+                    getattr(candidate, "status", None)
+                    if isinstance(getattr(candidate, "status", None), str)
+                    else getattr(getattr(candidate, "status", None), "value", None)
+                ),
                 signature_is_valid=True,
             )
     return GitHubSignatureVerificationResult(

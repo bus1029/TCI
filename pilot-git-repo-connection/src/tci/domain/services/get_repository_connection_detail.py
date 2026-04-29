@@ -18,9 +18,13 @@ def get_repository_connection_detail(
             session
         )
         event_repository = dependencies.repository_event_repository_factory(session)
-        webhook_secret_repository = dependencies.webhook_secret_repository_factory(session)
+        webhook_secret_repository = dependencies.webhook_secret_repository_factory(
+            session
+        )
         snapshot_repository = dependencies.code_snapshot_repository_factory(session)
-        sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(
+            session
+        )
         connection = connection_repository.get(
             workspace_id=workspace_id,
             connection_id=connection_id,

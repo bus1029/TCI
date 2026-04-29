@@ -130,7 +130,9 @@ def upgrade() -> None:
         sa.Column("active_scope_rule_version_id", sa.Uuid(), nullable=True),
         sa.Column("active_credential_revision_id", sa.Uuid(), nullable=True),
         sa.Column("last_verified_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("last_successful_snapshot_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "last_successful_snapshot_at", sa.DateTime(timezone=True), nullable=True
+        ),
         sa.Column("last_failed_sync_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "created_at",
@@ -289,7 +291,10 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["connection_id", "planning_input_reference_id"],
-            ["repository_connections.id", "repository_connections.planning_input_reference_id"],
+            [
+                "repository_connections.id",
+                "repository_connections.planning_input_reference_id",
+            ],
             name="fk_scope_rule_plan_input_owner",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_collection_scope_rule_versions")),
@@ -367,7 +372,10 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["connection_id", "scope_rule_version_id"],
-            ["collection_scope_rule_versions.connection_id", "collection_scope_rule_versions.id"],
+            [
+                "collection_scope_rule_versions.connection_id",
+                "collection_scope_rule_versions.id",
+            ],
             name="fk_code_snapshot_scope_owner",
         ),
         sa.ForeignKeyConstraint(
@@ -474,7 +482,9 @@ def downgrade() -> None:
     op.drop_table("code_snapshots")
     op.drop_table("repository_sync_runs")
     op.drop_table("collection_scope_rule_versions")
-    op.drop_index("ix_cred_rev_one_active", table_name="repository_credential_revisions")
+    op.drop_index(
+        "ix_cred_rev_one_active", table_name="repository_credential_revisions"
+    )
     op.drop_table("repository_credential_revisions")
     op.drop_table("repository_connections")
     op.drop_table("planning_input_references")

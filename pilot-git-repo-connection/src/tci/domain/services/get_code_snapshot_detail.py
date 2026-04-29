@@ -7,12 +7,16 @@ import uuid
 @dataclass(frozen=True, slots=True)
 class CodeSnapshotDetail:
     snapshot: object
-    planning_input_reference: object
+    planning_input_reference: object | None
     trigger_event_id: uuid.UUID | None = None
 
 
 def get_code_snapshot_detail(
-    *, workspace_id: uuid.UUID, connection_id: uuid.UUID, snapshot_id: uuid.UUID, dependencies
+    *,
+    workspace_id: uuid.UUID,
+    connection_id: uuid.UUID,
+    snapshot_id: uuid.UUID,
+    dependencies,
 ):
     if dependencies.session_factory is None:
         raise RuntimeError("스냅샷을 조회하려면 데이터베이스 세션이 필요합니다.")
@@ -22,7 +26,9 @@ def get_code_snapshot_detail(
             session
         )
         snapshot_repository = dependencies.code_snapshot_repository_factory(session)
-        sync_run_repository = dependencies.repository_sync_run_repository_factory(session)
+        sync_run_repository = dependencies.repository_sync_run_repository_factory(
+            session
+        )
         connection = connection_repository.get(
             workspace_id=workspace_id,
             connection_id=connection_id,

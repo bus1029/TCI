@@ -59,10 +59,18 @@ async def create_repository_connection_page(request: Request):
         form_data = await parse_simple_form_body(request)
     except FormBodyTooLarge:
         return PlainTextResponse("요청 본문이 너무 큽니다.", status_code=413)
+    obsolete_error = _obsolete_planning_field_error(form_data)
+    if obsolete_error is not None:
+        return _render_index(
+            request=request,
+            workspace_id=workspace_id,
+            form_data=_sanitize_form_data(form_data),
+            error_message=obsolete_error,
+            status_code=400,
+        )
     try:
         payload = CreateRepositoryConnectionRequest.model_validate(
             {
-                "planningInputReferenceId": form_data.get("planningInputReferenceId"),
                 "provider": form_data.get("provider"),
                 "remoteUrl": form_data.get("remoteUrl"),
                 "transport": form_data.get("transport"),
@@ -88,7 +96,6 @@ async def create_repository_connection_page(request: Request):
         connection = create_repository_connection(
             CreateRepositoryConnectionCommand(
                 workspace_id=workspace_id,
-                planning_input_reference_id=payload.planning_input_reference_id,
                 provider=payload.provider,
                 remote_url=payload.remote_url,
                 transport=payload.transport,
@@ -113,6 +120,22 @@ async def create_repository_connection_page(request: Request):
         url=f"/connections/{connection.id}?workspaceId={workspace_id}",
         status_code=303,
     )
+
+
+def _obsolete_planning_field_error(form_data: dict[str, str]) -> str | None:
+    obsolete_fields = {
+        "planningInputReferenceId",
+        "planningInputReference",
+        "planningTrace",
+        "traceability",
+        "approvedSpecPath",
+        "approvedPlanPath",
+        "specPath",
+        "planPath",
+    }
+    if obsolete_fields.intersection(form_data):
+        return "새 저장소 연결 생성 요청은 planning/spec/plan 참조 필드를 받을 수 없습니다."
+    return None
 
 
 def _render_index(
@@ -152,7 +175,6 @@ def _default_form_data() -> dict[str, str]:
         "credentialType": "https_pat",
         "credentialSecret": "",
         "credentialFingerprint": "",
-        "planningInputReferenceId": "",
     }
 
 

@@ -130,7 +130,9 @@ def _select_commit_sha(
 
 
 def _normalize_ref_type(ref_type: DefaultRefType | RefType | str) -> DefaultRefType:
-    raw_value = ref_type.value if isinstance(ref_type, (DefaultRefType, RefType)) else ref_type
+    raw_value = (
+        ref_type.value if isinstance(ref_type, (DefaultRefType, RefType)) else ref_type
+    )
     try:
         return DefaultRefType(raw_value)
     except ValueError as error:

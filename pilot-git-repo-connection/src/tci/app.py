@@ -3,10 +3,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import AbstractContextManager, asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -57,6 +59,7 @@ from tci.infrastructure.persistence.session import build_session_factory
 from tci.infrastructure.snapshots.snapshot_archive_store import SnapshotArchiveStore
 from tci.infrastructure.snapshots.snapshot_manifest_writer import SnapshotManifestWriter
 from tci.settings import Settings, get_settings
+from tci.api.problem_details import ProblemCode
 from tci.web.routes.repository_connection_detail import (
     router as repository_connection_detail_web_router,
 )
@@ -145,6 +148,7 @@ def create_app(
         yield
 
     app = FastAPI(lifespan=lifespan)
+    app.add_exception_handler(RequestValidationError, _request_validation_handler)
     app.state.settings = resolved_settings
     app.state.dependencies = resolved_dependencies
     app.state.templates = Jinja2Templates(
@@ -164,6 +168,66 @@ def create_app(
     app.include_router(operator_session_web_router)
     app.openapi = lambda: _custom_openapi(app)  # type: ignore[method-assign]
     return app
+
+
+async def _request_validation_handler(
+    request: Request, error: Exception
+) -> JSONResponse:
+    validation_error = cast(RequestValidationError, error)
+    is_repository_create = request.url.path == "/api/repository-connections"
+    if is_repository_create and _has_obsolete_planning_field_error(validation_error):
+        message = (
+            "새 저장소 연결 생성 요청은 planning/spec/plan 참조 필드를 "
+            "받을 수 없습니다."
+        )
+        return JSONResponse(
+            status_code=400,
+            content={
+                "code": ProblemCode.INVALID_INPUT.value,
+                "message": message,
+            },
+        )
+    return JSONResponse(
+        status_code=422,
+        content={"detail": _sanitize_validation_errors(validation_error)},
+    )
+
+
+def _sanitize_validation_errors(error: RequestValidationError) -> list[dict[str, Any]]:
+    sanitized_errors: list[dict[str, Any]] = []
+    for item in error.errors():
+        sanitized_errors.append(
+            {
+                key: value
+                for key, value in item.items()
+                if key not in {"input", "ctx", "url"}
+            }
+        )
+    return sanitized_errors
+
+
+def _has_obsolete_planning_field_error(error: RequestValidationError) -> bool:
+    obsolete_fields = {
+        "planningInputReferenceId",
+        "planningInputReference",
+        "planningTrace",
+        "traceability",
+        "approvedSpecPath",
+        "approvedPlanPath",
+        "specPath",
+        "planPath",
+    }
+    for item in error.errors():
+        location = item.get("loc", ())
+        if (
+            item.get("type") == "extra_forbidden"
+            and isinstance(location, tuple)
+            and len(location) >= 2
+            and location[0] == "body"
+            and location[1] in obsolete_fields
+        ):
+            return True
+    return False
 
 
 def _custom_openapi(app: FastAPI) -> dict[str, Any]:

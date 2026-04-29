@@ -75,16 +75,15 @@ def test_github_and_gitlab_connection_verify_and_snapshot_flows_coexist(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     github_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     gitlab_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),
@@ -161,15 +160,14 @@ def test_github_and_gitlab_webhook_events_do_not_cross_contaminate(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     github_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     gitlab_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),
@@ -246,15 +244,14 @@ def test_webhook_routes_reject_wrong_provider_connection_without_state_mutation(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     github_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     gitlab_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),

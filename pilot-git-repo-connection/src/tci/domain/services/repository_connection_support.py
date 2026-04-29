@@ -129,9 +129,7 @@ def ensure_gitlab_self_managed_host_allowed(
         or transport is RepositoryTransport.HTTP
         or (remote_url is not None and remote_url.startswith("http://"))
     )
-    if uses_http_remote and not getattr(
-        settings, "allow_insecure_gitlab_http", False
-    ):
+    if uses_http_remote and not getattr(settings, "allow_insecure_gitlab_http", False):
         raise RepositoryConnectionProblem(
             ProblemCode.INVALID_INPUT,
             "GitLab Self-Managed HTTP 연결은 TCI_ALLOW_INSECURE_GITLAB_HTTP=true일 때만 허용됩니다.",

@@ -12,9 +12,15 @@ class CreatePlanningInputReferenceRequest(CamelModel):
     workspace_id: uuid.UUID = Field(alias="workspaceId")
     source_type: str = Field(alias="sourceType", min_length=1, max_length=64)
     source_title: str = Field(alias="sourceTitle", min_length=1, max_length=255)
-    source_reference: str = Field(alias="sourceReference", min_length=1, max_length=1024)
-    approved_spec_path: str = Field(alias="approvedSpecPath", min_length=1, max_length=1024)
-    approved_plan_path: str = Field(alias="approvedPlanPath", min_length=1, max_length=1024)
+    source_reference: str = Field(
+        alias="sourceReference", min_length=1, max_length=1024
+    )
+    approved_spec_path: str = Field(
+        alias="approvedSpecPath", min_length=1, max_length=1024
+    )
+    approved_plan_path: str = Field(
+        alias="approvedPlanPath", min_length=1, max_length=1024
+    )
 
 
 class PlanningInputReferenceResponse(CamelModel):

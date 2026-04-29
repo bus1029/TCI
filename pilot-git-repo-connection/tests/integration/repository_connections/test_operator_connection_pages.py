@@ -202,7 +202,9 @@ def test_operator_session_rate_limit_happens_after_small_body_parse(
     assert response.status_code == 400
 
 
-def test_operator_session_rate_limits_failed_token_guesses(tmp_path, monkeypatch) -> None:
+def test_operator_session_rate_limits_failed_token_guesses(
+    tmp_path, monkeypatch
+) -> None:
     workspace_id = uuid.uuid4()
     client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
     client.headers.pop("X-TCI-Operator-Token")
@@ -412,7 +414,9 @@ def test_operator_api_rate_limits_failed_token_guesses(tmp_path, monkeypatch) ->
     assert second_response.status_code == 429
 
 
-def test_operator_api_accepts_signed_cookie_and_rejects_tampered_cookie(tmp_path) -> None:
+def test_operator_api_accepts_signed_cookie_and_rejects_tampered_cookie(
+    tmp_path,
+) -> None:
     workspace_id = uuid.uuid4()
     client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
     client.headers.pop("X-TCI-Operator-Token")
@@ -436,11 +440,11 @@ def test_operator_api_accepts_signed_cookie_and_rejects_tampered_cookie(tmp_path
 def test_connections_page_renders_existing_connection_summary(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(_, workspace_id=workspace_id)
+    seed_planning_input_reference(_, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -452,15 +456,25 @@ def test_connections_page_renders_existing_connection_summary(tmp_path) -> None:
     assert f"/connections/{connection_id}?workspaceId={workspace_id}" in response.text
 
 
+def test_connections_page_does_not_render_obsolete_planning_input(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    response = client.get(f"/connections?workspaceId={workspace_id}")
+
+    assert response.status_code == 200
+    assert "planningInputReferenceId" not in response.text
+    assert "계획 입력 참조" not in response.text
+
+
 def test_connections_create_route_redirects_to_detail_page(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     response = client.post(
         f"/connections?workspaceId={workspace_id}",
         data={
-            "planningInputReferenceId": str(reference.id),
             "provider": "github_cloud",
             "remoteUrl": "https://github.com/acme/sample-repo.git",
             "transport": "https",
@@ -479,6 +493,31 @@ def test_connections_create_route_redirects_to_detail_page(tmp_path) -> None:
     assert f"workspaceId={workspace_id}" in location
 
 
+def test_connections_create_route_rejects_obsolete_planning_fields(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    response = client.post(
+        f"/connections?workspaceId={workspace_id}",
+        data={
+            "planningInputReferenceId": str(reference.id),
+            "provider": "github_cloud",
+            "remoteUrl": "https://github.com/acme/sample-repo.git",
+            "transport": "https",
+            "defaultRefType": "branch",
+            "defaultRefName": "main",
+            "credentialType": "https_pat",
+            "credentialSecret": "top-secret-token",
+            "credentialFingerprint": "pat-01",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "planning/spec/plan 참조 필드를 받을 수 없습니다." in response.text
+    assert "top-secret-token" not in response.text
+
+
 def test_connections_page_requires_workspace_id_query_parameter(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
@@ -494,11 +533,11 @@ def test_connection_detail_page_renders_summary_guidance_and_traceability(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     sync_run = create_initial_snapshot(
@@ -534,12 +573,11 @@ def test_connection_detail_page_renders_gitlab_provider_summary_without_auth_mod
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/subgroup/sample-repo.git",
         ),

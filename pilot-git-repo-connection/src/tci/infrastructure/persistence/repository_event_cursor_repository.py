@@ -34,7 +34,9 @@ class RepositoryEventCursorRepository:
         return self._session.scalar(statement)
 
     def upsert(self, draft: RepositoryEventCursorDraft) -> RepositoryEventCursor:
-        cursor = self.get(connection_id=draft.connection_id, target_key=draft.target_key)
+        cursor = self.get(
+            connection_id=draft.connection_id, target_key=draft.target_key
+        )
         if cursor is None:
             cursor = RepositoryEventCursor(
                 id=draft.id,

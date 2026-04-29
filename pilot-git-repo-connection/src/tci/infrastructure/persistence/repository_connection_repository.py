@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
+import hashlib
 from ipaddress import ip_address
 import re
 import uuid
 from urllib.parse import urlparse
 
+import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
@@ -38,7 +41,7 @@ def _has_whitespace_or_control(value: str) -> bool:
 class RepositoryConnectionDraft:
     id: uuid.UUID
     workspace_id: uuid.UUID
-    planning_input_reference_id: uuid.UUID
+    planning_input_reference_id: uuid.UUID | None
     provider: RepositoryProvider
     remote_url: str
     transport: RepositoryTransport
@@ -105,6 +108,12 @@ class RepositoryConnectionRepository:
             if draft.provider is RepositoryProvider.GITLAB_SELF_MANAGED
             else WebhookAuthMode.HMAC_SHA256
         )
+        self._raise_if_duplicate_connection_exists(
+            workspace_id=draft.workspace_id,
+            provider=draft.provider,
+            provider_instance_url=provider_instance_url,
+            provider_project_path=provider_project_path,
+        )
 
         connection = RepositoryConnection(
             id=draft.id,
@@ -128,6 +137,66 @@ class RepositoryConnectionRepository:
         self._session.flush()
         self._session.refresh(connection)
         return connection
+
+    def _raise_if_duplicate_connection_exists(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        provider: RepositoryProvider,
+        provider_instance_url: str | None,
+        provider_project_path: str,
+    ) -> None:
+        statement = select(RepositoryConnection.id).where(
+            RepositoryConnection.workspace_id == workspace_id,
+            RepositoryConnection.provider == provider,
+            RepositoryConnection.provider_project_path == provider_project_path,
+        )
+        if provider is RepositoryProvider.GITLAB_SELF_MANAGED:
+            statement = statement.where(
+                RepositoryConnection.provider_instance_url == provider_instance_url
+            )
+        if isinstance(self._session.scalar(statement), uuid.UUID):
+            raise ValueError("Repository connection already exists for this workspace.")
+
+    def ensure_repository_identity_available(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        provider: RepositoryProvider,
+        provider_instance_url: str | None,
+        provider_project_path: str,
+    ) -> None:
+        self._raise_if_duplicate_connection_exists(
+            workspace_id=workspace_id,
+            provider=provider,
+            provider_instance_url=provider_instance_url,
+            provider_project_path=provider_project_path,
+        )
+
+    @contextmanager
+    def repository_identity_creation_lock(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        provider: RepositoryProvider,
+        provider_instance_url: str | None,
+        provider_project_path: str,
+    ):
+        bind = self._session.get_bind()
+        if bind.dialect.name != "postgresql":
+            yield
+            return
+        lock_key = _repository_identity_lock_key(
+            workspace_id=workspace_id,
+            provider=provider,
+            provider_instance_url=provider_instance_url,
+            provider_project_path=provider_project_path,
+        )
+        self._session.execute(
+            sa.text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": lock_key},
+        )
+        yield
 
     @staticmethod
     def _validate_transport_matches_remote_url(
@@ -632,3 +701,22 @@ class RepositoryConnectionRepository:
         if connection is None:
             raise LookupError("저장소 연결을 찾을 수 없습니다.")
         return connection
+
+
+def _repository_identity_lock_key(
+    *,
+    workspace_id: uuid.UUID,
+    provider: RepositoryProvider,
+    provider_instance_url: str | None,
+    provider_project_path: str,
+) -> int:
+    raw_key = "\0".join(
+        (
+            str(workspace_id),
+            provider.value,
+            "" if provider_instance_url is None else provider_instance_url,
+            provider_project_path,
+        )
+    )
+    digest = hashlib.sha256(raw_key.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], byteorder="big", signed=True)

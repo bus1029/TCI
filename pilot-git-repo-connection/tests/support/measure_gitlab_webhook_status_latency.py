@@ -43,11 +43,10 @@ def measure_gitlab_webhook_status_projection_latency(
 ) -> GitLabWebhookStatusLatencyMeasurement:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),
@@ -160,7 +159,9 @@ def _wait_for_projection_visibility(
     deadline = time.perf_counter() + timeout_seconds
     while time.perf_counter() < deadline:
         detail_response = client.get(f"/api/repository-connections/{connection_id}")
-        events_response = client.get(f"/api/repository-connections/{connection_id}/events")
+        events_response = client.get(
+            f"/api/repository-connections/{connection_id}/events"
+        )
         assert detail_response.status_code == 200
         assert events_response.status_code == 200
 

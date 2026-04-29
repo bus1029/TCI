@@ -107,7 +107,9 @@ def _validate_relative_path(
     if not raw_path.strip():
         raise ValueError("스냅샷 파일 경로는 안전한 상대 경로여야 합니다.")
     safe_path = PurePosixPath(raw_path)
-    if safe_path.is_absolute() or any(part in {"", ".", ".."} for part in safe_path.parts):
+    if safe_path.is_absolute() or any(
+        part in {"", ".", ".."} for part in safe_path.parts
+    ):
         raise ValueError("스냅샷 파일 경로는 안전한 상대 경로여야 합니다.")
     if not allow_reserved_root_manifest and safe_path.as_posix() == "manifest.json":
         raise ValueError("manifest.json은 루트 메타데이터 파일로 예약되어 있습니다.")
@@ -117,7 +119,9 @@ def _validate_relative_path(
 def _normalize_entries(
     entries: tuple[SnapshotArchiveEntryDraft, ...]
 ) -> list[tuple[PurePosixPath, PurePosixPath, SnapshotArchiveEntryDraft]]:
-    normalized_entries: list[tuple[PurePosixPath, PurePosixPath, SnapshotArchiveEntryDraft]] = []
+    normalized_entries: list[
+        tuple[PurePosixPath, PurePosixPath, SnapshotArchiveEntryDraft]
+    ] = []
     seen_paths: set[str] = set()
     seen_blob_paths: set[str] = set()
 

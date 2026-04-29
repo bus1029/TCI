@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 import uuid
 
-from tci.domain.services.build_traceability_reference import SnapshotTraceabilityReference
+from tci.domain.services.build_traceability_reference import (
+    SnapshotTraceabilityReference,
+)
 from tci.infrastructure.snapshots.snapshot_archive_store import StoredSnapshotArchive
 
 
@@ -29,7 +31,11 @@ class SnapshotManifestWriter:
             "snapshotId": str(archive.snapshot_id),
             "archivePath": archive.archive_path,
             "traceability": {
-                "planningInputReferenceId": str(traceability.planning_input_reference_id),
+                "planningInputReferenceId": (
+                    None
+                    if traceability.planning_input_reference_id is None
+                    else str(traceability.planning_input_reference_id)
+                ),
                 "connectionId": str(traceability.connection_id),
                 "scopeRuleVersionId": str(traceability.scope_rule_version_id),
                 "syncRunId": str(traceability.sync_run_id),

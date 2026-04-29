@@ -34,14 +34,20 @@ class WebhookSecretRotationProjection:
 
 def rotate_webhook_secret(command: RotateWebhookSecretCommand, *, dependencies):
     if dependencies.session_factory is None:
-        raise RuntimeError("webhook secret을 회전하려면 데이터베이스 세션이 필요합니다.")
+        raise RuntimeError(
+            "webhook secret을 회전하려면 데이터베이스 세션이 필요합니다."
+        )
 
     rotated_at = command.rotated_at or datetime.now(tz=UTC)
     grace_until = rotated_at + WEBHOOK_SECRET_GRACE_PERIOD
 
     with dependencies.session_factory() as session:
-        connection_repository = dependencies.repository_connection_repository_factory(session)
-        webhook_secret_repository = dependencies.webhook_secret_repository_factory(session)
+        connection_repository = dependencies.repository_connection_repository_factory(
+            session
+        )
+        webhook_secret_repository = dependencies.webhook_secret_repository_factory(
+            session
+        )
         connection = connection_repository.get_for_update(
             workspace_id=command.workspace_id,
             connection_id=command.connection_id,
@@ -78,11 +84,7 @@ def rotate_webhook_secret(command: RotateWebhookSecretCommand, *, dependencies):
         )
         return RotateWebhookSecretResult(
             webhook_secret_revision_id=rotated_revision.id,
-            grace_until=(
-                None
-                if active_revision is None
-                else grace_until
-            ),
+            grace_until=(None if active_revision is None else grace_until),
         )
 
 
@@ -92,8 +94,10 @@ def build_webhook_secret_rotation_projection(
     webhook_secret_repository,
     event_repository,
 ) -> WebhookSecretRotationProjection:
-    previous_revision = webhook_secret_repository.get_latest_previous_grace_for_connection(
-        connection_id=connection_id
+    previous_revision = (
+        webhook_secret_repository.get_latest_previous_grace_for_connection(
+            connection_id=connection_id
+        )
     )
     if previous_revision is None:
         return WebhookSecretRotationProjection(
@@ -104,9 +108,7 @@ def build_webhook_secret_rotation_projection(
 
     grace_until = getattr(previous_revision, "grace_until", None)
     grace_started_at = (
-        None
-        if grace_until is None
-        else grace_until - WEBHOOK_SECRET_GRACE_PERIOD
+        None if grace_until is None else grace_until - WEBHOOK_SECRET_GRACE_PERIOD
     )
     previous_secret_events: list[datetime] = []
     for event in event_repository.list_for_connection(connection_id=connection_id):
