@@ -53,6 +53,23 @@
 3. Verify duplicate prevention returns existing connection guidance.
 4. Repeat in the opposite order.
 
+## Scenario 5: Obsolete Planning Field Rejection
+
+1. Create or choose a workspace ID.
+2. Submit `POST /api/repository-connections` with otherwise valid repository fields plus `planningInputReferenceId`.
+3. Verify the request is rejected with `code = obsolete_planning_reference`.
+4. Verify no connection row, initial sync, or snapshot job is created from the rejected request.
+
+## Scenario 6: Credential Boundary and Permission Failure
+
+1. Configure a personal provider grant that can list candidates.
+2. Open the candidate list and verify candidates can be displayed from the configured provider scope.
+3. Submit a create request without a workspace shared read-only credential.
+4. Verify the request fails with `code = shared_credential_required`.
+5. Submit a create request with expired, revoked, or invalid shared read-only credential.
+6. Verify the request fails with `code = shared_credential_invalid`, `repository_not_authorized`, or `provider_reauth_required` and includes remediation guidance.
+7. Verify no active connection, mirror sync, or snapshot job is created for the failed request.
+
 ## Required Checks Before Task Completion
 
 ```bash
@@ -67,6 +84,10 @@ pytest tests/integration/repository_connections/test_gitlab_connection_lifecycle
 Add new focused tests for:
 
 - create without `planningInputReferenceId`
+- reject obsolete `planningInputReferenceId`
 - detail/snapshot nullable planning trace
 - repository candidate empty state
+- personal provider grant cannot become operation credential
+- shared read-only credential failure prevents active connection creation
 - duplicate prevention across candidate/manual paths
+- mixed GitHub/GitLab list/detail/event/snapshot/history separation

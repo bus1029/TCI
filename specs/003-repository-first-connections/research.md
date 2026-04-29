@@ -41,15 +41,17 @@
 
 ## 결정 4: create API는 planningInputReferenceId를 제거하고 workspace header를 기준으로 생성한다
 
-**Decision**: `POST /api/repository-connections`는 `X-TCI-Workspace-Id`와 provider/remote/credential/default ref 입력만으로 connection을 생성한다. `planningInputReferenceId`는 신규 contract required field에서 제거한다.
+**Decision**: `POST /api/repository-connections`는 `X-TCI-Workspace-Id`와 provider/remote/credential/default ref 입력만으로 connection을 생성한다. `planningInputReferenceId`는 신규 contract에서 제거하며, 구 클라이언트가 이 필드 또는 동등한 planning/spec/plan 참조 필드를 보내면 요청을 거부하고 저장하지 않는다.
 
 **Rationale**:
 - 현 route는 이미 workspace header를 요구한다.
 - create service가 planning reference를 조회해 workspace를 재확인하는 역할을 하고 있으나, 새 모델에서는 connection 자체의 `workspace_id`가 canonical이다.
-- 기존 clients가 obsolete field를 보내는 경우의 처리 정책은 task 단계에서 contract test로 고정하되, 새 happy path는 field 없이 성공해야 한다.
+- obsolete field를 무시하면 클라이언트가 planning trace가 저장된다고 오해할 수 있으므로 validation error로 빠르게 드러내는 편이 안전하다.
+- 새 happy path는 field 없이 성공해야 한다.
 
 **Alternatives considered**:
 - `planningInputReferenceId` optional 유지: client가 계속 보낼 유인이 남고 시작점 전환이 흐려진다.
+- `planningInputReferenceId`를 조용히 ignore: 데이터 손상은 피하지만 client migration 실패를 숨긴다.
 - 새 endpoint 추가: 같은 기능의 create endpoint가 둘로 갈라져 호환성 테스트가 복잡해진다.
 
 ## 결정 5: 후보 목록은 configured provider scope에서만 제공하고 수동 URL 입력을 항상 유지한다
@@ -73,10 +75,24 @@
 - 기존 GitHub/GitLab 연결은 연결 단위 공유 읽기 전용 credential을 사용한다.
 - 개인 권한을 운영 credential로 사용하면 사용자가 퇴사하거나 권한이 회수될 때 workspace connection이 깨진다.
 - 보안상 candidate discovery grant와 long-lived repository ingestion credential의 목적과 보관 정책을 분리해야 한다.
+- shared read-only credential이 없거나 검증에 실패하면 connection row를 active로 만들지 않고 provider별 재인증 또는 권한 수정 안내를 반환한다.
 
 **Alternatives considered**:
 - 개인 권한으로 운영까지 수행: 운영 안정성과 감사성이 약하다.
 - 개인 권한 없이 공유 credential만 사용: candidate listing UX가 제한된다.
+
+## 결정 6a: 권한 실패는 연결 생성 실패로 고정한다
+
+**Decision**: 저장소 접근 권한 만료, 권한 회수, shared read-only credential 검증 실패, 개인 provider grant만 있는 create 시도는 연결 생성을 완료하지 않는다. API는 권한 문제와 해결 안내를 담은 problem response를 반환하고, operator UI는 provider별 재인증 또는 credential 수정 흐름으로 안내한다.
+
+**Rationale**:
+- 후보 조회와 연결 운영 credential의 경계를 테스트 가능하게 만든다.
+- half-created active connection이나 snapshot enqueue가 발생하면 이후 sync/event 처리에서 실패 원인이 흐려진다.
+- spec의 "후보 조회는 가능하지만 생성 완료는 금지" 요구를 구현 가능한 실패 계약으로 고정한다.
+
+**Alternatives considered**:
+- `reauth_required` connection을 생성하고 나중에 복구: 생성 완료 금지 요구와 충돌한다.
+- 개인 provider grant를 임시 운영 credential로 승격: credential boundary와 감사 요구를 깨뜨린다.
 
 ## 결정 7: 기존 GitHub/GitLab provider semantics는 변경하지 않는다
 

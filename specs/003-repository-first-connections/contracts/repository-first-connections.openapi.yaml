@@ -56,7 +56,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/RepositoryConnectionResponse'
         '400':
-          description: 잘못된 입력 또는 중복 연결
+          description: 잘못된 입력, obsolete planning reference field, 또는 중복 연결
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+        '403':
+          description: 저장소 접근 권한 또는 workspace shared read-only credential 검증 실패
           content:
             application/json:
               schema:
@@ -141,6 +147,7 @@ components:
         required: [planningInputReferenceId]
     CredentialInput:
       type: object
+      description: Workspace shared read-only repository operation credential. Personal provider grants used for candidate discovery are not accepted here.
       required: [type, secret]
       properties:
         type:
@@ -296,8 +303,26 @@ components:
           type: string
     ProblemResponse:
       type: object
+      required: [code, message]
       properties:
         code:
           type: string
+          enum:
+            - obsolete_planning_reference
+            - duplicate_repository_connection
+            - repository_not_authorized
+            - shared_credential_required
+            - shared_credential_invalid
+            - provider_reauth_required
+            - invalid_request
         message:
           type: string
+        remediationAction:
+          type: string
+          enum:
+            - remove_planning_reference_field
+            - open_existing_connection
+            - configure_shared_read_only_credential
+            - refresh_provider_authorization
+            - update_repository_permissions
+            - none
