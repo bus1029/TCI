@@ -3,17 +3,11 @@
 **Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
 **Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
 
-**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
+**Note**: This template is filled in by the `/speckit-plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
 
 ## Summary
 
 [Extract from feature spec: primary requirement + technical approach from research]
-
-## Change Traceability
-
-**Planning Input**: [Link or reference to the originating planning document, brief, or request]
-**Spec Scope Baseline**: [State which approved spec revision this plan implements]
-**Scope Changes Since Input**: [None / summarize approved deltas with links]
 
 ## Technical Context
 
@@ -37,12 +31,7 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-- [ ] Planning input is linked and translated into concrete design scope.
-- [ ] `spec.md` is approved for the scope implemented by this plan.
-- [ ] This plan introduces no scope that is absent from the approved spec.
-- [ ] Traceability from planning input -> spec -> plan will remain intact after delivery.
-- [ ] Pilot rule acknowledged: implementation will not auto-run and requires explicit human approval.
-- [ ] Validation evidence required for completion is defined in this plan.
+[Gates determined based on constitution file]
 
 ## Project Structure
 
@@ -50,12 +39,12 @@
 
 ```text
 specs/[###-feature]/
-├── plan.md              # This file (/speckit.plan command output)
-├── research.md          # Phase 0 output (/speckit.plan command)
-├── data-model.md        # Phase 1 output (/speckit.plan command)
-├── quickstart.md        # Phase 1 output (/speckit.plan command)
-├── contracts/           # Phase 1 output (/speckit.plan command)
-└── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
+├── plan.md              # This file (/speckit-plan command output)
+├── research.md          # Phase 0 output (/speckit-plan command)
+├── data-model.md        # Phase 1 output (/speckit-plan command)
+├── quickstart.md        # Phase 1 output (/speckit-plan command)
+├── contracts/           # Phase 1 output (/speckit-plan command)
+└── tasks.md             # Phase 2 output (/speckit-tasks command - NOT created by /speckit-plan)
 ```
 
 ### Source Code (repository root)
