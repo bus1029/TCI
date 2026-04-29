@@ -11,6 +11,7 @@
 - 기존 planning 기반 연결은 planning reference를 legacy provenance로 보존한다.
 - `workspace_id`가 connection의 canonical workspace 귀속이다.
 - 개인 provider grant는 candidate discovery에만 사용하고 repository operation credential로 저장하지 않는다.
+- 생성, 검증, 수집, 이벤트 처리, 상태 조회, 재검증은 workspace shared read-only credential만 사용한다.
 - provider별 webhook/snapshot/event semantics는 기존 GitHub/GitLab 기준선을 유지한다.
 
 ## Core Entities
@@ -96,6 +97,7 @@
 - `(workspace_id, provider, canonical_repository_key)` must be unique for active/non-deleted connections.
 - Candidate-selected and manual URL create paths must compute the same `canonical_repository_key`.
 - Connection creation requires a validated workspace shared read-only credential; personal provider discovery grants cannot satisfy this requirement.
+- Connection verification, mirror/snapshot collection, webhook/event processing, repository-backed status lookup, and reverify operations must use the workspace shared read-only credential only.
 - `origin_kind = legacy_unassigned` is only for rows where workspace provenance cannot be trusted; these rows stay visible.
 
 **State Transitions**:
@@ -152,6 +154,7 @@ legacy_unassigned -> legacy_planning or workspace_repository after operator repa
 
 - Candidate discovery personal grants are not persisted here.
 - A connection cannot become `active` from candidate selection alone; shared read-only credential validation is still required.
+- All repository operation paths after creation use this workspace shared read-only credential; personal discovery grants cannot be used for verification, collection, event processing, status lookup, or reverify.
 - Missing, expired, revoked, or invalid shared read-only credentials fail connection creation and must not enqueue initial mirror or snapshot work.
 - Permission failure responses must preserve provider-specific remediation context without exposing secret material.
 - Existing GitHub/GitLab credential validation rules remain unchanged.
@@ -174,6 +177,7 @@ legacy_unassigned -> legacy_planning or workspace_repository after operator repa
 
 - No provider event schema changes are required.
 - Event traceability links to `connection_id`; planning reference is resolved optionally through the connection.
+- Event processing that needs repository access uses the connection's workspace shared read-only credential, not a personal provider discovery grant.
 - GitHub/GitLab event semantics and dedupe rules remain unchanged.
 
 ### 8. RepositorySyncRun

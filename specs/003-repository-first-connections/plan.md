@@ -10,7 +10,7 @@
 ## Change Traceability
 
 **Planning Input**: 2026-04-29 사용자 요청 "저장소 연결 기능이 Repository 연결에서 시작하도록 수정하는 기술 계획", 제약 "clarify 항목은 plan에서 명확히 구체화", "기존 GitHub Cloud, GitLab 연동 기능 관련 코드와의 호환성 고려"  
-**Spec Scope Baseline**: 2026-04-29 clarify 7건과 remediation update가 반영되어 active scope baseline으로 채택된 `/specs/003-repository-first-connections/spec.md`
+**Spec Scope Baseline**: 2026-04-29 clarify 10건과 remediation update가 반영되어 active scope baseline으로 채택된 `/specs/003-repository-first-connections/spec.md`  
 **Scope Changes Since Input**: 채택된 spec baseline 범위를 벗어나지 않는 수준에서 아래 설계 규칙을 plan 단계에서 고정한다.
 
 - 새 Repository 연결 생성 payload는 `planningInputReferenceId`를 받지 않는다.
@@ -19,10 +19,11 @@
 - 새 연결의 detail/snapshot traceability는 `planningInputReference: null`, `origin.kind = workspace_repository` 형태로 노출한다.
 - 후보 목록은 설정된 provider 계정 또는 GitLab 인스턴스 접근 범위에서만 제공하고, 항상 수동 URL 입력 경로를 유지한다.
 - 후보 조회에 쓰이는 개인 provider 권한은 연결 운영 credential로 승격하지 않는다.
-- 새 연결 생성은 검증된 워크스페이스 공유 읽기 전용 credential이 있어야만 완료된다.
+- 새 연결 생성, 검증, 수집, 이벤트 처리, 상태 조회, 재검증은 검증된 워크스페이스 공유 읽기 전용 credential만 사용한다.
 - 기존 `workspace_id`가 있는 planning 기반 연결은 그 값을 canonical workspace 귀속으로 사용한다.
 - US1 MVP 검증은 수동 URL 입력과 기존 provider 검증 흐름으로 독립 완료할 수 있어야 하며, 후보 목록 기반 판단 지원은 US3에서 완성한다.
-- SC-001은 대표 운영자 연결 리허설의 시작/완료 타임스탬프와 성공/실패 집계로 증명한다.
+- SC-001은 대표 운영자 3명이 GitHub 1회와 GitLab 1회씩 총 6회 리허설을 수행하고, 6회 중 5회 이상 10분 이내 성공했는지로 증명한다.
+- SC-004는 대표 운영자 3명이 mixed-provider 화면에서 총 60개 식별 과제를 수행하고, 57개 이상 정답인지로 증명한다.
 
 ## Technical Context
 
@@ -32,8 +33,8 @@
 **Testing**: `pytest`, `pytest-asyncio`, `httpx`, `schemathesis`, operator UI integration tests, existing GitHub/GitLab webhook and connection contract fixtures  
 **Target Platform**: Linux-based API/worker runtime with Git CLI access and network reachability to GitHub Cloud and configured GitLab Self-Managed instances  
 **Project Type**: Python web application with JSON API, async worker, and server-rendered operator UI  
-**Performance Goals**: 새 워크스페이스 기반 GitHub/GitLab 연결 생성부터 상세 조회까지 10분 이내 완료하고 이 시간을 delivery evidence에 기록; 기존 GitHub/GitLab webhook 처리 기준은 유지; 후보 목록 조회는 설정된 provider 계정/인스턴스 범위에서 일반 운영 화면 사용자가 기다릴 수 있는 시간 안에 완료
-**Constraints**: pilot 단계로 implement auto-run 금지; `planningInputReferenceId` 필수 계약 제거는 additive compatibility가 아니라 명시적 reject로 수행; 기존 GitHub/GitLab create/detail/snapshot/event/webhook 회귀 통과; 새 연결은 planning trace를 저장하지 않음; 기존 planning trace는 삭제하지 않음; candidate 조회 credential과 연결 운영 credential 분리; 개인 provider 권한만으로 connection active 생성 금지; shared read-only credential 검증 실패 시 생성 중단과 해결 안내 제공; 한 워크스페이스 안 동일 provider+canonical repository 중복 차단; provider별 event/snapshot/history projection 분리 유지
+**Performance Goals**: 새 워크스페이스 기반 GitHub/GitLab 연결 생성부터 상세 조회까지 10분 이내 완료하고 이 시간을 delivery evidence에 기록; 기존 GitHub/GitLab webhook 처리 기준은 유지; 후보 목록 조회는 설정된 provider 계정/인스턴스 범위에서 일반 운영 화면 사용자가 기다릴 수 있는 시간 안에 완료  
+**Constraints**: pilot 단계로 implement auto-run 금지; `planningInputReferenceId` 필수 계약 제거는 additive compatibility가 아니라 명시적 reject로 수행; 기존 GitHub/GitLab create/detail/snapshot/event/webhook 회귀 통과; 새 연결은 planning trace를 저장하지 않음; 기존 planning trace는 삭제하지 않음; candidate 조회 credential과 연결 운영 credential 분리; 개인 provider 권한만으로 connection active 생성 금지; shared read-only credential 검증 실패 시 생성 중단과 해결 안내 제공; connection 생성, 검증, mirror/snapshot 수집, webhook/event 처리, 상태 조회, 재검증은 workspace shared read-only credential만 사용; 한 워크스페이스 안 동일 provider+canonical repository 중복 차단; provider별 event/snapshot/history projection 분리 유지  
 **Scale/Scope**: 내부 운영자가 관리하는 low hundreds 수준의 mixed-provider workspace connections, 기존 planning 기반 연결과 신규 workspace 기반 연결이 함께 존재하는 전환 기간, provider별 webhook burst와 snapshot retention은 기존 기준 유지
 
 ## Constitution Check
@@ -56,12 +57,13 @@
 | 기존 trace 보존 | 기존 GitHub/GitLab 연결의 planning reference는 migration에서 유지하고, detail/snapshot traceability에 legacy provenance로 계속 노출한다. |
 | 저장소 선택 방식 | provider 후보 목록 선택과 수동 URL 입력을 모두 지원한다. 수동 URL 입력은 기존 GitHub/GitLab 연결 생성 경로와 같은 validator를 사용한다. |
 | 후보 목록 범위 | 후보 목록은 워크스페이스에 설정된 provider 계정 또는 GitLab 인스턴스 접근 정보가 있을 때만 제공한다. 미설정 provider는 empty candidate state와 수동 URL 입력만 제공한다. |
-| 권한 모델 | 개인 provider 권한은 후보 조회에만 사용한다. 연결 검증, mirror sync, snapshot, webhook 처리, 재검증은 워크스페이스 공유 읽기 전용 credential만 사용한다. shared read-only credential이 없거나 검증 실패하면 연결 생성은 실패한다. |
+| 권한 모델 | 개인 provider 권한은 후보 조회에만 사용한다. 연결 생성, 검증, mirror sync, snapshot, webhook/event 처리, 상태 조회, 재검증은 워크스페이스 공유 읽기 전용 credential만 사용한다. shared read-only credential이 없거나 검증 실패하면 연결 생성은 실패한다. |
 | 권한 실패 UX/API | 접근 권한 만료, 권한 회수, shared read-only credential 검증 실패는 connection row를 active로 만들지 않고 provider별 재인증 또는 권한 수정 안내가 포함된 문제 응답/화면 상태로 표현한다. |
 | 기존 workspace 귀속 | 기존 planning 기반 연결에 저장된 `workspace_id`를 canonical workspace 귀속으로 사용한다. 값이 없거나 일관되지 않은 예외만 compatibility state로 표시한다. |
 | GitHub/GitLab 호환성 | provider별 remote parser, webhook verifier, event normalizer, snapshot pipeline은 기존 의미를 유지한다. 이 기능은 시작점/traceability/UX/API 계약을 바꾸며 provider semantics를 재설계하지 않는다. |
 | US1/US3 경계 | US1은 planning trace 없이 수동 URL 입력으로 GitHub/GitLab 연결을 만들 수 있는 MVP create/detail/snapshot 경로를 독립 검증한다. 후보 목록 조회, empty state, already-connected 구분, candidate/manual dedupe 판단 지원은 US3 범위에서 완성한다. |
-| SC-001 검증 방식 | 새 워크스페이스 생성부터 저장소 연결 상세 확인까지의 대표 운영자 리허설을 GitHub와 GitLab 각각 실행하고, 시작/완료 타임스탬프와 성공률 집계를 delivery evidence에 기록한다. |
+| SC-001 검증 방식 | 대표 운영자 3명이 GitHub 1회와 GitLab 1회씩 총 6회의 연결 리허설을 수행하고, 6회 중 5회 이상 10분 이내 성공해야 한다. 각 시도는 시작/완료 타임스탬프와 성공/실패 결과를 delivery evidence에 기록한다. |
+| SC-004 검증 방식 | 대표 운영자 3명이 mixed-provider 워크스페이스 화면에서 provider와 저장소 식별 정보를 기준으로 총 60개 식별 과제를 수행하고, 57개 이상 정답이어야 한다. 과제별 정답/오답 결과를 delivery evidence에 기록한다. |
 
 ## Project Structure
 
@@ -170,12 +172,13 @@ pilot-git-repo-connection/
 - `CreateRepositoryConnectionCommand`와 service는 `workspace_id`를 직접 사용해 connection을 생성한다.
 - planning reference lookup을 create path에서 제거한다.
 - connection 생성 후 `connection.planning_input_reference`가 없어도 serializer와 detail read model이 동작하게 만든다.
-- 수동 URL 입력은 기존 provider별 remote parser, allowlist, read-only validator, mirror sync 흐름을 그대로 사용한다.
+- 수동 URL 입력은 기존 provider별 remote parser, allowlist, shared read-only credential validator, mirror sync 흐름을 그대로 사용한다.
 
 ### Slice 3. Credential Boundary and Permission Failure Handling
 
 - candidate discovery personal grant는 후보 목록 조회 service 안에서만 사용하고 connection credential/revision으로 저장하지 않는다.
 - create command는 workspace shared read-only credential 입력과 검증 결과 없이는 connection 생성을 완료하지 않는다.
+- connection verification, mirror sync, snapshot collection, webhook/event processing, status/detail lookup that needs repository access, and reverify paths use only the workspace shared read-only credential.
 - shared read-only credential 검증 실패, 저장소 접근 권한 만료, 권한 회수는 provider별 재인증 또는 권한 수정 안내가 있는 problem response와 operator UI 상태로 매핑한다.
 - 실패 케이스는 active connection, initial sync, snapshot enqueue가 발생하지 않도록 한다.
 
@@ -204,6 +207,7 @@ pilot-git-repo-connection/
 - shared read-only credential 검증 실패는 provider별 재인증 또는 권한 수정 안내를 표시한다.
 - 기존 legacy planning 연결은 목록/detail에서 `legacy planning trace`가 있는 연결로 이해 가능하게 표시한다.
 - `legacy_unassigned` 연결은 숨기지 않고 운영자 compatibility action 안내를 보여준다.
+- mixed-provider 화면은 provider, repository owner/path/name, origin을 식별 과제에서 구분 가능하게 표시한다.
 
 ### Slice 7. GitHub/GitLab Regression Guard
 
@@ -224,6 +228,7 @@ pilot-git-repo-connection/
   - snapshot traceability builder works with and without legacy planning reference
   - canonical provider+repository identity dedupe handles candidate and manual URL paths
   - candidate listing returns empty state when provider account/instance is not configured
+  - repository access operation helpers reject personal provider grants for create/verify/collect/event/status/reverify paths
 - Contract
   - `POST /api/repository-connections` rejects obsolete `planningInputReferenceId` and succeeds without it
   - `POST /api/repository-connections` returns an actionable permission problem when shared read-only credential is missing or invalid
@@ -237,15 +242,17 @@ pilot-git-repo-connection/
   - candidate-selected connection and manual URL connection share duplicate prevention
   - personal provider grant can list candidates but cannot complete connection create without shared read-only credential
   - unauthorized/expired/revoked repository access does not create an active connection and returns remediation guidance
+  - create, verification, collection, webhook/event processing, status lookup, and reverify paths use the workspace shared read-only credential and never a personal discovery grant
   - existing planning-based GitHub row remains visible and operational under its existing `workspace_id`
   - existing planning-based GitLab row remains visible and operational under its existing `workspace_id`
   - `legacy_unassigned` fixture is visible with compatibility state
 - End-to-End
-  - new workspace -> manual URL -> shared read-only credential -> connection active -> snapshot -> detail timeline with no planning trace, with start/end timestamps for SC-001 timing evidence
+  - new workspace -> manual URL -> shared read-only credential -> connection active -> snapshot -> detail timeline with no planning trace, with SC-001 evidence from 3 operators and 6 total attempts where at least 5 complete within 10 minutes
   - new workspace -> provider candidate -> shared read-only credential -> connection active -> detail timeline with no planning trace after US3 candidate flow lands
   - mixed workspace with legacy and new connections -> list/detail/snapshot/event/history flows remain separated by provider and origin
+  - SC-004 mixed-provider identification rehearsal records 60 operator tasks and at least 57 correct answers
 - Delivery evidence
-  - story/FR/SC trace coverage must include workspace-first path, SC-001 timing evidence, credential boundary path, legacy compatibility path, mixed-provider separation path, and GitHub/GitLab provider regression evidence.
+  - story/FR/SC trace coverage must include workspace-first path, SC-001 timing evidence, credential boundary path across create/verify/collect/event/status/reverify, legacy compatibility path, mixed-provider separation and SC-004 identification evidence, and GitHub/GitLab provider regression evidence.
 
 ## Post-Design Constitution Check
 
@@ -253,7 +260,7 @@ pilot-git-repo-connection/
 - [x] Plan scope stays inside accepted spec baseline: workspace-first connection, optional legacy trace, candidate/manual selection, credential boundary, compatibility.
 - [x] End-to-end traceability for the change itself remains via spec/plan/tasks/evidence; runtime planning trace removal applies only to RepositoryConnection domain rows.
 - [x] Pilot implementation gate remains manual; `/speckit.implement` must not auto-run.
-- [x] Validation evidence is defined for new workspace-first behavior, SC-001 timing, credential failure behavior, mixed-provider separation, and existing GitHub/GitLab regressions.
+- [x] Validation evidence is defined for new workspace-first behavior, SC-001 timing, credential failure behavior, credential boundary across all repository operation paths, mixed-provider SC-004 identification, and existing GitHub/GitLab regressions.
 
 ## Complexity Tracking
 
@@ -264,7 +271,7 @@ pilot-git-repo-connection/
 3. shared read-only credential boundary and permission failure handling
 4. detail/snapshot traceability optionalization
 5. manual URL MVP path before candidate-list UX completion
-6. mixed-provider separation regression
+6. mixed-provider separation regression and SC-004 identification evidence
 7. GitHub/GitLab full regression
 
 이 순서를 어기면 trace serializer나 snapshot builder가 null planning reference에서 먼저 실패하거나, 개인 provider 권한이 운영 credential로 잘못 승격될 위험이 크다.

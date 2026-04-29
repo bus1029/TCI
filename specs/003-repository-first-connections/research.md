@@ -69,13 +69,14 @@
 
 ## 결정 6: 개인 provider 권한과 워크스페이스 연결 credential을 분리한다
 
-**Decision**: 개인 provider 권한은 candidate discovery에만 사용한다. connection verification, mirror sync, snapshot, webhook handling, reverify는 워크스페이스 공유 읽기 전용 credential만 사용한다.
+**Decision**: 개인 provider 권한은 candidate discovery에만 사용한다. connection creation, connection verification, mirror sync, snapshot collection, webhook/event handling, status lookup that requires repository access, and reverify all use only the workspace shared read-only credential.
 
 **Rationale**:
 - 기존 GitHub/GitLab 연결은 연결 단위 공유 읽기 전용 credential을 사용한다.
 - 개인 권한을 운영 credential로 사용하면 사용자가 퇴사하거나 권한이 회수될 때 workspace connection이 깨진다.
 - 보안상 candidate discovery grant와 long-lived repository ingestion credential의 목적과 보관 정책을 분리해야 한다.
 - shared read-only credential이 없거나 검증에 실패하면 connection row를 active로 만들지 않고 provider별 재인증 또는 권한 수정 안내를 반환한다.
+- 이벤트 처리와 상태 조회/재검증까지 같은 경계를 적용해야 개인 provider grant가 운영 경로로 재도입되는 회귀를 막을 수 있다.
 
 **Alternatives considered**:
 - 개인 권한으로 운영까지 수행: 운영 안정성과 감사성이 약하다.
@@ -83,7 +84,7 @@
 
 ## 결정 6a: 권한 실패는 연결 생성 실패로 고정한다
 
-**Decision**: 저장소 접근 권한 만료, 권한 회수, shared read-only credential 검증 실패, 개인 provider grant만 있는 create 시도는 연결 생성을 완료하지 않는다. API는 권한 문제와 해결 안내를 담은 problem response를 반환하고, operator UI는 provider별 재인증 또는 credential 수정 흐름으로 안내한다.
+**Decision**: 저장소 접근 권한 만료, 권한 회수, shared read-only credential 검증 실패, 개인 provider grant만 있는 create 시도는 연결 생성을 완료하지 않는다. 동일한 credential boundary 위반이 검증, 수집, 이벤트 처리, 상태 조회, 재검증에서 발견되면 해당 operation을 실패시키고 API는 권한 문제와 해결 안내를 담은 problem response를 반환하며, operator UI는 provider별 재인증 또는 credential 수정 흐름으로 안내한다.
 
 **Rationale**:
 - 후보 조회와 연결 운영 credential의 경계를 테스트 가능하게 만든다.

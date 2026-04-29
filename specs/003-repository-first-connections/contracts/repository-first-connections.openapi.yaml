@@ -5,7 +5,9 @@ info:
   description: >
     Workspace-based repository connection contract changes. Existing GitHub and
     GitLab provider behavior remains compatible; planning trace is optional
-    legacy provenance.
+    legacy provenance. Personal provider grants may be used only for repository
+    candidate discovery; creation and all repository operation paths use the
+    workspace shared read-only credential.
 servers:
   - url: https://tci.example.com
 tags:
@@ -147,7 +149,7 @@ components:
         required: [planningInputReferenceId]
     CredentialInput:
       type: object
-      description: Workspace shared read-only repository operation credential. Personal provider grants used for candidate discovery are not accepted here.
+      description: Workspace shared read-only repository operation credential. Personal provider grants used for candidate discovery are not accepted here and must not be used for verification, collection, event processing, status lookup, or reverify operations.
       required: [type, secret]
       properties:
         type:

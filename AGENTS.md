@@ -33,8 +33,8 @@ Markdown, Spec Kit 0.5.1, repository shell workflow: Follow standard conventions
 
 ## Recent Changes
 - 003-repository-first-connections: Added Python 3.12 + FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, Celery 5.x, redis-py, structlog, Jinja2, cryptography
+- 003-repository-first-connections: Added Python 3.12 + FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, Celery 5.x, redis-py, structlog, Jinja2, cryptography
 - 002-gitlab-onprem-connection: Added Python 3.12 + FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, Celery 5.x, redis-py, structlog, Jinja2, cryptography
-- 006-gitlab-onprem-connection: Added Python 3.12 + FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, Celery 5.x, redis-py, structlog, Jinja2, cryptography
 
 
 <!-- MANUAL ADDITIONS START -->

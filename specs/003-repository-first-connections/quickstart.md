@@ -19,6 +19,7 @@
    - `planningInputReferenceId` was not required
    - detail returns `traceability.planningInputReference = null`
    - `origin.kind = workspace_repository`
+   - repository verification uses the workspace shared read-only credential, not a personal provider grant
 7. Trigger initial snapshot.
 8. Verify snapshot detail still includes `connectionId`, `scopeRuleVersionId`, `syncRunId`, and nullable planning reference.
 
@@ -69,6 +70,23 @@
 5. Submit a create request with expired, revoked, or invalid shared read-only credential.
 6. Verify the request fails with `code = shared_credential_invalid`, `repository_not_authorized`, or `provider_reauth_required` and includes remediation guidance.
 7. Verify no active connection, mirror sync, or snapshot job is created for the failed request.
+8. For a successfully created connection, run verification, collection, event processing, status lookup, and reverify checks with a personal provider grant removed or revoked.
+9. Verify those operation paths continue to use the workspace shared read-only credential and never fall back to the personal provider grant.
+
+## Scenario 7: Operator Rehearsal Evidence
+
+1. Run the workspace-first GitHub connection rehearsal once per representative operator.
+2. Run the workspace-first GitLab connection rehearsal once per representative operator.
+3. Record 3 operators x 2 providers = 6 attempts in `delivery-evidence.md`.
+4. For each attempt, record start timestamp, completion timestamp, elapsed minutes, provider, and success/failure.
+5. Verify at least 5 of 6 attempts complete within 10 minutes.
+
+## Scenario 8: Mixed-Provider Identification Evidence
+
+1. Prepare a mixed-provider workspace screen with GitHub and GitLab connections/candidates that include similar names or paths.
+2. Give each of 3 representative operators 20 provider/repository identification tasks.
+3. Record all 60 task results in `delivery-evidence.md`.
+4. Verify at least 57 of 60 answers are correct.
 
 ## Required Checks Before Task Completion
 
@@ -89,5 +107,8 @@ Add new focused tests for:
 - repository candidate empty state
 - personal provider grant cannot become operation credential
 - shared read-only credential failure prevents active connection creation
+- shared read-only credential is the only credential used across create, verify, collect, event, status, and reverify paths
 - duplicate prevention across candidate/manual paths
 - mixed GitHub/GitLab list/detail/event/snapshot/history separation
+- SC-001 six-attempt timed rehearsal evidence
+- SC-004 sixty-task mixed-provider identification evidence
