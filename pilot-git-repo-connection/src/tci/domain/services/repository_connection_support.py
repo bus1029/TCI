@@ -35,9 +35,50 @@ class RepositoryConnectionProblem(RuntimeError):
         self.detail = message
 
 
+ConnectionOrigin = dict[str, object]
+
+
 _SSH_CREDENTIAL_BIND_LOCK = Lock()
 _ASKPASS_READY_TIMEOUT_SECONDS = 1.0
 _LOGGER = logging.getLogger(__name__)
+
+
+def build_connection_origin(connection) -> ConnectionOrigin:
+    planning_input_reference_id = getattr(
+        connection, "planning_input_reference_id", None
+    )
+    planning_input_reference = matching_workspace_planning_input_reference(connection)
+    if planning_input_reference_id is None:
+        return {
+            "kind": "workspace_repository",
+            "hasLegacyPlanningTrace": False,
+            "compatibilityState": "normal",
+            "message": "워크스페이스에서 직접 생성된 저장소 연결입니다.",
+        }
+    if planning_input_reference is not None:
+        return {
+            "kind": "legacy_planning",
+            "hasLegacyPlanningTrace": True,
+            "compatibilityState": "legacy_trace_preserved",
+            "message": "기존 planning trace가 보존된 저장소 연결입니다.",
+        }
+    return {
+        "kind": "legacy_unassigned",
+        "hasLegacyPlanningTrace": False,
+        "compatibilityState": "workspace_assignment_unclear",
+        "message": "기존 planning trace를 확인할 수 없어 호환성 확인이 필요합니다.",
+    }
+
+
+def matching_workspace_planning_input_reference(connection):
+    planning_input_reference = getattr(connection, "planning_input_reference", None)
+    if planning_input_reference is None:
+        return None
+    if getattr(planning_input_reference, "workspace_id", None) != getattr(
+        connection, "workspace_id", None
+    ):
+        return None
+    return planning_input_reference
 
 
 def parse_provider(raw_value: str) -> RepositoryProvider:

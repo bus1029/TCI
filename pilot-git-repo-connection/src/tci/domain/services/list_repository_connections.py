@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import uuid
 
+from tci.domain.services.repository_connection_support import build_connection_origin
+
 
 def list_repository_connections(*, workspace_id: uuid.UUID, dependencies):
     if dependencies.session_factory is None:
@@ -13,4 +15,9 @@ def list_repository_connections(*, workspace_id: uuid.UUID, dependencies):
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )
-        return connection_repository.list_for_workspace(workspace_id=workspace_id)
+        connections = connection_repository.list_for_workspace(
+            workspace_id=workspace_id
+        )
+        for connection in connections:
+            connection.origin = build_connection_origin(connection)
+        return connections

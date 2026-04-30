@@ -96,8 +96,8 @@
 
 ### Implementation for User Story 2
 
-- [ ] T037 [US2] Update connection detail service to compute `legacy_planning` and `legacy_unassigned` origin states in `pilot-git-repo-connection/src/tci/domain/services/get_repository_connection_detail.py`
-- [ ] T038 [US2] Update connection listing service to include origin information and use existing `workspace_id` without dropping legacy rows in `pilot-git-repo-connection/src/tci/domain/services/list_repository_connections.py`
+- [x] T037 [US2] Update connection detail service to compute `legacy_planning` and `legacy_unassigned` origin states in `pilot-git-repo-connection/src/tci/domain/services/get_repository_connection_detail.py`
+- [x] T038 [US2] Update connection listing service to include origin information and use existing `workspace_id` without dropping legacy rows in `pilot-git-repo-connection/src/tci/domain/services/list_repository_connections.py`
 - [x] T039 [US2] Update detail serializer to preserve legacy planning trace when present in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
 - [x] T040 [US2] Update snapshot detail serializer to preserve legacy planning trace when present in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
 - [x] T041 [US2] Update operator connection list template to distinguish workspace repository and legacy planning origins in `pilot-git-repo-connection/src/tci/web/templates/connections/index.html`
@@ -117,8 +117,8 @@
 
 ### Tests for User Story 3
 
-- [ ] T045 [P] [US3] Add contract tests for `GET /api/repository-candidates` scoped candidates and empty manual-url state in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_candidate_contract.py`
-- [ ] T046 [P] [US3] Add unit tests for candidate service provider scope and access states in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_candidates.py`
+- [x] T045 [P] [US3] Add contract tests for `GET /api/repository-candidates` scoped candidates and empty manual-url state in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_candidate_contract.py`
+- [x] T046 [P] [US3] Add unit tests for candidate service provider scope and access states in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_candidates.py`
 - [ ] T047 [P] [US3] Add unit tests for canonical duplicate key calculation across candidate and manual URL paths in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_identity.py`
 - [ ] T048 [P] [US3] Add operator integration test for candidate list, empty state, and manual URL fallback in `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_connection_pages.py`
 - [ ] T049 [P] [US3] Add integration test for duplicate prevention across candidate-selected and manual URL connections in `pilot-git-repo-connection/tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
@@ -130,10 +130,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T055 [P] [US3] Add repository candidate schema models in `pilot-git-repo-connection/src/tci/api/schemas/repository_candidate.py`
-- [ ] T056 [P] [US3] Add candidate listing domain service with configured provider account/instance empty-state behavior in `pilot-git-repo-connection/src/tci/domain/services/list_repository_candidates.py`
-- [ ] T057 [US3] Add repository candidates API route in `pilot-git-repo-connection/src/tci/api/routes/repository_candidates.py`
-- [ ] T058 [US3] Register repository candidates route in FastAPI app in `pilot-git-repo-connection/src/tci/app.py`
+- [x] T055 [P] [US3] Add repository candidate schema models in `pilot-git-repo-connection/src/tci/api/schemas/repository_candidate.py`
+- [x] T056 [P] [US3] Add candidate listing domain service with configured provider account/instance empty-state behavior in `pilot-git-repo-connection/src/tci/domain/services/list_repository_candidates.py`
+- [x] T057 [US3] Add repository candidates API route in `pilot-git-repo-connection/src/tci/api/routes/repository_candidates.py`
+- [x] T058 [US3] Register repository candidates route in FastAPI app in `pilot-git-repo-connection/src/tci/app.py`
 - [ ] T059 [US3] Add canonical repository identity helper for provider+normalized repository comparison in `pilot-git-repo-connection/src/tci/domain/services/repository_connection_support.py`
 - [ ] T060 [US3] Apply canonical duplicate prevention in create orchestration using the shared identity helper before persistence in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
 - [ ] T061 [US3] Enforce candidate discovery grant versus workspace shared read-only operation credential boundary in create service in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`

@@ -18,11 +18,15 @@ from tci.api.routes.planning_input_references import (
 from tci.api.routes.repository_connections import (
     router as repository_connections_router,
 )
+from tci.api.routes.repository_candidates import (
+    router as repository_candidates_router,
+)
 from tci.api.routes.repository_scope import router as repository_scope_router
 from tci.api.routes.repository_snapshots import router as repository_snapshots_router
 from tci.domain.services.build_traceability_reference import (
     build_snapshot_traceability_reference,
 )
+from tci.domain.services.list_repository_candidates import RepositoryCandidateSource
 from tci.infrastructure.persistence.code_snapshot_repository import (
     CodeSnapshotRepository,
 )
@@ -103,6 +107,7 @@ class AppDependencies:
         [Session], RepositorySyncRunRepository
     ]
     code_snapshot_repository_factory: Callable[[Session], CodeSnapshotRepository]
+    repository_candidate_source: RepositoryCandidateSource | None = None
 
 
 def build_app_dependencies(settings: Settings) -> AppDependencies:
@@ -126,6 +131,7 @@ def build_app_dependencies(settings: Settings) -> AppDependencies:
         repository_event_cursor_repository_factory=RepositoryEventCursorRepository,
         repository_sync_run_repository_factory=RepositorySyncRunRepository,
         code_snapshot_repository_factory=CodeSnapshotRepository,
+        repository_candidate_source=None,
     )
 
 
@@ -155,6 +161,7 @@ def create_app(
         directory=str(resolved_settings.template_root)
     )
     app.include_router(planning_input_references_router)
+    app.include_router(repository_candidates_router)
     app.include_router(repository_connections_router)
     app.include_router(repository_events_router)
     app.include_router(github_webhooks_router)

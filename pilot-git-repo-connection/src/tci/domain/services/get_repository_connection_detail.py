@@ -5,6 +5,7 @@ import uuid
 from tci.domain.services.rotate_webhook_secret import (
     build_webhook_secret_rotation_projection,
 )
+from tci.domain.services.repository_connection_support import build_connection_origin
 
 
 def get_repository_connection_detail(
@@ -55,4 +56,5 @@ def get_repository_connection_detail(
             rotation_projection.previous_secret_deliveries_during_grace
         )
         connection.webhook_secret_grace_until = rotation_projection.grace_until
+        connection.origin = build_connection_origin(connection)
         return connection

@@ -7,6 +7,10 @@ from pydantic import ConfigDict, Field
 
 from tci.api.schemas._base import CamelModel
 from tci.api.schemas.repository_scope import ScopeRuleResponse, serialize_scope_rule
+from tci.domain.services.repository_connection_support import (
+    build_connection_origin,
+    matching_workspace_planning_input_reference,
+)
 
 
 class CredentialInput(CamelModel):
@@ -98,7 +102,7 @@ def serialize_repository_connection(connection) -> dict[str, object]:
 
 def serialize_repository_connection_detail(connection) -> dict[str, object]:
     payload = serialize_repository_connection(connection)
-    planning_input_reference = _matching_workspace_planning_input_reference(connection)
+    planning_input_reference = matching_workspace_planning_input_reference(connection)
     latest_snapshot = getattr(connection, "latest_snapshot", None)
     latest_sync_run = getattr(connection, "latest_sync_run", None)
     latest_scope_rule = getattr(connection, "latest_scope_rule", None)
@@ -228,43 +232,10 @@ def serialize_code_snapshot_detail(detail) -> dict[str, object]:
 
 
 def serialize_connection_origin(connection) -> dict[str, object]:
-    planning_input_reference_id = getattr(
-        connection, "planning_input_reference_id", None
-    )
-    planning_input_reference = _matching_workspace_planning_input_reference(connection)
-    if planning_input_reference_id is None:
-        return {
-            "kind": "workspace_repository",
-            "hasLegacyPlanningTrace": False,
-            "compatibilityState": "normal",
-            "message": "워크스페이스에서 직접 생성된 저장소 연결입니다.",
-        }
-    if planning_input_reference is not None and getattr(
-        planning_input_reference, "workspace_id", None
-    ) == getattr(connection, "workspace_id", None):
-        return {
-            "kind": "legacy_planning",
-            "hasLegacyPlanningTrace": True,
-            "compatibilityState": "legacy_trace_preserved",
-            "message": "기존 planning trace가 보존된 저장소 연결입니다.",
-        }
-    return {
-        "kind": "legacy_unassigned",
-        "hasLegacyPlanningTrace": False,
-        "compatibilityState": "workspace_assignment_unclear",
-        "message": "기존 planning trace를 확인할 수 없어 호환성 확인이 필요합니다.",
-    }
-
-
-def _matching_workspace_planning_input_reference(connection):
-    planning_input_reference = getattr(connection, "planning_input_reference", None)
-    if planning_input_reference is None:
-        return None
-    if getattr(planning_input_reference, "workspace_id", None) != getattr(
-        connection, "workspace_id", None
-    ):
-        return None
-    return planning_input_reference
+    origin = getattr(connection, "origin", None)
+    if origin is not None:
+        return dict(origin)
+    return build_connection_origin(connection)
 
 
 def _serialize_planning_input_reference(

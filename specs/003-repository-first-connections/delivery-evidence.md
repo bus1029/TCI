@@ -10,8 +10,8 @@
 | FR-003 | Verified | GitHub and GitLab are available in workspace-first manual URL flow. |
 | FR-003a | Partial | Manual URL path is covered; candidate list path remains US3. |
 | FR-003b | Pending | Operation paths use workspace shared read-only credentials only. |
-| FR-003c | Pending | Candidates are limited to configured provider account/instance scope. |
-| FR-003d | Pending | Manual URL fallback remains available without candidates. |
+| FR-003c | Partial | Candidate endpoint returns configured provider-scope projections; real provider account/instance integration remains open. |
+| FR-003d | Partial | Candidate endpoint returns manual URL fallback empty state when provider candidates are not configured. |
 | FR-004 | Partial | Operator list/detail now show workspace-origin context; full mixed-provider management remains US3. |
 | FR-005 | Partial | Legacy planning trace is preserved in API/operator detail coverage; full provider history regression remains open. |
 | FR-006 | Verified | Planning trace is optional legacy provenance only. |
@@ -152,6 +152,14 @@
   - Result after adding loaded cross-workspace planning reference coverage: 5 passed.
 - 2026-04-30 Snapshot traceability remediation targeted checks: `rtk pytest tests/integration/repository_connections/test_repository_first_legacy_compatibility.py tests/unit/repository_connections/test_snapshot_traceability.py -q`
   - Result after hiding cross-workspace planning references from snapshot detail: 5 passed.
+- 2026-04-30 RED: `rtk pytest tests/integration/repository_connections/test_repository_first_legacy_compatibility.py::test_detail_and_list_services_project_legacy_origin_state -q`
+  - Result: 1 failed because `get_repository_connection_detail` returned a connection without a service-level `origin` projection.
+- 2026-04-30 GREEN: `rtk pytest tests/integration/repository_connections/test_repository_first_legacy_compatibility.py::test_detail_and_list_services_project_legacy_origin_state -q`
+  - Result: 1 passed after projecting origin in detail and list services.
+- 2026-04-30 Origin projection focused regression: `rtk pytest tests/integration/repository_connections/test_repository_first_legacy_compatibility.py tests/unit/repository_connections/test_repository_connection_serialization.py tests/unit/repository_connections/test_repository_connection_origin.py -q`
+  - Result: 9 passed.
+- 2026-04-30 Origin projection focused typing: `rtk mypy src/tci/domain/services/get_repository_connection_detail.py src/tci/domain/services/list_repository_connections.py src/tci/domain/services/repository_connection_support.py src/tci/api/schemas/repository_connection.py`
+  - Result: no issues found.
 - 2026-04-30 Final focused US1/US2 regression: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_github_gitlab_compatibility.py tests/integration/repository_connections/test_repository_first_legacy_compatibility.py tests/integration/repository_connections/test_operator_connection_pages.py tests/unit/repository_connections/test_repository_connection_serialization.py tests/unit/repository_connections/test_snapshot_traceability.py -q`
   - Result: 105 passed.
 - 2026-04-30 Reviewer loop:
@@ -161,7 +169,54 @@
 
 ## User Story 3 Evidence
 
-No commands recorded yet.
+- 2026-04-30 RED: `rtk proxy pytest tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/unit/repository_connections/test_repository_candidates.py -q`
+  - Result: collection failed because `tci.domain.services.list_repository_candidates` did not exist.
+- 2026-04-30 GREEN: `rtk pytest tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/unit/repository_connections/test_repository_candidates.py -q`
+  - Result: 2 passed after adding candidate schema, service, route, and app registration.
+- 2026-04-30 Candidate configured-scope contract regression: `rtk pytest tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/unit/repository_connections/test_repository_candidates.py -q`
+  - Result: 3 passed after adding route-level configured provider-scope candidate coverage.
+- 2026-04-30 Candidate foundation focused regression: `rtk pytest tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/unit/repository_connections/test_repository_candidates.py tests/contract/repository_ingestion/test_repository_connection_contract.py::test_repository_management_routes_require_operator_token tests/contract/repository_ingestion/test_repository_connection_contract.py::test_repository_connection_routes_require_workspace_header -q`
+  - Result: 5 passed.
+- 2026-04-30 Candidate foundation focused typing: `rtk mypy src/tci/api/schemas/repository_candidate.py src/tci/domain/services/list_repository_candidates.py src/tci/api/routes/repository_candidates.py src/tci/app.py`
+  - Result: no issues found.
+- 2026-04-30 Candidate foundation focused lint: `rtk ruff check src/tci/api/schemas/repository_candidate.py src/tci/domain/services/list_repository_candidates.py src/tci/api/routes/repository_candidates.py src/tci/app.py tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/unit/repository_connections/test_repository_candidates.py`
+  - Result: no issues found.
+- 2026-04-30 Security review remediation RED: `rtk pytest tests/unit/repository_connections/test_repository_candidates.py::test_candidate_service_filters_candidates_from_other_workspaces tests/unit/repository_connections/test_repository_candidates.py::test_candidate_service_removes_secret_bearing_remote_urls -q`
+  - Result: 2 failed because candidate projections did not carry workspace ownership and secret-bearing remote URLs were returned directly.
+- 2026-04-30 Security review remediation GREEN: `rtk pytest tests/unit/repository_connections/test_repository_candidates.py::test_candidate_service_filters_candidates_from_other_workspaces tests/unit/repository_connections/test_repository_candidates.py::test_candidate_service_removes_secret_bearing_remote_urls -q`
+  - Result: 2 passed after enforcing candidate workspace ownership and suppressing remote URLs with userinfo, query strings, or fragments.
+- 2026-04-30 Candidate security remediation regression: `rtk pytest tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/unit/repository_connections/test_repository_candidates.py -q`
+  - Result: 5 passed.
+- 2026-04-30 Candidate security remediation focused typing: `rtk mypy src/tci/domain/services/list_repository_candidates.py tests/unit/repository_connections/test_repository_candidates.py`
+  - Result: no issues found.
+- 2026-04-30 Security/Python re-review remediation RED: `rtk pytest tests/unit/repository_connections/test_repository_candidates.py::test_candidate_service_removes_malformed_or_unsafe_remote_urls -q`
+  - Result: 1 failed because `_safe_remote_url` still returned malformed or unsafe-scheme URLs.
+- 2026-04-30 Security/Python re-review remediation GREEN: `rtk pytest tests/unit/repository_connections/test_repository_candidates.py::test_candidate_service_removes_malformed_or_unsafe_remote_urls tests/unit/repository_connections/test_repository_candidates.py::test_candidate_service_removes_secret_bearing_remote_urls tests/unit/repository_connections/test_repository_candidates.py::test_candidate_service_filters_candidates_from_other_workspaces tests/integration/repository_connections/test_repository_first_legacy_compatibility.py::test_detail_and_list_services_project_legacy_origin_state -q`
+  - Result: 4 passed after restricting candidate `remoteUrl` to structurally valid `http`/`https` URLs and typing the candidate source dependency with a Protocol.
+- 2026-04-30 Re-review remediation typing: `rtk mypy src/tci/app.py src/tci/domain/services/list_repository_candidates.py tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/integration/repository_connections/test_repository_first_legacy_compatibility.py tests/unit/repository_connections/test_repository_candidates.py`
+  - Result: no issues found.
+- 2026-04-30 Python re-review dependency typing remediation: `rtk mypy src/tci/domain/services/list_repository_candidates.py tests/unit/repository_connections/test_repository_candidates.py`
+  - Result: no issues found after adding `RepositoryCandidateDependencies` and repository projection Protocols.
+- 2026-04-30 Python re-review dependency typing focused regression: `rtk pytest tests/unit/repository_connections/test_repository_candidates.py tests/contract/repository_ingestion/test_repository_candidate_contract.py -q`
+  - Result: 6 passed.
+- 2026-04-30 Reviewer loop:
+  - Security reviewer: candidate workspace isolation and secret-bearing URL echo findings fixed; second pass found malformed/unsafe-scheme URL gap; final re-review reported no remaining security findings.
+  - Python reviewer: candidate source dependency typing finding fixed with Protocols; final re-review approved with no Python findings.
+  - General reviewer: no confirmed findings; first review was incomplete due local `Too many open files` tooling issue, so security/Python final re-reviews and focused checks were used as the closure gate for this slice.
+- 2026-04-30 Final candidate/origin focused regression: `rtk pytest tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/unit/repository_connections/test_repository_candidates.py tests/integration/repository_connections/test_repository_first_legacy_compatibility.py tests/unit/repository_connections/test_repository_connection_serialization.py tests/unit/repository_connections/test_repository_connection_origin.py -q`
+  - Result: 15 passed.
+- 2026-04-30 Final candidate/origin formatting check: `rtk black --check .`
+  - Result: 158 files would be left unchanged.
+- 2026-04-30 Final candidate/origin lint: `rtk ruff check .`
+  - Result: no issues found.
+- 2026-04-30 Final candidate/origin focused typing: `rtk mypy src/tci/api/schemas/repository_candidate.py src/tci/domain/services/list_repository_candidates.py src/tci/api/routes/repository_candidates.py src/tci/app.py src/tci/domain/services/get_repository_connection_detail.py src/tci/domain/services/list_repository_connections.py src/tci/domain/services/repository_connection_support.py src/tci/api/schemas/repository_connection.py tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/integration/repository_connections/test_repository_first_legacy_compatibility.py tests/unit/repository_connections/test_repository_candidates.py`
+  - Result: no issues found.
+- 2026-04-30 Final repository ingestion regression: `rtk pytest tests/unit/repository_connections tests/integration/repository_connections tests/contract/repository_ingestion -q`
+  - Result: 571 passed.
+- 2026-04-30 Final Alembic graph check: `rtk alembic heads`
+  - Result: `009_repository_first_connections (head)`.
+- 2026-04-30 Final diff whitespace check: `rtk proxy git diff --check`
+  - Result: passed.
 
 ## Final Evidence
 

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import uuid
+from typing import cast
 
+from fastapi import FastAPI
 import pytest
 
 from tci.domain.services.build_code_snapshot import (
@@ -12,6 +14,10 @@ from tci.domain.services.create_initial_snapshot import (
     CreateInitialSnapshotCommand,
     create_initial_snapshot,
 )
+from tci.domain.services.get_repository_connection_detail import (
+    get_repository_connection_detail,
+)
+from tci.domain.services.list_repository_connections import list_repository_connections
 from tests.support.repository_connection_testkit import (
     create_connection_payload,
     create_test_client,
@@ -91,6 +97,43 @@ def test_legacy_connection_with_cross_workspace_planning_reference_is_unassigned
     assert other_workspace_response.status_code == 404
 
 
+def test_detail_and_list_services_project_legacy_origin_state(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    other_workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    other_planning_reference = seed_planning_input_reference(
+        store,
+        workspace_id=other_workspace_id,
+    )
+    app = cast(FastAPI, client.app)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    connection = store.connections[connection_id]
+    connection.planning_input_reference_id = other_planning_reference.id
+    connection.planning_input_reference = other_planning_reference
+
+    detail = get_repository_connection_detail(
+        workspace_id=workspace_id,
+        connection_id=connection_id,
+        dependencies=app.state.dependencies,
+    )
+    listed = list_repository_connections(
+        workspace_id=workspace_id,
+        dependencies=app.state.dependencies,
+    )
+
+    assert getattr(detail, "origin") == {
+        "kind": "legacy_unassigned",
+        "hasLegacyPlanningTrace": False,
+        "compatibilityState": "workspace_assignment_unclear",
+        "message": "기존 planning trace를 확인할 수 없어 호환성 확인이 필요합니다.",
+    }
+    assert [getattr(item, "origin") for item in listed] == [detail.origin]
+
+
 def test_cross_workspace_planning_reference_is_hidden_from_snapshot_detail(
     tmp_path,
 ) -> None:
@@ -101,6 +144,7 @@ def test_cross_workspace_planning_reference_is_hidden_from_snapshot_detail(
         store,
         workspace_id=other_workspace_id,
     )
+    app = cast(FastAPI, client.app)
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(),
@@ -114,7 +158,7 @@ def test_cross_workspace_planning_reference_is_hidden_from_snapshot_detail(
             workspace_id=workspace_id,
             connection_id=connection_id,
         ),
-        dependencies=client.app.state.dependencies,
+        dependencies=app.state.dependencies,
     )
     snapshot = build_code_snapshot(
         BuildCodeSnapshotCommand(
@@ -122,7 +166,7 @@ def test_cross_workspace_planning_reference_is_hidden_from_snapshot_detail(
             connection_id=connection_id,
             sync_run_id=sync_run.id,
         ),
-        dependencies=client.app.state.dependencies,
+        dependencies=app.state.dependencies,
     )
 
     snapshot_response = client.get(
