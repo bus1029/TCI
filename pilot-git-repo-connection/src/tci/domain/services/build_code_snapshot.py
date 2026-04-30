@@ -13,6 +13,7 @@ from tci.domain.services.repository_connection_support import (
     bind_git_credential,
     decrypt_secret_from_storage,
     ensure_gitlab_self_managed_host_allowed,
+    require_active_operation_credential,
 )
 from tci.domain.services.scope_filter_engine import (
     filter_snapshot_entries,
@@ -366,6 +367,12 @@ def _load_snapshot_context(
         credential_revision = credential_repository.get_active_for_connection(
             connection_id=connection.id
         )
+        try:
+            operation_credential = require_active_operation_credential(
+                credential_revision
+            )
+        except RepositoryConnectionProblem:
+            operation_credential = None
         return SnapshotBuildContext(
             connection_id=connection.id,
             planning_input_reference_id=connection.planning_input_reference_id,
@@ -378,13 +385,13 @@ def _load_snapshot_context(
             sync_run_status=sync_run.status,
             credential_type=(
                 None
-                if credential_revision is None
-                else credential_revision.credential_type
+                if operation_credential is None
+                else operation_credential.credential_type
             ),
             encrypted_secret=(
                 None
-                if credential_revision is None
-                else credential_revision.encrypted_secret
+                if operation_credential is None
+                else operation_credential.encrypted_secret
             ),
         )
 

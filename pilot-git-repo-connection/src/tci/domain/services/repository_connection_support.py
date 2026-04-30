@@ -14,6 +14,7 @@ import tempfile
 import textwrap
 from pathlib import Path
 from threading import Event, Lock, Thread
+from typing import Protocol
 from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -21,6 +22,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from tci.api.problem_details import ProblemCode
 from tci.infrastructure.git.git_command_env import git_command_environment
 from tci.infrastructure.persistence.models import (
+    CredentialRevisionStatus,
     CredentialType,
     DefaultRefType,
     RepositoryProvider,
@@ -45,6 +47,19 @@ class RepositoryIdentity:
     provider_instance_url: str | None
     provider_project_path: str
     canonical_key: str
+
+
+@dataclass(frozen=True, slots=True)
+class OperationCredential:
+    credential_type: CredentialType
+    encrypted_secret: str
+
+
+class OperationCredentialRevision(Protocol):
+    credential_type: CredentialType
+    encrypted_secret: str
+    read_only_validated: bool
+    status: CredentialRevisionStatus
 
 
 _SSH_CREDENTIAL_BIND_LOCK = Lock()
@@ -214,6 +229,33 @@ def parse_credential_type(raw_value: str) -> CredentialType:
             ProblemCode.INVALID_INPUT,
             "credential.type은 ssh_private_key 또는 https_pat여야 합니다.",
         ) from error
+
+
+def require_active_operation_credential(
+    credential_revision: OperationCredentialRevision | None,
+) -> OperationCredential:
+    if credential_revision is None:
+        raise _missing_operation_credential_problem()
+
+    if credential_revision.status is not CredentialRevisionStatus.ACTIVE:
+        raise _missing_operation_credential_problem()
+    if not credential_revision.read_only_validated:
+        raise _missing_operation_credential_problem()
+
+    if not credential_revision.encrypted_secret:
+        raise _missing_operation_credential_problem()
+
+    return OperationCredential(
+        credential_type=credential_revision.credential_type,
+        encrypted_secret=credential_revision.encrypted_secret,
+    )
+
+
+def _missing_operation_credential_problem() -> RepositoryConnectionProblem:
+    return RepositoryConnectionProblem(
+        ProblemCode.CONNECTION_AUTH_FAILED,
+        "활성 워크스페이스 읽기 전용 자격 증명을 찾을 수 없습니다.",
+    )
 
 
 def hash_secret_for_storage(secret: str) -> str:

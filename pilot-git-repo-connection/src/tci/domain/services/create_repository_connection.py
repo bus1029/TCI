@@ -73,6 +73,13 @@ def create_repository_connection(command, *, dependencies):
         provider_instance_url=parsed_remote.provider_instance_url,
         provider_project_path=parsed_remote.provider_project_path,
     )
+    _validate_candidate_selection(
+        candidate_id=command.candidate_id,
+        workspace_id=command.workspace_id,
+        provider=provider,
+        repository_identity=repository_identity,
+        dependencies=dependencies,
+    )
     repository_owner, _, repository_name = (
         repository_identity.provider_project_path.rpartition("/")
     )
@@ -197,6 +204,59 @@ def create_repository_connection(command, *, dependencies):
                 ProblemCode.INVALID_INPUT,
                 str(error),
             ) from error
+
+
+def _validate_candidate_selection(
+    *,
+    candidate_id: str | None,
+    workspace_id: uuid.UUID,
+    provider,
+    repository_identity,
+    dependencies,
+) -> None:
+    if candidate_id is None:
+        return
+
+    candidate_source = getattr(dependencies, "repository_candidate_source", None)
+    if candidate_source is None:
+        raise RepositoryConnectionProblem(
+            ProblemCode.INVALID_INPUT,
+            "선택한 후보 저장소를 확인할 수 없습니다.",
+        )
+
+    candidates = candidate_source.list_candidates(
+        workspace_id=workspace_id,
+        provider=provider,
+    )
+    selected_candidate = next(
+        (
+            candidate
+            for candidate in candidates
+            if candidate.id == candidate_id and candidate.workspace_id == workspace_id
+        ),
+        None,
+    )
+    if selected_candidate is None:
+        raise RepositoryConnectionProblem(
+            ProblemCode.INVALID_INPUT,
+            "선택한 후보 저장소를 찾을 수 없습니다.",
+        )
+
+    candidate_identity = build_repository_identity(
+        provider=selected_candidate.provider,
+        provider_instance_url=selected_candidate.provider_instance_url
+        or (
+            selected_candidate.provider_scope
+            if selected_candidate.provider is provider.__class__.GITLAB_SELF_MANAGED
+            else None
+        ),
+        provider_project_path=selected_candidate.provider_project_path,
+    )
+    if candidate_identity != repository_identity:
+        raise RepositoryConnectionProblem(
+            ProblemCode.INVALID_INPUT,
+            "선택한 후보 저장소와 제출된 저장소 URL이 일치하지 않습니다.",
+        )
 
 
 def _translate_git_failure(error: Exception) -> RepositoryConnectionProblem:

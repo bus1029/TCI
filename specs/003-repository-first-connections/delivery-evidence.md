@@ -9,7 +9,7 @@
 | FR-002a | Verified | Obsolete planning/spec/plan create fields are rejected and create no connection. |
 | FR-003 | Verified | GitHub and GitLab are available in workspace-first manual URL flow. |
 | FR-003a | Partial | Manual URL path is covered; candidate list path remains US3. |
-| FR-003b | Pending | Operation paths use workspace shared read-only credentials only. |
+| FR-003b | Partial | Create, verify, collect, scope preview, and ref-update/reverify paths reject missing, revoked, or non-readonly operation credentials; event/status coverage remains open. |
 | FR-003c | Partial | Candidate endpoint returns configured provider-scope projections; real provider account/instance integration remains open. |
 | FR-003d | Partial | Candidate endpoint returns manual URL fallback empty state when provider candidates are not configured. |
 | FR-004 | Partial | Operator list/detail now show workspace-origin context; full mixed-provider management remains US3. |
@@ -20,9 +20,9 @@
 | FR-009 | Partial | Existing GitLab Self-Managed focused regression passed; full final regression remains open. |
 | FR-010 | Verified | Same workspace/provider/repository duplicate connections are blocked across manual and candidate-selected create payloads before git access. |
 | FR-011 | Pending | Mixed GitHub/GitLab status, event, snapshot, and history stay separated. |
-| FR-012 | Pending | Unauthorized repository access blocks connection creation. |
-| FR-012a | Pending | Personal provider grant alone cannot create active connections. |
-| FR-012b | Partial | Create rejects auth-failed and write-capable credentials without creating rows; expired/revoked remediation remains US3. |
+| FR-012 | Partial | Auth-failed and non-readonly create attempts block connection creation with no side effects; final operator remediation coverage remains open. |
+| FR-012a | Verified | Candidate personal grant material is not persisted as an operation credential and cannot create an active connection without submitted workspace credential validation. |
+| FR-012b | Partial | Create rejects auth-failed and write-capable credentials without creating rows; revoked/non-active stored operation credentials map to reauth-required paths. Final operator remediation remains open. |
 | FR-013 | Pending | Empty candidate state is not treated as an error. |
 | FR-014 | Verified | Legacy planning trace projections remain visible for GitHub/GitLab list/detail, verification, snapshot, and webhook coverage. |
 | FR-014a | Verified | Persisted legacy planning row keeps existing `workspace_id` as canonical list/detail scope. |
@@ -35,7 +35,7 @@
 | SC-004 | Pending | Mixed-provider identification rehearsal, 57 of 60 correct. |
 | SC-005 | Verified | Duplicate connection attempts are blocked before git access for manual and candidate-selected payloads. |
 | SC-006 | Pending | Existing planning/spec/plan history remains accessible. |
-| SC-007 | Partial | Auth-failed and write-capable create attempts create no connection; personal provider grant scenario remains US3. |
+| SC-007 | Partial | Auth-failed, write-capable, and candidate-personal-grant create attempts do not create operation credentials from personal grant material; final operator remediation remains open. |
 
 ## Foundation Evidence
 
@@ -265,6 +265,33 @@
   - Result: no issues found.
 - 2026-04-30 Final candidate/manual duplicate diff whitespace check: `rtk proxy git diff --check`
   - Result: passed.
+- 2026-04-30 Credential boundary RED: `rtk proxy pytest tests/unit/repository_connections/test_repository_connection_credentials.py tests/integration/repository_connections/test_repository_first_permission_failures.py tests/integration/repository_connections/test_repository_operation_credential_boundary.py -q`
+  - Result: collection failed because `require_active_operation_credential` did not exist, confirming the missing shared operation credential boundary helper.
+- 2026-04-30 Credential boundary GREEN: `rtk pytest tests/unit/repository_connections/test_repository_connection_credentials.py tests/integration/repository_connections/test_repository_first_permission_failures.py tests/integration/repository_connections/test_repository_operation_credential_boundary.py -q`
+  - Result: 10 passed after adding `require_active_operation_credential`, rejecting non-active or unvalidated operation credentials, and applying the helper to verify, snapshot collect, and default-ref reverify paths.
+- 2026-04-30 Credential boundary focused regression:
+  - `rtk pytest tests/unit/repository_connections/test_update_default_ref.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_gitlab_compatibility.py::test_github_and_gitlab_connection_verify_and_snapshot_flows_coexist -q`
+  - Result: 13 passed.
+  - `rtk pytest tests/unit/repository_connections/test_repository_operation_credentials.py tests/unit/repository_connections/test_snapshot_traceability.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py -q`
+  - Result: 21 passed.
+  - Post-format targeted rerun: `rtk pytest tests/unit/repository_connections/test_repository_connection_credentials.py tests/integration/repository_connections/test_repository_first_permission_failures.py tests/integration/repository_connections/test_repository_operation_credential_boundary.py -q`
+  - Result: 10 passed.
+- 2026-04-30 Reviewer loop findings:
+  - General reviewer found scope preview bypassing the operation credential helper, `candidateId` tests not proving candidate source resolution, and task/evidence overclaim for event/status paths.
+  - Python reviewer found the public operation credential helper lacked a concrete parameter type.
+  - Security reviewer confirmed scope preview bypass and event/status overclaim, with no critical/high finding for secret echo or rejected-create side effects.
+- 2026-04-30 Reviewer remediation RED: `rtk proxy pytest tests/integration/repository_connections/test_repository_first_permission_failures.py tests/integration/repository_connections/test_repository_operation_credential_boundary.py -q`
+  - Result: 3 failed because candidate source was not called, candidate identity mismatch still created a connection, and scope preview used a revoked credential.
+- 2026-04-30 Reviewer remediation GREEN:
+  - `rtk pytest tests/integration/repository_connections/test_repository_first_permission_failures.py tests/integration/repository_connections/test_repository_operation_credential_boundary.py -q`
+  - Result: 7 passed after validating configured candidate source identity and applying `require_active_operation_credential` to scope preview.
+  - `rtk pytest tests/unit/repository_connections/test_repository_connection_credentials.py tests/integration/repository_connections/test_repository_first_permission_failures.py tests/integration/repository_connections/test_repository_operation_credential_boundary.py -q`
+  - Result: 12 passed.
+  - `rtk mypy src/tci/domain/services/repository_connection_support.py src/tci/domain/services/create_repository_connection.py src/tci/domain/services/evaluate_scope_rule_warning.py src/tci/domain/services/verify_repository_connection.py src/tci/domain/services/build_code_snapshot.py src/tci/domain/services/update_default_ref.py tests/unit/repository_connections/test_repository_connection_credentials.py tests/integration/repository_connections/test_repository_first_permission_failures.py tests/integration/repository_connections/test_repository_operation_credential_boundary.py`
+  - Result: no issues found.
+  - `rtk black <touched credential-boundary files>`
+  - Result: 9 files left unchanged.
+  - T052, T062, and T063 were returned to open because event/status operation-path coverage remains incomplete.
 
 ## Final Evidence
 

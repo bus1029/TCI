@@ -8,12 +8,15 @@ import subprocess
 import sys
 import uuid
 
+from fastapi import FastAPI
 import pytest
 from sqlalchemy.engine import make_url
 
+from tci.domain.services.list_repository_candidates import RepositoryCandidateProjection
 from tci.infrastructure.persistence.credential_revision_repository import (
     CredentialRevisionRepository,
 )
+from tci.infrastructure.persistence.models import RepositoryProvider
 from tci.infrastructure.persistence.planning_input_reference_repository import (
     PlanningInputReferenceRepository,
 )
@@ -31,6 +34,21 @@ from tests.support.repository_connection_testkit import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+class StaticCandidateSource:
+    def __init__(self, candidates: tuple[RepositoryCandidateProjection, ...]) -> None:
+        self._candidates = candidates
+
+    def list_candidates(self, *, workspace_id: uuid.UUID, provider):
+        del workspace_id
+        if provider is None:
+            return self._candidates
+        return tuple(
+            candidate
+            for candidate in self._candidates
+            if candidate.provider is provider
+        )
 
 
 def _upgrade_test_database_to_head(database_url: str) -> None:
@@ -274,6 +292,27 @@ def test_candidate_selected_connection_reuses_manual_duplicate_precheck(
     )
     assert manual_response.status_code == 201
     store.last_resolved_remote_url = None
+    app = client.app
+    assert isinstance(app, FastAPI)
+    object.__setattr__(
+        app.state.dependencies,
+        "repository_candidate_source",
+        StaticCandidateSource(
+            (
+                RepositoryCandidateProjection(
+                    id="github:acme/sample-repo",
+                    workspace_id=workspace_id,
+                    provider=RepositoryProvider.GITHUB_CLOUD,
+                    provider_scope="github:acme",
+                    remote_url="https://github.com/acme/sample-repo.git",
+                    repository_owner="acme",
+                    repository_name="sample-repo",
+                    provider_project_path="acme/sample-repo",
+                    access_status="available",
+                ),
+            )
+        ),
+    )
 
     candidate_payload = create_connection_payload()
     candidate_payload["candidateId"] = "github:acme/sample-repo"

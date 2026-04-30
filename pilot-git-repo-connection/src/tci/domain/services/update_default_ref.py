@@ -11,6 +11,7 @@ from tci.domain.services.repository_connection_support import (
     decrypt_secret_from_storage,
     ensure_gitlab_self_managed_host_allowed,
     parse_default_ref_type,
+    require_active_operation_credential,
 )
 from tci.infrastructure.persistence.models import (
     RepositoryConnectionStatus,
@@ -149,22 +150,23 @@ def _load_connection_context(
         credential_revision = credential_repository.get_active_for_connection(
             connection_id=connection.id
         )
-        if credential_revision is None:
+        try:
+            operation_credential = require_active_operation_credential(
+                credential_revision
+            )
+        except RepositoryConnectionProblem as error:
             connection_repository.update_verification(
                 workspace_id=workspace_id,
                 connection_id=connection_id,
                 status=RepositoryConnectionStatus.REAUTH_REQUIRED,
                 last_verified_at=datetime.now(tz=UTC),
             )
-            raise RepositoryConnectionProblem(
-                ProblemCode.CONNECTION_AUTH_FAILED,
-                "활성 자격 증명을 찾을 수 없습니다.",
-            )
+            raise error
         return (
             connection.provider,
             connection.provider_instance_url,
             connection.remote_url,
             connection.transport,
-            credential_revision.credential_type,
-            credential_revision.encrypted_secret,
+            operation_credential.credential_type,
+            operation_credential.encrypted_secret,
         )
