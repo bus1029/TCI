@@ -9,7 +9,7 @@
 | FR-002a | Verified | Obsolete planning/spec/plan create fields are rejected and create no connection. |
 | FR-003 | Verified | GitHub and GitLab are available in workspace-first manual URL flow. |
 | FR-003a | Partial | Manual URL path is covered; candidate list path remains US3. |
-| FR-003b | Partial | Create, verify, collect, scope preview, and ref-update/reverify paths reject missing, revoked, or non-readonly operation credentials; event/status coverage remains open. |
+| FR-003b | Verified | Create, verify, collect, scope preview, event processing, event status lookup, and ref-update/reverify paths reject missing, revoked, or non-readonly operation credentials without falling back to personal provider grants. |
 | FR-003c | Partial | Candidate endpoint returns configured provider-scope projections; real provider account/instance integration remains open. |
 | FR-003d | Partial | Candidate endpoint returns manual URL fallback empty state when provider candidates are not configured. |
 | FR-004 | Partial | Operator list/detail now show workspace-origin context; full mixed-provider management remains US3. |
@@ -22,7 +22,7 @@
 | FR-011 | Pending | Mixed GitHub/GitLab status, event, snapshot, and history stay separated. |
 | FR-012 | Partial | Auth-failed and non-readonly create attempts block connection creation with no side effects; final operator remediation coverage remains open. |
 | FR-012a | Verified | Candidate personal grant material is not persisted as an operation credential and cannot create an active connection without submitted workspace credential validation. |
-| FR-012b | Partial | Create rejects auth-failed and write-capable credentials without creating rows; revoked/non-active stored operation credentials map to reauth-required paths. Final operator remediation remains open. |
+| FR-012b | Verified | Create rejects auth-failed and write-capable credentials without creating rows; revoked/non-active stored operation credentials map to reauth-required remediation paths across repository operations. |
 | FR-013 | Pending | Empty candidate state is not treated as an error. |
 | FR-014 | Verified | Legacy planning trace projections remain visible for GitHub/GitLab list/detail, verification, snapshot, and webhook coverage. |
 | FR-014a | Verified | Persisted legacy planning row keeps existing `workspace_id` as canonical list/detail scope. |
@@ -292,6 +292,32 @@
   - `rtk black <touched credential-boundary files>`
   - Result: 9 files left unchanged.
   - T052, T062, and T063 were returned to open because event/status operation-path coverage remains incomplete.
+- 2026-04-30 Event/status credential boundary RED: `rtk proxy pytest tests/integration/repository_connections/test_repository_operation_credential_boundary.py -q`
+  - Result: 3 failed because GitHub event processing, GitLab event processing, and event status lookup accepted revoked operation credentials instead of returning `CONNECTION_AUTH_FAILED`.
+- 2026-04-30 Event/status credential boundary GREEN:
+  - `rtk pytest tests/integration/repository_connections/test_repository_operation_credential_boundary.py -q`
+  - Result: 7 passed after binding event head resolution to active workspace read-only operation credentials and mapping event status lookup boundary failures to remediation problem responses.
+  - `rtk pytest tests/integration/repository_connections/test_github_webhook_refresh.py tests/integration/repository_connections/test_gitlab_provider_flows.py tests/integration/repository_connections/test_operator_event_pages.py -q`
+  - Result: 23 passed.
+  - `rtk mypy src/tci/domain/services/repository_connection_support.py src/tci/domain/services/process_github_event.py src/tci/domain/services/process_gitlab_event.py src/tci/domain/services/list_repository_events.py src/tci/api/routes/repository_events.py src/tci/web/routes/repository_events.py tests/integration/repository_connections/test_repository_operation_credential_boundary.py`
+  - Result: no issues found.
+- 2026-04-30 Event/status reviewer remediation RED: `rtk proxy pytest tests/integration/repository_connections/test_repository_operation_credential_boundary.py -q`
+  - Result: 5 failed after adding rollbacking-session and provider-auth/duplicate-delivery coverage. Failures proved reauth status was lost on rollback, provider-side `GitConnectionAuthError` queued work instead of failing closed, and duplicate delivery required active operation credential.
+- 2026-04-30 Event/status reviewer remediation GREEN:
+  - `rtk pytest tests/integration/repository_connections/test_repository_operation_credential_boundary.py -q`
+  - Result: 17 passed after persisting `REAUTH_REQUIRED` through a separate successful session, failing provider-side auth/decrypt errors closed, skipping operation credential checks for non-retryable duplicate deliveries, preserving duplicate-delivery decisions across later status changes, skipping operation credential checks for static record-only PR/MR events, and recording non-active webhook events without repository access.
+  - `rtk pytest tests/integration/repository_connections/test_github_webhook_refresh.py tests/integration/repository_connections/test_gitlab_provider_flows.py tests/integration/repository_connections/test_operator_event_pages.py -q`
+  - Result: 23 passed.
+  - `rtk mypy src/tci/domain/services/repository_connection_support.py src/tci/domain/services/process_github_event.py src/tci/domain/services/process_gitlab_event.py src/tci/domain/services/list_repository_events.py src/tci/api/routes/repository_events.py src/tci/web/routes/repository_events.py tests/integration/repository_connections/test_repository_operation_credential_boundary.py`
+  - Result: no issues found.
+  - `rtk ruff check src/tci/domain/services/repository_connection_support.py src/tci/domain/services/process_github_event.py src/tci/domain/services/process_gitlab_event.py src/tci/domain/services/list_repository_events.py src/tci/api/routes/repository_events.py src/tci/web/routes/repository_events.py tests/integration/repository_connections/test_repository_operation_credential_boundary.py`
+  - Result: no issues found.
+- 2026-04-30 Event/status credential boundary broad verification:
+  - `rtk black --check .` result: 162 files would be left unchanged.
+  - `rtk ruff check .` result: no issues found.
+  - `rtk pytest tests/unit/repository_connections tests/integration/repository_connections tests/contract/repository_ingestion -q` result: 605 passed.
+  - `rtk alembic heads` result: `009_repository_first_connections (head)`.
+  - `rtk proxy git diff --check` result: passed.
 
 ## Final Evidence
 

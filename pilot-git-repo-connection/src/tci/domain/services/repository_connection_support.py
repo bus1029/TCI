@@ -15,6 +15,7 @@ import textwrap
 from pathlib import Path
 from threading import Event, Lock, Thread
 from typing import Protocol
+from uuid import UUID
 from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -26,6 +27,7 @@ from tci.infrastructure.persistence.models import (
     CredentialType,
     DefaultRefType,
     RepositoryProvider,
+    RepositoryConnectionStatus,
     RepositoryTransport,
 )
 
@@ -249,6 +251,38 @@ def require_active_operation_credential(
         credential_type=credential_revision.credential_type,
         encrypted_secret=credential_revision.encrypted_secret,
     )
+
+
+def require_active_operation_credential_for_connection(
+    *,
+    credential_repository,
+    connection_id: UUID,
+) -> OperationCredential:
+    return require_active_operation_credential(
+        credential_repository.get_active_for_connection(connection_id=connection_id)
+    )
+
+
+def mark_connection_reauth_required(
+    *,
+    dependencies,
+    workspace_id: UUID,
+    connection_id: UUID,
+) -> None:
+    if dependencies.session_factory is None:
+        raise RuntimeError(
+            "저장소 연결 상태를 갱신하려면 데이터베이스 세션이 필요합니다."
+        )
+
+    with dependencies.session_factory() as session:
+        connection_repository = dependencies.repository_connection_repository_factory(
+            session
+        )
+        connection_repository.update_status(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+            status=RepositoryConnectionStatus.REAUTH_REQUIRED,
+        )
 
 
 def _missing_operation_credential_problem() -> RepositoryConnectionProblem:

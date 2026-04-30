@@ -472,6 +472,21 @@ class FakeRepositoryConnectionRepository:
         connection.updated_at = now_utc()
         return connection
 
+    def update_status(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        connection_id: uuid.UUID,
+        status: RepositoryConnectionStatus,
+    ) -> RepositoryConnection:
+        connection = self._require_connection(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        )
+        connection.status = status
+        connection.updated_at = now_utc()
+        return connection
+
     def ensure_default_scope_rule_version(
         self,
         *,

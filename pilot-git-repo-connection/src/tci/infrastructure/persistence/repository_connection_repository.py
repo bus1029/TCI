@@ -554,6 +554,22 @@ class RepositoryConnectionRepository:
         self._session.refresh(connection)
         return connection
 
+    def update_status(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        connection_id: uuid.UUID,
+        status: RepositoryConnectionStatus,
+    ) -> RepositoryConnection:
+        connection = self._require(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        )
+        connection.status = status
+        self._session.flush()
+        self._session.refresh(connection)
+        return connection
+
     def ensure_default_scope_rule_version(
         self,
         *,
