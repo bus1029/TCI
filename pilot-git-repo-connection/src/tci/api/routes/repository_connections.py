@@ -70,6 +70,7 @@ def create_repository_connection_route(
             CreateRepositoryConnectionCommand(
                 workspace_id=workspace_id,
                 provider=payload.provider,
+                candidate_id=payload.candidate_id,
                 remote_url=payload.remote_url,
                 transport=payload.transport,
                 default_ref_type=payload.default_ref_type,

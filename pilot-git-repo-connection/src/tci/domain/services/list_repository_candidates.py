@@ -7,6 +7,7 @@ from typing import Protocol
 import uuid
 from urllib.parse import urlsplit, urlunsplit
 
+from tci.domain.services.repository_connection_support import build_repository_identity
 from tci.infrastructure.persistence.models import RepositoryProvider
 
 
@@ -141,27 +142,36 @@ def _find_existing_connection(
     candidate: RepositoryCandidateProjection,
     existing_connections: Sequence[RepositoryCandidateConnection],
 ) -> RepositoryCandidateConnection | None:
+    candidate_identity = _candidate_identity(candidate)
     for connection in existing_connections:
-        if connection.provider is not candidate.provider:
+        if connection.provider_project_path is None:
             continue
-        if connection.provider_project_path != candidate.provider_project_path:
-            continue
-        if (
-            candidate.provider is RepositoryProvider.GITLAB_SELF_MANAGED
-            and connection.provider_instance_url != candidate.provider_instance_url
-        ):
+        connection_identity = build_repository_identity(
+            provider=connection.provider,
+            provider_instance_url=connection.provider_instance_url,
+            provider_project_path=connection.provider_project_path,
+        )
+        if connection_identity != candidate_identity:
             continue
         return connection
     return None
 
 
 def _canonical_repository_key(candidate: RepositoryCandidateProjection) -> str:
-    if candidate.provider is RepositoryProvider.GITLAB_SELF_MANAGED:
-        instance = candidate.provider_instance_url or candidate.provider_scope
-        return (
-            f"{candidate.provider.value}:{instance}:{candidate.provider_project_path}"
-        )
-    return f"{candidate.provider.value}:{candidate.provider_project_path}"
+    return _candidate_identity(candidate).canonical_key
+
+
+def _candidate_identity(candidate: RepositoryCandidateProjection):
+    return build_repository_identity(
+        provider=candidate.provider,
+        provider_instance_url=candidate.provider_instance_url
+        or (
+            candidate.provider_scope
+            if candidate.provider is RepositoryProvider.GITLAB_SELF_MANAGED
+            else None
+        ),
+        provider_project_path=candidate.provider_project_path,
+    )
 
 
 def _safe_remote_url(remote_url: str | None) -> str | None:

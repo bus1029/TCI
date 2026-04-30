@@ -914,6 +914,37 @@ def test_create_connection_rejects_unallowlisted_gitlab_ssh_port_before_git_acce
     assert store.last_resolved_remote_url is None
 
 
+def test_create_connection_rejects_gitlab_ssh_443_without_port_allowlist(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    object.__setattr__(
+        client.app.state.settings,
+        "gitlab_self_managed_allowed_hosts",
+        ("gitlab.example.com",),
+    )
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            provider="gitlab_self_managed",
+            remote_url="ssh://git@gitlab.example.com:443/group/sample-repo.git",
+            transport="ssh",
+            credential_type="ssh_private_key",
+            credential_secret=create_test_ssh_private_key(tmp_path),
+            credential_fingerprint="ssh-key-443",
+        ),
+    )
+
+    assert create_response.status_code == 400
+    assert create_response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "GitLab Self-Managed host는 허용 목록에 등록되어야 합니다.",
+    }
+    assert store.last_resolved_remote_url is None
+
+
 def test_create_connection_treats_gitlab_path_prefix_as_project_namespace(
     tmp_path,
 ) -> None:

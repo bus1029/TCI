@@ -23,6 +23,7 @@ class CreateRepositoryConnectionRequest(CamelModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     provider: str = Field(min_length=1, max_length=64)
+    candidate_id: str | None = Field(default=None, alias="candidateId", max_length=512)
     remote_url: str = Field(alias="remoteUrl", min_length=1, max_length=2048)
     transport: str = Field(min_length=1, max_length=32)
     default_ref_type: str = Field(alias="defaultRefType", min_length=1, max_length=32)

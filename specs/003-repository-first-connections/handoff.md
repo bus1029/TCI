@@ -1,110 +1,104 @@
 # 짧은 요약
 
-- 이번 세션은 `$plan`으로 다음 개발 순서를 정한 뒤 `$tdd`로 `T037/T038`와 `US3` candidate API foundation을 구현했다.
-- `get_repository_connection_detail`와 `list_repository_connections`가 이제 service-level `origin` projection을 붙인다.
-- `GET /api/repository-candidates`가 추가됐다. 설정된 candidate source가 없으면 manual URL fallback empty state를 반환한다.
-- candidate projection은 `workspace_id`로 scope를 강제하고, `remoteUrl`은 안전한 `http`/`https` URL만 응답한다. userinfo/query/fragment/invalid port/unsafe scheme/공백/control 문자는 `null`로 suppress한다.
-- reviewer loop를 반복했다. 최종 Security no findings, Python approve. General reviewer는 초반 `Too many open files`로 incomplete였고, Security/Python final re-review와 full verification으로 closure 처리했다.
+- 이번 세션은 `$plan`으로 다음 개발 계획을 확정한 뒤 `$tdd`로 `US3`의 `T047`, `T049`, `T059`, `T060`을 구현했다.
+- candidate 선택 경로와 manual URL 경로가 같은 canonical repository identity를 사용한다.
+- `POST /api/repository-connections`는 `candidateId`를 수용한다. 연결 생성은 여전히 `remoteUrl`과 workspace shared read-only credential 검증을 필요로 한다.
+- GitHub identity는 repository path 대소문자를 정규화한다.
+- GitLab identity는 HTTP(S) 기본 포트 `80`/`443`을 정규화하되, SSH remote의 명시적 포트는 allowlist에서 그대로 요구한다.
+- reviewer loop를 반복했고 최종 general reviewer와 security reviewer 모두 no findings였다.
 - 커밋은 아직 하지 않았다.
 
 # 현재 상태
 
 - 브랜치: `003-repository-first-connections`
-- `git status -sb` 기준 branch ahead/behind 표시는 없다.
-- 현재 worktree는 uncommitted 변경과 untracked 신규 파일이 있다.
-- 변경 파일:
+- `git status -sb` 확인 결과: `origin/003-repository-first-connections`보다 `ahead 1`.
+- 코드/문서 변경이 남아 있다. handoff 갱신 전 `git status -sb` 기준 변경 파일:
+  - `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
   - `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
-  - `pilot-git-repo-connection/src/tci/app.py`
-  - `pilot-git-repo-connection/src/tci/domain/services/get_repository_connection_detail.py`
-  - `pilot-git-repo-connection/src/tci/domain/services/list_repository_connections.py`
+  - `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
+  - `pilot-git-repo-connection/src/tci/domain/services/list_repository_candidates.py`
   - `pilot-git-repo-connection/src/tci/domain/services/repository_connection_support.py`
-  - `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_legacy_compatibility.py`
+  - `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py`
+  - `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
+  - `pilot-git-repo-connection/tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
+  - `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_identity.py`
   - `specs/003-repository-first-connections/delivery-evidence.md`
   - `specs/003-repository-first-connections/tasks.md`
-- 신규 untracked 파일:
-  - `pilot-git-repo-connection/src/tci/api/routes/repository_candidates.py`
-  - `pilot-git-repo-connection/src/tci/api/schemas/repository_candidate.py`
-  - `pilot-git-repo-connection/src/tci/domain/services/list_repository_candidates.py`
-  - `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_candidate_contract.py`
-  - `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_candidates.py`
-- `tasks.md` 주요 상태:
-  - 완료: `T017-T029`, `T031-T046`, `T055-T058`
-  - 아직 미완료: `T030`, `T047-T054`, `T059-T067`, Final phase
-  - `T030`은 `SC-001` 실제 운영자 리허설이 없어 완료 처리하지 않았다.
+- 이 handoff 갱신으로 `specs/003-repository-first-connections/handoff.md`도 변경됐다.
+- `tasks.md` 현재 완료:
+  - 완료: `T017-T029`, `T031-T049`, `T055-T060`
+  - 아직 미완료: `T030`, `T050-T054`, `T061-T067`, Final phase
+- `T030`과 `SC-001`은 실제 운영자 리허설이 없어 미완료다.
+- `SC-004`도 실제 mixed-provider 식별 리허설이 없어 미완료다.
 
 # 이번 세션에서 바뀐 것
 
 - `repository_connection_support.py`
-  - `build_connection_origin`와 `matching_workspace_planning_input_reference`를 추가했다.
-  - `origin.kind`는 `workspace_repository`, `legacy_planning`, `legacy_unassigned`를 유지한다.
-  - same-workspace planning reference만 legacy trace로 인정한다.
-- `get_repository_connection_detail.py`
-  - detail service가 반환 connection에 `origin` projection을 붙인다.
-- `list_repository_connections.py`
-  - list service가 workspace connection 목록마다 `origin` projection을 붙인다.
-- `repository_connection.py`
-  - serializer의 origin 계산 중복을 domain helper 사용으로 정리했다.
-  - serializer는 service가 넣은 `connection.origin`이 있으면 우선 사용하고, 없으면 fallback으로 계산한다.
-- `repository_candidate.py`
-  - candidate API response schema를 추가했다.
+  - `RepositoryIdentity` dataclass와 `build_repository_identity`를 추가했다.
+  - GitHub canonical identity는 `provider_project_path`를 lower-case로 정규화한다.
+  - GitLab canonical identity는 `provider_instance_url`의 host case와 HTTP(S) 기본 포트를 정규화한다.
+  - GitLab host allowlist 검사에서 HTTP(S) 기본 포트만 제거하고 SSH remote 명시 포트는 유지한다.
 - `list_repository_candidates.py`
-  - `RepositoryCandidateProjection`, `RepositoryCandidateSource`, `RepositoryCandidateDependencies`, repository projection Protocol들을 추가했다.
-  - candidate source가 없으면 `provider_not_configured` empty state와 manual URL guidance를 반환한다.
-  - candidate source가 있어도 requested `workspace_id`와 다른 candidate는 serialization 전에 제거한다.
-  - existing connection과 provider/project path/provider instance가 일치하면 `alreadyConnected=true`, `selectable=false`로 표시한다.
-  - `remoteUrl`은 안전하지 않거나 malformed이면 `null`로 반환한다.
-- `repository_candidates.py`
-  - `GET /api/repository-candidates` route를 추가했다.
-  - 기존 operator auth dependency와 `X-TCI-Workspace-Id` validation을 사용한다.
-- `app.py`
-  - `repository_candidates_router`를 등록했다.
-  - `AppDependencies.repository_candidate_source`를 `RepositoryCandidateSource | None`으로 추가했다.
-- `test_repository_first_legacy_compatibility.py`
-  - detail/list service가 `legacy_unassigned` origin을 직접 projection하는 regression을 추가했다.
-- `test_repository_candidate_contract.py`
-  - candidate empty manual-url state와 configured provider-scope candidate response contract를 추가했다.
-- `test_repository_candidates.py`
-  - existing repository candidate 표시, cross-workspace filtering, secret-bearing URL suppression, malformed/unsafe URL suppression을 검증한다.
+  - candidate의 `canonicalRepositoryKey`와 existing connection 매칭이 shared `build_repository_identity`를 사용한다.
+  - GitLab candidate는 `provider_instance_url`이 없을 때 기존처럼 `provider_scope`를 instance source로 fallback한다.
+- `create_repository_connection.py`
+  - create orchestration이 parsed remote에서 shared identity를 만든 뒤 lock/precheck/persistence에 사용한다.
+  - 새 GitHub row는 canonical lower-case owner/name/path로 저장된다.
+  - `candidate_id` command field를 추가했다. 현재는 create request 수용과 추적용 입력이며, candidate source lookup은 아직 하지 않는다.
+- `repository_connection.py`, `repository_connections.py`
+  - create request schema와 route가 `candidateId`를 수용하고 command로 전달한다.
+- `repository_connection_repository.py`
+  - GitLab persisted `provider_instance_url`에서도 HTTP(S) 기본 포트를 제거한다.
+- `test_repository_connection_identity.py`
+  - candidate/manual identity 동등성, GitHub path case 정규화, GitLab default HTTPS port 정규화 regression을 추가했다.
+- `test_connection_and_initial_snapshot.py`
+  - candidate-selected payload가 manual duplicate precheck를 재사용하는 integration test를 추가했다.
+  - GitHub mixed-case duplicate와 GitLab `:443` default port duplicate가 git access 전에 차단되는 regression을 추가했다.
+- `test_repository_connection_contract.py`
+  - SSH `:443` GitLab remote가 host-only allowlist를 우회하지 못하는 regression을 추가했다.
 - `tasks.md`
-  - `T037`, `T038`, `T045`, `T046`, `T055-T058`를 완료 처리했다.
+  - `T047`, `T049`, `T059`, `T060`을 완료 처리했다.
 - `delivery-evidence.md`
-  - RED/GREEN, reviewer loop, final verification 결과를 기록했다.
+  - 이번 RED/GREEN, reviewer remediation, 최종 검증 결과를 추가했다.
 
 # 다음 에이전트가 먼저 봐야 할 파일
 
 - `specs/003-repository-first-connections/tasks.md`
   - 현재 완료/미완료 task 기준선.
 - `specs/003-repository-first-connections/delivery-evidence.md`
-  - 이번 세션 RED/GREEN, reviewer remediation, 최종 검증 근거.
-- `pilot-git-repo-connection/src/tci/domain/services/list_repository_candidates.py`
-  - candidate source Protocol, workspace filtering, existing connection match, safe `remoteUrl` 핵심.
-- `pilot-git-repo-connection/src/tci/api/routes/repository_candidates.py`
-  - 새 `GET /api/repository-candidates` route.
-- `pilot-git-repo-connection/src/tci/api/schemas/repository_candidate.py`
-  - candidate response schema.
-- `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_candidates.py`
-  - candidate service behavior와 보안 regression.
-- `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_candidate_contract.py`
-  - candidate API contract.
+  - RED/GREEN, reviewer remediation, 최종 검증 근거.
 - `pilot-git-repo-connection/src/tci/domain/services/repository_connection_support.py`
-  - origin projection helper와 다음 `T059` identity helper를 추가할 가능성이 높은 파일.
+  - shared identity helper, GitLab allowlist/default-port logic.
 - `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
-  - 다음 `T060` duplicate prevention 적용 지점.
+  - candidate/manual duplicate precheck와 다음 credential boundary 적용 지점.
+- `pilot-git-repo-connection/src/tci/domain/services/list_repository_candidates.py`
+  - candidate projection과 existing connection matching.
+- `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_identity.py`
+  - identity normalization 단위 regression.
+- `pilot-git-repo-connection/tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
+  - candidate/manual duplicate integration regression.
+- `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
+  - create contract, duplicate precheck, GitLab allowlist regression.
+- `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_operation_credentials.py`
+  - 다음 credential boundary 작업의 기존 출발점.
 
 # 꼭 유지해야 할 기준
 
 - 새 repository connection create는 `planningInputReferenceId` 또는 planning/spec/plan 출처 필드를 받지 않아야 한다.
 - obsolete planning/spec/plan field는 compatibility로 수용하지 말고 `400 INVALID_INPUT`으로 거부해야 한다.
+- `candidateId`는 수용하지만, 이것만으로 active connection을 만들면 안 된다. shared read-only credential 검증은 계속 필요하다.
 - 새 workspace 기반 connection은 `planning_input_reference_id=None`이어야 한다.
 - 새 workspace 기반 연결에서 `traceability.planningInputReference = null`은 정상 상태다.
 - legacy planning trace는 같은 workspace에 속할 때만 보존/노출해야 한다.
 - missing 또는 cross-workspace legacy planning reference는 `legacy_unassigned`로 표시해야 한다.
-- cross-workspace planning reference의 `sourceReference`, `approvedSpecPath`, `approvedPlanPath`는 connection detail과 snapshot detail에서 노출하지 말아야 한다.
+- cross-workspace planning reference의 `sourceReference`, `approvedSpecPath`, `approvedPlanPath`는 connection detail과 snapshot detail에서 노출하지 않아야 한다.
 - candidate source가 반환한 항목도 반드시 requested `workspace_id`와 일치해야 serialization한다.
 - candidate `remoteUrl`은 credential, token, query, fragment, unsafe scheme, malformed host/port/path를 echo하지 않아야 한다.
 - candidate discovery 개인 grant는 operation credential로 저장하거나 승격하지 않아야 한다.
 - API validation error와 web form error는 credential secret을 echo하지 않아야 한다.
 - rejected create는 connection/credential/event/sync side effect를 만들지 않아야 한다.
+- duplicate precheck는 git ref resolve, credential probe, mirror sync 전에 실패해야 한다.
+- GitLab SSH remote의 명시적 포트는 allowlist에서 포트까지 요구해야 한다. `:443`도 SSH에서는 default HTTPS port로 취급하지 않는다.
 - `connections/index.html`이 create/list 통합 템플릿이다. nonexistent `connections/create.html`, `connections/list.html` 경로를 다시 쓰지 말아야 한다.
 - `SC-001`, `SC-004`는 실제 운영자 리허설 없이 완료 처리하지 말아야 한다.
 
@@ -119,90 +113,111 @@
 - persisted legacy row의 workspace scope는 기존 `workspace_id`를 canonical로 사용한다.
 - cross-workspace planning reference는 legacy trace 보존 대상이 아니다. compatibility 상태로 보여주고 trace 내용은 숨긴다.
 - candidate API foundation은 real provider discovery가 아니라 provider source 주입 계약과 response projection까지다.
+- canonical identity helper는 candidate list와 create duplicate precheck의 shared source로 유지한다.
 
 # 이번 세션에서 얻은 중요한 메모
 
-- `T037/T038`는 완료됐다. 이전 handoff의 “service-level로 옮길지 판단 필요”는 더 이상 현재 상태가 아니다.
-- `T045/T046/T055-T058`도 완료됐다. 다음 시작점은 `T047/T059` canonical identity helper다.
-- `T030`은 아직 미완료다. `SC-001` 6회 운영자 timing rehearsal이 없으면 완료 처리하면 안 된다.
-- `SC-004`도 아직 미완료다. 60개 mixed-provider 식별 과제와 57/60 성공 계산이 필요하다.
-- Security reviewer가 candidate API에서 중요한 gap을 잡았다.
-  - 첫 번째: candidate source 반환값을 그대로 믿으면 cross-workspace repository metadata가 누출될 수 있었다.
-  - 두 번째: `remoteUrl`이 secret-bearing URL을 echo할 수 있었다.
-  - 세 번째 re-review: malformed/unsafe scheme URL도 suppress해야 한다고 지적했다.
-  - 모두 수정됐고 final security re-review는 no remaining findings였다.
-- Python reviewer가 candidate source dependency typing을 block했다.
-  - `RepositoryCandidateDependencies`, `RepositoryCandidateConnectionRepository`, `RepositoryCandidateConnection` Protocol로 해결했다.
-  - final Python re-review는 approve였다.
-- General reviewer는 초반 `Too many open files`로 incomplete였다. 이후 메인 세션에서 checks를 재실행했고 Security/Python 최종 re-review로 closure 처리했다.
-- dependency/lockfile 변경은 없다. `pip-audit`/`safety`는 설치되어 있지 않아 dependency audit는 실행하지 못했다.
-- `basedpyright`, `bandit`도 현재 env에서 unavailable로 보고됐다.
+- `T047/T049/T059/T060`은 완료됐다. 다음 시작점은 `T050-T052/T061-T063` credential boundary와 permission failure mapping이다.
+- `candidateId`는 schema/route/command까지 전달되지만, 아직 candidate source에서 remote를 조회해 create payload를 대체하는 단계는 아니다.
+- Reviewer가 identity normalization gap을 잡았다.
+  - GitHub path case가 다르면 duplicate precheck가 우회될 수 있었다.
+  - GitLab explicit default port가 있으면 duplicate key가 달라질 수 있었다.
+  - SSH `:443`이 host-only allowlist를 우회할 수 있었다.
+  - 모두 regression 추가 후 수정했고 final reviewer/security re-review는 no findings였다.
+- Python reviewer는 이번 diff에 no findings였다.
+- `Too many open files (os error 24)`가 세션 후반에 반복됐다. cmux pane 생성, subagent shell 실행, 일부 `rtk`/`git diff` 실행이 실패했다.
+- `$git-commit pilot-git-repo-connection` 요청에 대해 scoped diff 명령 일부가 FD 한도 때문에 실패했지만, 직전 확인한 pilot 하위 변경 기준 commit message를 제안했다.
+- cmux 실험 결과:
+  - `cmux new-pane` + `codex --profile yololo` 실행은 성공했다.
+  - 새 pane에서 `/resume`으로 현재 세션을 선택해 열 수 있었다.
+  - 같은 세션을 동시에 열면 새 pane 쪽에 `Conversation interrupted`가 나타날 수 있다.
+  - 내부 Codex subagent의 실제 화면을 cmux pane에 attach하는 API는 확인하지 못했다. 상태 미러링 pane은 가능해 보이나 FD 한도 때문에 실험 미완료.
 
 # 테스트와 검증 상태
 
 - 최종 검증 통과.
 - 주요 RED/GREEN:
-  - `rtk pytest tests/integration/repository_connections/test_repository_first_legacy_compatibility.py::test_detail_and_list_services_project_legacy_origin_state -q`
-    - RED: `RepositoryConnection`에 service-level `origin` attribute가 없어 실패.
-    - GREEN: detail/list service origin projection 추가 후 `1 passed`.
-  - `rtk proxy pytest tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/unit/repository_connections/test_repository_candidates.py -q`
-    - RED: `tci.domain.services.list_repository_candidates` 모듈이 없어 collection 실패.
-    - GREEN: candidate schema/service/route/app registration 후 통과.
-  - `rtk pytest tests/unit/repository_connections/test_repository_candidates.py::test_candidate_service_filters_candidates_from_other_workspaces tests/unit/repository_connections/test_repository_candidates.py::test_candidate_service_removes_secret_bearing_remote_urls -q`
-    - RED: projection에 `workspace_id`가 없고 unsafe `remoteUrl`을 그대로 반환.
-    - GREEN: workspace filtering과 URL suppression 후 `2 passed`.
-  - `rtk pytest tests/unit/repository_connections/test_repository_candidates.py::test_candidate_service_removes_malformed_or_unsafe_remote_urls -q`
-    - RED: malformed/unsafe scheme URL을 반환.
-    - GREEN: `http`/`https` allowlist, hostname/port/control text 검증 후 통과.
-- Reviewer loop:
-  - Security reviewer: final no remaining security findings.
-  - Python reviewer: final approve.
-  - General reviewer: no confirmed findings였지만 incomplete. Security/Python final review와 full checks로 보완.
+  - `rtk proxy pytest tests/unit/repository_connections/test_repository_connection_identity.py -q`
+    - RED: `build_repository_identity`가 없어 collection 실패.
+    - GREEN: helper 추가 후 identity/candidate focused tests 통과.
+  - `rtk proxy pytest tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_candidate_selected_connection_reuses_manual_duplicate_precheck -q`
+    - RED: `candidateId`가 extra field로 422.
+    - GREEN: `candidateId` 수용과 shared identity duplicate precheck 적용 후 통과.
+  - `rtk proxy pytest tests/unit/repository_connections/test_repository_connection_identity.py::test_github_identity_normalizes_repository_path_case tests/unit/repository_connections/test_repository_connection_identity.py::test_gitlab_identity_normalizes_default_https_port -q`
+    - RED: GitHub path case와 GitLab default port가 정규화되지 않음.
+    - GREEN: identity normalization 보강 후 통과.
+  - `rtk proxy pytest tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_github_duplicate_precheck_normalizes_repository_path_case -q`
+    - RED: mixed-case GitHub connection과 lower-case GitHub connection이 모두 생성됨.
+    - GREEN: 새 GitHub row를 canonical lower-case owner/name/path로 저장한 뒤 통과.
+  - `rtk proxy pytest tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_rejects_gitlab_ssh_443_without_port_allowlist -q`
+    - RED: SSH `:443` GitLab remote가 host-only allowlist로 허용됨.
+    - GREEN: SSH 명시 포트 유지 후 통과.
+- 최종 reviewer loop:
+  - General reviewer: initial findings 모두 수정, final no findings.
+  - Security reviewer: initial findings 모두 수정, final no security findings.
+  - Python reviewer: no findings.
 - 최종 focused regression:
-  - `rtk pytest tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/unit/repository_connections/test_repository_candidates.py tests/integration/repository_connections/test_repository_first_legacy_compatibility.py tests/unit/repository_connections/test_repository_connection_serialization.py tests/unit/repository_connections/test_repository_connection_origin.py -q`
+  - `rtk pytest tests/unit/repository_connections/test_repository_connection_identity.py tests/unit/repository_connections/test_repository_candidates.py tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_candidate_selected_connection_reuses_manual_duplicate_precheck tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_github_duplicate_precheck_normalizes_repository_path_case tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_gitlab_duplicate_precheck_normalizes_default_https_port tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_rejects_duplicate_before_git_access tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_serializes_duplicate_identity_before_git_access -q`
   - 결과: `15 passed`.
 - 최종 broad regression:
   - `rtk pytest tests/unit/repository_connections tests/integration/repository_connections tests/contract/repository_ingestion -q`
-  - 결과: `571 passed`.
+  - 결과: `579 passed`.
 - 최종 static checks:
   - `rtk black --check .`
-    - 결과: `158 files would be left unchanged`.
+    - 결과: `159 files would be left unchanged`.
   - `rtk ruff check .`
     - 결과: no issues found.
-  - focused `rtk mypy src/tci/api/schemas/repository_candidate.py src/tci/domain/services/list_repository_candidates.py src/tci/api/routes/repository_candidates.py src/tci/app.py src/tci/domain/services/get_repository_connection_detail.py src/tci/domain/services/list_repository_connections.py src/tci/domain/services/repository_connection_support.py src/tci/api/schemas/repository_connection.py tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/integration/repository_connections/test_repository_first_legacy_compatibility.py tests/unit/repository_connections/test_repository_candidates.py`
+  - focused `rtk mypy src/tci/domain/services/repository_connection_support.py src/tci/infrastructure/persistence/repository_connection_repository.py src/tci/domain/services/list_repository_candidates.py src/tci/domain/services/create_repository_connection.py src/tci/api/schemas/repository_connection.py src/tci/api/routes/repository_connections.py tests/unit/repository_connections/test_repository_connection_identity.py tests/unit/repository_connections/test_repository_candidates.py`
     - 결과: no issues found.
   - `rtk alembic heads`
     - 결과: `009_repository_first_connections (head)`.
   - `rtk proxy git diff --check`
     - 결과: 통과.
+- project-wide/test-file mypy는 기존 TestClient/test payload typing noise가 있어 focused target만 사용했다.
+- dependency/lockfile 변경은 없다. dependency audit는 실행하지 않았다.
 
 # 다음 세션의 시작 순서
 
-1. `rtk proxy git status -sb`와 `rtk proxy git diff --stat`로 현재 변경 파일을 확인한다.
-2. 커밋 요청이 있으면 이번 변경을 하나의 `feat:` 또는 `test:` 성격 커밋으로 묶을지 먼저 결정한다.
-3. 계속 개발하면 `T047`과 `T059`를 먼저 TDD로 시작한다.
-   - 목표: candidate path와 manual URL path가 같은 canonical repository identity를 계산하도록 helper를 만든다.
-   - 예상 파일: `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_identity.py`, `pilot-git-repo-connection/src/tci/domain/services/repository_connection_support.py`.
-4. 그 다음 `T049/T060`으로 candidate-selected/manual URL duplicate prevention integration을 붙인다.
-   - 예상 파일: `pilot-git-repo-connection/tests/integration/repository_connections/test_connection_and_initial_snapshot.py`, `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`.
-5. 이후 `T050-T052/T061-T063` credential boundary와 permission failure mapping으로 진행한다.
-6. Operator UI는 candidate API와 duplicate/credential 흐름이 안정된 뒤 `T048/T064-T066`에서 처리한다.
-7. 새 작업 전 `delivery-evidence.md`에 RED/GREEN/검증 명령을 이어서 기록한다.
+1. `git status -sb`로 staged/unstaged 상태를 확인한다. 가능하면 `rtk`를 쓰되 `Too many open files`가 나면 raw `git`로 fallback한다.
+2. 현재 변경을 커밋할지 결정한다.
+   - 제안된 scoped commit message:
+     ```text
+     feat: 저장소 identity 중복 판별 강화
+
+     candidate 선택과 수동 URL 입력이 같은 저장소를 일관되게
+     판별하도록 canonical identity helper를 추가한다.
+
+     - GitHub 경로 대소문자와 GitLab 기본 포트를 정규화
+     - candidateId create payload를 수용해 중복 precheck에 연결
+     - SSH 포트 allowlist 우회가 없도록 regression을 보강
+     ```
+3. 계속 개발하면 `T050-T052` 테스트를 먼저 작성한다.
+   - `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_credentials.py`
+   - `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_permission_failures.py`
+   - `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_operation_credential_boundary.py`
+4. 그 다음 `T061-T063` 구현으로 진행한다.
+   - `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
+   - `pilot-git-repo-connection/src/tci/domain/services/repository_connection_support.py`
+   - `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
+5. Credential boundary와 permission failure가 안정된 뒤 `T048/T064-T066` operator candidate UI로 넘어간다.
+6. 새 작업도 RED/GREEN과 reviewer loop 결과를 `delivery-evidence.md`에 이어서 기록한다.
 
 # 마지막 액션과 바로 다음 액션
 
 - 마지막 액션:
-  - `handoff.md`를 현재 상태로 갱신했다.
+  - `handoff.md`를 현재 세션 기준으로 갱신했다.
   - 직전 최종 검증은 모두 통과했다.
 - 바로 다음 액션:
-  - 커밋 여부를 결정한다.
-  - 커밋하지 않고 계속 개발하면 `T047/T059` canonical repository identity helper부터 시작한다.
+  - `git status -sb`로 staging 상태를 확인한다.
+  - 커밋할지 결정한다.
+  - 커밋하지 않고 계속 개발하면 `T050-T052/T061-T063` credential boundary loop부터 시작한다.
 
 # 병렬 작업과 소유권
 
 - 이번 세션에서 subagent reviewer를 사용했다. 모두 read-only였고 파일 수정은 메인 세션에서만 수행했다.
 - 사용한 reviewer:
-  - Security reviewer: candidate workspace isolation, URL echo, malformed URL finding을 냈고 모두 수정 후 final no findings.
-  - Python reviewer: candidate dependency typing finding을 냈고 Protocol 보강 후 final approve.
-  - General reviewer: 초반 도구 문제로 incomplete. 확정 finding은 없었다.
-- 리뷰 중 `Too many open files (os error 24)`와 backend stream disconnect가 있었지만 메인 세션 검증과 재리뷰로 마무리했다.
+  - General reviewer: canonical identity normalization gap, SSH `:443` allowlist gap을 지적했고 수정 후 final no findings.
+  - Security reviewer: duplicate/allowlist bypass risk를 지적했고 수정 후 final no security findings.
+  - Python reviewer: no findings.
+- 테스트용 worker subagent `Dirac`를 띄웠지만 `Too many open files (os error 24)`로 shell 실행을 못 했다. 종료/close 처리했다.
+- cmux pane 실험 중 `pane:3`, `pane:4`에 `codex --profile yololo`를 실행했다. 열려 있을 수 있으므로 필요 없으면 cmux에서 닫아도 된다.

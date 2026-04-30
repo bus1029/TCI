@@ -11,6 +11,7 @@ from tci.api.problem_details import ProblemCode
 from tci.domain.services.repository_connection_support import (
     RepositoryConnectionProblem,
     bind_git_credential,
+    build_repository_identity,
     encrypt_secret_for_storage,
     derive_fingerprint,
     ensure_gitlab_self_managed_host_allowed,
@@ -43,6 +44,7 @@ class CreateRepositoryConnectionCommand:
     credential_type: str
     credential_secret: str
     credential_fingerprint: str | None
+    candidate_id: str | None = None
 
 
 def create_repository_connection(command, *, dependencies):
@@ -66,6 +68,14 @@ def create_repository_connection(command, *, dependencies):
         remote_url=command.remote_url,
         remote_port=parsed_remote.provider_remote_port,
     )
+    repository_identity = build_repository_identity(
+        provider=provider,
+        provider_instance_url=parsed_remote.provider_instance_url,
+        provider_project_path=parsed_remote.provider_project_path,
+    )
+    repository_owner, _, repository_name = (
+        repository_identity.provider_project_path.rpartition("/")
+    )
     with dependencies.session_factory() as session:
         connection_repository = dependencies.repository_connection_repository_factory(
             session
@@ -77,14 +87,14 @@ def create_repository_connection(command, *, dependencies):
             with connection_repository.repository_identity_creation_lock(
                 workspace_id=command.workspace_id,
                 provider=provider,
-                provider_instance_url=parsed_remote.provider_instance_url,
-                provider_project_path=parsed_remote.provider_project_path,
+                provider_instance_url=repository_identity.provider_instance_url,
+                provider_project_path=repository_identity.provider_project_path,
             ):
                 connection_repository.ensure_repository_identity_available(
                     workspace_id=command.workspace_id,
                     provider=provider,
-                    provider_instance_url=parsed_remote.provider_instance_url,
-                    provider_project_path=parsed_remote.provider_project_path,
+                    provider_instance_url=repository_identity.provider_instance_url,
+                    provider_project_path=repository_identity.provider_project_path,
                 )
 
                 encrypted_secret = encrypt_secret_for_storage(
@@ -137,10 +147,14 @@ def create_repository_connection(command, *, dependencies):
                             provider=provider,
                             remote_url=command.remote_url,
                             transport=transport,
-                            repository_owner=parsed_remote.owner,
-                            repository_name=parsed_remote.name,
-                            provider_instance_url=parsed_remote.provider_instance_url,
-                            provider_project_path=parsed_remote.provider_project_path,
+                            repository_owner=repository_owner,
+                            repository_name=repository_name,
+                            provider_instance_url=(
+                                repository_identity.provider_instance_url
+                            ),
+                            provider_project_path=(
+                                repository_identity.provider_project_path
+                            ),
                             default_ref_type=resolved_ref.ref_type,
                             default_ref_name=resolved_ref.ref_name,
                             status=RepositoryConnectionStatus.ACTIVE,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import dataclass
 from hashlib import sha256
 import logging
 import os
@@ -36,6 +37,14 @@ class RepositoryConnectionProblem(RuntimeError):
 
 
 ConnectionOrigin = dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class RepositoryIdentity:
+    provider: RepositoryProvider
+    provider_instance_url: str | None
+    provider_project_path: str
+    canonical_key: str
 
 
 _SSH_CREDENTIAL_BIND_LOCK = Lock()
@@ -79,6 +88,95 @@ def matching_workspace_planning_input_reference(connection):
     ):
         return None
     return planning_input_reference
+
+
+def build_repository_identity(
+    *,
+    provider: RepositoryProvider,
+    provider_instance_url: str | None,
+    provider_project_path: str,
+) -> RepositoryIdentity:
+    normalized_project_path = _normalize_provider_project_path(provider_project_path)
+    if provider is RepositoryProvider.GITHUB_CLOUD:
+        normalized_project_path = normalized_project_path.lower()
+        return RepositoryIdentity(
+            provider=provider,
+            provider_instance_url=None,
+            provider_project_path=normalized_project_path,
+            canonical_key=f"{provider.value}:{normalized_project_path}",
+        )
+    if provider is RepositoryProvider.GITLAB_SELF_MANAGED:
+        normalized_instance_url = _normalize_provider_instance_url(
+            provider_instance_url
+        )
+        if normalized_instance_url is None:
+            raise RepositoryConnectionProblem(
+                ProblemCode.INVALID_INPUT,
+                "GitLab Self-Managed identity requires provider_instance_url.",
+            )
+        return RepositoryIdentity(
+            provider=provider,
+            provider_instance_url=normalized_instance_url,
+            provider_project_path=normalized_project_path,
+            canonical_key=(
+                f"{provider.value}:{normalized_instance_url}:"
+                f"{normalized_project_path}"
+            ),
+        )
+    raise RepositoryConnectionProblem(ProblemCode.UNSUPPORTED_PROVIDER)
+
+
+def _normalize_provider_project_path(provider_project_path: str) -> str:
+    normalized_path = provider_project_path.strip().strip("/").removesuffix(".git")
+    if (
+        not normalized_path
+        or "/" not in normalized_path
+        or "//" in normalized_path
+        or any(
+            character.isspace() or ord(character) < 32 for character in normalized_path
+        )
+        or any(segment in ("", ".", "..") for segment in normalized_path.split("/"))
+    ):
+        raise RepositoryConnectionProblem(
+            ProblemCode.INVALID_INPUT,
+            "Repository identity requires a normalized provider_project_path.",
+        )
+    return normalized_path
+
+
+def _normalize_provider_instance_url(provider_instance_url: str | None) -> str | None:
+    if provider_instance_url is None:
+        return None
+    parsed_instance = urlparse(provider_instance_url.strip())
+    if parsed_instance.scheme not in {"http", "https"}:
+        raise RepositoryConnectionProblem(
+            ProblemCode.INVALID_INPUT,
+            "Repository identity requires an http or https provider_instance_url.",
+        )
+    hostname = parsed_instance.hostname
+    if hostname is None:
+        raise RepositoryConnectionProblem(
+            ProblemCode.INVALID_INPUT,
+            "Repository identity requires provider_instance_url host.",
+        )
+    try:
+        port = parsed_instance.port
+    except ValueError as error:
+        raise RepositoryConnectionProblem(
+            ProblemCode.INVALID_INPUT,
+            "Repository identity requires a valid provider_instance_url port.",
+        ) from error
+    instance_url = f"{parsed_instance.scheme}://{hostname.lower().rstrip('.')}"
+    if port is not None and not _is_default_url_port(
+        scheme=parsed_instance.scheme,
+        port=port,
+    ):
+        instance_url = f"{instance_url}:{port}"
+    return instance_url
+
+
+def _is_default_url_port(*, scheme: str, port: int) -> bool:
+    return (scheme == "https" and port == 443) or (scheme == "http" and port == 80)
 
 
 def parse_provider(raw_value: str) -> RepositoryProvider:
@@ -170,6 +268,10 @@ def ensure_gitlab_self_managed_host_allowed(
         or transport is RepositoryTransport.HTTP
         or (remote_url is not None and remote_url.startswith("http://"))
     )
+    uses_http_family_remote = transport in (
+        RepositoryTransport.HTTP,
+        RepositoryTransport.HTTPS,
+    ) or (remote_url is not None and remote_url.startswith(("http://", "https://")))
     if uses_http_remote and not getattr(settings, "allow_insecure_gitlab_http", False):
         raise RepositoryConnectionProblem(
             ProblemCode.INVALID_INPUT,
@@ -185,6 +287,18 @@ def ensure_gitlab_self_managed_host_allowed(
             else parsed_instance.port
         )
     )
+    if effective_port is not None and uses_http_family_remote:
+        effective_scheme = (
+            "http"
+            if (
+                parsed_instance.scheme == "http"
+                or transport is RepositoryTransport.HTTP
+                or (remote_url is not None and remote_url.startswith("http://"))
+            )
+            else "https"
+        )
+        if _is_default_url_port(scheme=effective_scheme, port=effective_port):
+            effective_port = None
     allowed_origin = (
         hostname if effective_port is None else f"{hostname}:{effective_port}"
     )

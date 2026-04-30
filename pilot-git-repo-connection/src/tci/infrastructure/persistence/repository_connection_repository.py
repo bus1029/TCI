@@ -268,7 +268,15 @@ class RepositoryConnectionRepository:
         parsed_port = RepositoryConnectionRepository._parse_url_port(
             parsed_url=parsed_instance
         )
-        normalized_port = f":{parsed_port}" if parsed_port is not None else ""
+        normalized_port = (
+            f":{parsed_port}"
+            if parsed_port is not None
+            and not (
+                (parsed_instance.scheme == "https" and parsed_port == 443)
+                or (parsed_instance.scheme == "http" and parsed_port == 80)
+            )
+            else ""
+        )
         return f"{parsed_instance.scheme}://{normalized_host}{normalized_port}"
 
     @staticmethod

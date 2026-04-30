@@ -262,6 +262,96 @@ def test_default_ref_change_reuses_stored_credential_for_ref_validation(
     assert store.last_resolved_remote_url == "https://github.com/acme/sample-repo.git"
 
 
+def test_candidate_selected_connection_reuses_manual_duplicate_precheck(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    manual_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    assert manual_response.status_code == 201
+    store.last_resolved_remote_url = None
+
+    candidate_payload = create_connection_payload()
+    candidate_payload["candidateId"] = "github:acme/sample-repo"
+    duplicate_response = client.post(
+        "/api/repository-connections",
+        json=candidate_payload,
+    )
+
+    assert duplicate_response.status_code == 400
+    assert duplicate_response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "Repository connection already exists for this workspace.",
+    }
+    assert store.last_resolved_remote_url is None
+
+
+def test_github_duplicate_precheck_normalizes_repository_path_case(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    mixed_case_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            remote_url="https://github.com/Acme/Sample-Repo.git",
+        ),
+    )
+    assert mixed_case_response.status_code == 201
+    store.last_resolved_remote_url = None
+
+    duplicate_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            remote_url="https://github.com/acme/sample-repo.git",
+        ),
+    )
+
+    assert duplicate_response.status_code == 400
+    assert duplicate_response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "Repository connection already exists for this workspace.",
+    }
+    assert store.last_resolved_remote_url is None
+
+
+def test_gitlab_duplicate_precheck_normalizes_default_https_port(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    default_port_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com:443/group/sample-repo.git",
+        ),
+    )
+    assert default_port_response.status_code == 201
+    store.last_resolved_remote_url = None
+
+    duplicate_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com/group/sample-repo.git",
+        ),
+    )
+
+    assert duplicate_response.status_code == 400
+    assert duplicate_response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "Repository connection already exists for this workspace.",
+    }
+    assert store.last_resolved_remote_url is None
+
+
 def test_verify_endpoint_accepts_known_connection_for_followup_worker_execution(
     tmp_path,
 ) -> None:

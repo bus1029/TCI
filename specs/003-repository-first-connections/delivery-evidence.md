@@ -18,7 +18,7 @@
 | FR-007 | Verified | Connection origin is visible in API and operator list/detail. |
 | FR-008 | Partial | Existing GitHub Cloud focused regression passed; full final regression remains open. |
 | FR-009 | Partial | Existing GitLab Self-Managed focused regression passed; full final regression remains open. |
-| FR-010 | Pending | Same workspace/provider/repository duplicate connections are blocked. |
+| FR-010 | Verified | Same workspace/provider/repository duplicate connections are blocked across manual and candidate-selected create payloads before git access. |
 | FR-011 | Pending | Mixed GitHub/GitLab status, event, snapshot, and history stay separated. |
 | FR-012 | Pending | Unauthorized repository access blocks connection creation. |
 | FR-012a | Pending | Personal provider grant alone cannot create active connections. |
@@ -33,7 +33,7 @@
 | SC-002 | Pending | Planning-free create/detail acceptance coverage. |
 | SC-003 | Pending | Existing GitHub/GitLab baseline scenarios pass. |
 | SC-004 | Pending | Mixed-provider identification rehearsal, 57 of 60 correct. |
-| SC-005 | Pending | Duplicate connection attempts are blocked or routed to existing connection. |
+| SC-005 | Verified | Duplicate connection attempts are blocked before git access for manual and candidate-selected payloads. |
 | SC-006 | Pending | Existing planning/spec/plan history remains accessible. |
 | SC-007 | Partial | Auth-failed and write-capable create attempts create no connection; personal provider grant scenario remains US3. |
 
@@ -216,6 +216,54 @@
 - 2026-04-30 Final Alembic graph check: `rtk alembic heads`
   - Result: `009_repository_first_connections (head)`.
 - 2026-04-30 Final diff whitespace check: `rtk proxy git diff --check`
+  - Result: passed.
+- 2026-04-30 RED: `rtk proxy pytest tests/unit/repository_connections/test_repository_connection_identity.py -q`
+  - Result: collection failed because `build_repository_identity` did not exist, confirming missing canonical identity helper for candidate/manual comparison.
+- 2026-04-30 GREEN: `rtk pytest tests/unit/repository_connections/test_repository_connection_identity.py tests/unit/repository_connections/test_repository_candidates.py tests/contract/repository_ingestion/test_repository_candidate_contract.py -q`
+  - Result: 8 passed after adding shared repository identity helper and reusing it for candidate key/existing-connection comparison.
+- 2026-04-30 RED: `rtk proxy pytest tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_candidate_selected_connection_reuses_manual_duplicate_precheck -q`
+  - Result: failed with 422 because `candidateId` was rejected as an extra create field before duplicate precheck.
+- 2026-04-30 GREEN: `rtk pytest tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_candidate_selected_connection_reuses_manual_duplicate_precheck -q`
+  - Result: 1 passed after accepting `candidateId` and applying the shared canonical identity helper in create duplicate precheck.
+- 2026-04-30 Candidate/manual duplicate focused regression: `rtk pytest tests/unit/repository_connections/test_repository_connection_identity.py tests/unit/repository_connections/test_repository_candidates.py tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_candidate_selected_connection_reuses_manual_duplicate_precheck tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_rejects_duplicate_before_git_access tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_serializes_duplicate_identity_before_git_access -q`
+  - Result: 11 passed.
+- 2026-04-30 Candidate/manual duplicate formatting check: `rtk black --check src/tci/domain/services/repository_connection_support.py src/tci/domain/services/list_repository_candidates.py src/tci/domain/services/create_repository_connection.py src/tci/api/schemas/repository_connection.py src/tci/api/routes/repository_connections.py tests/unit/repository_connections/test_repository_connection_identity.py tests/unit/repository_connections/test_repository_candidates.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
+  - Result: 8 files would be left unchanged.
+- 2026-04-30 Candidate/manual duplicate lint: `rtk ruff check src/tci/domain/services/repository_connection_support.py src/tci/domain/services/list_repository_candidates.py src/tci/domain/services/create_repository_connection.py src/tci/api/schemas/repository_connection.py src/tci/api/routes/repository_connections.py tests/unit/repository_connections/test_repository_connection_identity.py tests/unit/repository_connections/test_repository_candidates.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
+  - Result: no issues found.
+- 2026-04-30 Candidate/manual duplicate focused typing: `rtk mypy src/tci/domain/services/repository_connection_support.py src/tci/domain/services/list_repository_candidates.py src/tci/domain/services/create_repository_connection.py src/tci/api/schemas/repository_connection.py src/tci/api/routes/repository_connections.py tests/unit/repository_connections/test_repository_connection_identity.py tests/unit/repository_connections/test_repository_candidates.py`
+  - Result: no issues found. Existing integration test mypy noise remains outside this focused typing target.
+- 2026-04-30 Reviewer remediation RED: `rtk proxy pytest tests/unit/repository_connections/test_repository_connection_identity.py::test_github_identity_normalizes_repository_path_case tests/unit/repository_connections/test_repository_connection_identity.py::test_gitlab_identity_normalizes_default_https_port -q`
+  - Result: 2 failed because canonical identity preserved GitHub path case and explicit GitLab default HTTPS port.
+- 2026-04-30 Reviewer remediation RED: `rtk proxy pytest tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_github_duplicate_precheck_normalizes_repository_path_case -q`
+  - Result: failed because a mixed-case GitHub connection and lower-case GitHub connection could both be created.
+- 2026-04-30 Reviewer remediation RED: `rtk proxy pytest tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_gitlab_duplicate_precheck_normalizes_default_https_port -q`
+  - Result: failed because explicit GitLab `:443` was treated as a separate allowlist origin instead of the default HTTPS port.
+- 2026-04-30 Reviewer remediation GREEN: `rtk pytest tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_github_duplicate_precheck_normalizes_repository_path_case tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_gitlab_duplicate_precheck_normalizes_default_https_port tests/unit/repository_connections/test_repository_connection_identity.py -q`
+  - Result: 6 passed after lowercasing GitHub canonical identity, dropping default HTTP(S) ports from GitLab identities, and persisting new GitHub rows with canonical lower-case owner/name.
+- 2026-04-30 Reviewer remediation focused regression: `rtk pytest tests/unit/repository_connections/test_repository_connection_identity.py tests/unit/repository_connections/test_repository_candidates.py tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_candidate_selected_connection_reuses_manual_duplicate_precheck tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_github_duplicate_precheck_normalizes_repository_path_case tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_gitlab_duplicate_precheck_normalizes_default_https_port tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_rejects_duplicate_before_git_access tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_serializes_duplicate_identity_before_git_access -q`
+  - Result: 15 passed.
+- 2026-04-30 Reviewer remediation formatting/lint/typing:
+  - `rtk black --check .` result: 159 files would be left unchanged.
+  - `rtk ruff check .` result: no issues found.
+  - `rtk mypy src/tci/domain/services/repository_connection_support.py src/tci/infrastructure/persistence/repository_connection_repository.py src/tci/domain/services/list_repository_candidates.py src/tci/domain/services/create_repository_connection.py src/tci/api/schemas/repository_connection.py src/tci/api/routes/repository_connections.py tests/unit/repository_connections/test_repository_connection_identity.py tests/unit/repository_connections/test_repository_candidates.py` result: no issues found.
+- 2026-04-30 Security re-review remediation RED: `rtk proxy pytest tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_rejects_gitlab_ssh_443_without_port_allowlist -q`
+  - Result: failed because `ssh://git@gitlab.example.com:443/...` was allowed by a host-only allowlist.
+- 2026-04-30 Security re-review remediation GREEN: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_rejects_gitlab_ssh_443_without_port_allowlist tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_rejects_unallowlisted_gitlab_ssh_port_before_git_access tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_gitlab_duplicate_precheck_normalizes_default_https_port tests/unit/repository_connections/test_repository_connection_identity.py -q`
+  - Result: 7 passed after preserving explicit SSH remote ports in allowlist origin checks while still normalizing HTTP(S) default ports.
+- 2026-04-30 Final reviewer loop:
+  - General reviewer: initial canonical identity finding fixed; SSH `:443` allowlist finding fixed; final re-review no findings.
+  - Security reviewer: initial canonical identity/default port finding fixed; SSH `:443` allowlist finding fixed; final re-review no security findings.
+  - Python reviewer: approved with no findings; project-wide test-file mypy noise remains outside touched-source focused typing.
+- 2026-04-30 Final candidate/manual duplicate broad regression: `rtk pytest tests/unit/repository_connections tests/integration/repository_connections tests/contract/repository_ingestion -q`
+  - Result: 579 passed.
+- 2026-04-30 Final candidate/manual duplicate formatting/lint/alembic:
+  - `rtk black --check .` result: 159 files would be left unchanged.
+  - `rtk ruff check .` result: no issues found.
+  - `rtk alembic heads` result: `009_repository_first_connections (head)`.
+- 2026-04-30 Final candidate/manual duplicate focused typing: `rtk mypy src/tci/domain/services/repository_connection_support.py src/tci/infrastructure/persistence/repository_connection_repository.py src/tci/domain/services/list_repository_candidates.py src/tci/domain/services/create_repository_connection.py src/tci/api/schemas/repository_connection.py src/tci/api/routes/repository_connections.py tests/unit/repository_connections/test_repository_connection_identity.py tests/unit/repository_connections/test_repository_candidates.py`
+  - Result: no issues found.
+- 2026-04-30 Final candidate/manual duplicate diff whitespace check: `rtk proxy git diff --check`
   - Result: passed.
 
 ## Final Evidence
