@@ -19,8 +19,14 @@ from tci.infrastructure.persistence.models import RepositoryProvider
 class _CandidateSourceWithPersonalGrant:
     personal_grant_secret = "personal-provider-token"
 
-    def __init__(self, *, project_path: str = "acme/sample-repo") -> None:
+    def __init__(
+        self,
+        *,
+        project_path: str = "acme/sample-repo",
+        access_status: str = "available",
+    ) -> None:
         self.project_path = project_path
+        self.access_status = access_status
         self.call_count = 0
 
     def list_candidates(self, *, workspace_id: uuid.UUID, provider):
@@ -38,7 +44,7 @@ class _CandidateSourceWithPersonalGrant:
                 repository_owner=repository_owner,
                 repository_name=repository_name,
                 provider_project_path=self.project_path,
-                access_status="available",
+                access_status=self.access_status,
             ),
         )
 
@@ -133,6 +139,35 @@ def test_candidate_selected_create_rejects_identity_mismatch_without_side_effect
     assert response.json() == {
         "code": "INVALID_INPUT",
         "message": "선택한 후보 저장소와 제출된 저장소 URL이 일치하지 않습니다.",
+    }
+    assert candidate_source.call_count == 1
+    assert store.connections == {}
+    assert store.credentials == {}
+    assert store.sync_runs == {}
+
+
+def test_candidate_selected_create_rejects_unavailable_candidate_without_side_effects(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    candidate_source = _CandidateSourceWithPersonalGrant(
+        access_status="permission_denied"
+    )
+    object.__setattr__(
+        _dependencies(client),
+        "repository_candidate_source",
+        candidate_source,
+    )
+    payload = create_connection_payload(credential_secret="workspace-secret")
+    payload["candidateId"] = "candidate-1"
+
+    response = client.post("/api/repository-connections", json=payload)
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "선택할 수 없는 후보 저장소입니다.",
     }
     assert candidate_source.call_count == 1
     assert store.connections == {}

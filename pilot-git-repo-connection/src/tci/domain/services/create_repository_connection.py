@@ -241,6 +241,11 @@ def _validate_candidate_selection(
             ProblemCode.INVALID_INPUT,
             "선택한 후보 저장소를 찾을 수 없습니다.",
         )
+    if selected_candidate.access_status != "available":
+        raise RepositoryConnectionProblem(
+            ProblemCode.INVALID_INPUT,
+            "선택할 수 없는 후보 저장소입니다.",
+        )
 
     candidate_identity = build_repository_identity(
         provider=selected_candidate.provider,

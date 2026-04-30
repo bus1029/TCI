@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, cast
 import uuid
+
+from fastapi import FastAPI
 
 from tci.domain.services.build_code_snapshot import (
     BuildCodeSnapshotCommand,
@@ -11,6 +14,10 @@ from tci.domain.services.create_initial_snapshot import (
     CreateInitialSnapshotCommand,
     create_initial_snapshot,
 )
+from tci.domain.services.list_repository_candidates import (
+    RepositoryCandidateProjection,
+)
+from tci.infrastructure.persistence.models import RepositoryProvider
 from tests.support.repository_connection_testkit import (
     create_connection_payload,
     create_test_client,
@@ -21,6 +28,21 @@ from tests.support.repository_connection_testkit import (
 
 def _dependencies(client) -> Any:
     return cast(Any, client.app).state.dependencies
+
+
+@dataclass(frozen=True, slots=True)
+class StaticCandidateSource:
+    candidates: tuple[RepositoryCandidateProjection, ...]
+
+    def list_candidates(
+        self, *, workspace_id: uuid.UUID, provider: RepositoryProvider | None
+    ) -> tuple[RepositoryCandidateProjection, ...]:
+        del workspace_id
+        if provider is None:
+            return self.candidates
+        return tuple(
+            candidate for candidate in self.candidates if candidate.provider is provider
+        )
 
 
 def test_connections_page_renders_empty_state_and_create_form(tmp_path) -> None:
@@ -37,6 +59,257 @@ def test_connections_page_renders_empty_state_and_create_form(tmp_path) -> None:
     assert "등록된 저장소 연결이 없습니다." in response.text
     assert 'action="/connections' in response.text
     assert 'name="remoteUrl"' in response.text
+
+
+def test_connections_page_renders_candidate_list_and_manual_fallback(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    app = cast(FastAPI, client.app)
+    object.__setattr__(
+        app.state.dependencies,
+        "repository_candidate_source",
+        StaticCandidateSource(
+            (
+                RepositoryCandidateProjection(
+                    id="github:acme/sample-repo",
+                    workspace_id=workspace_id,
+                    provider=RepositoryProvider.GITHUB_CLOUD,
+                    provider_scope="acme",
+                    remote_url="https://github.com/acme/sample-repo.git",
+                    repository_owner="acme",
+                    repository_name="sample-repo",
+                    provider_project_path="acme/sample-repo",
+                    access_status="available",
+                ),
+            )
+        ),
+    )
+
+    response = client.get(f"/connections?workspaceId={workspace_id}")
+
+    assert response.status_code == 200
+    assert "후보 저장소" in response.text
+    assert "github_cloud" in response.text
+    assert "acme/sample-repo" in response.text
+    assert "github_cloud:acme/sample-repo" in response.text
+    assert 'name="candidateId"' in response.text
+    assert "수동 URL 입력" in response.text
+
+
+def test_connections_page_renders_candidate_empty_state(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    response = client.get(f"/connections?workspaceId={workspace_id}")
+
+    assert response.status_code == 200
+    assert "후보 저장소" in response.text
+    assert "설정된 provider 후보가 없어 수동 URL 입력을 사용할 수 있습니다." in (
+        response.text
+    )
+    assert "등록된 저장소 연결이 없습니다." in response.text
+
+
+def test_connections_page_marks_already_connected_candidate(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = create_response.json()["id"]
+    app = cast(FastAPI, client.app)
+    object.__setattr__(
+        app.state.dependencies,
+        "repository_candidate_source",
+        StaticCandidateSource(
+            (
+                RepositoryCandidateProjection(
+                    id="github:acme/sample-repo",
+                    workspace_id=workspace_id,
+                    provider=RepositoryProvider.GITHUB_CLOUD,
+                    provider_scope="acme",
+                    remote_url="https://github.com/acme/sample-repo.git",
+                    repository_owner="acme",
+                    repository_name="sample-repo",
+                    provider_project_path="acme/sample-repo",
+                    access_status="available",
+                ),
+            )
+        ),
+    )
+
+    response = client.get(f"/connections?workspaceId={workspace_id}")
+
+    assert response.status_code == 200
+    assert "이미 연결됨" in response.text
+    assert connection_id in response.text
+    assert "선택 불가" in response.text
+
+
+def test_connections_create_route_rejects_unknown_candidate_selection(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    app = cast(FastAPI, client.app)
+    object.__setattr__(
+        app.state.dependencies,
+        "repository_candidate_source",
+        StaticCandidateSource(
+            (
+                RepositoryCandidateProjection(
+                    id="github:acme/sample-repo",
+                    workspace_id=workspace_id,
+                    provider=RepositoryProvider.GITHUB_CLOUD,
+                    provider_scope="acme",
+                    remote_url="https://github.com/acme/sample-repo.git",
+                    repository_owner="acme",
+                    repository_name="sample-repo",
+                    provider_project_path="acme/sample-repo",
+                    access_status="available",
+                ),
+            )
+        ),
+    )
+
+    response = client.post(
+        f"/connections?workspaceId={workspace_id}",
+        data={
+            "candidateId": "github:acme/missing-repo",
+            "provider": "github_cloud",
+            "remoteUrl": "https://github.com/acme/other-repo.git",
+            "transport": "https",
+            "defaultRefType": "branch",
+            "defaultRefName": "main",
+            "credentialType": "https_pat",
+            "credentialSecret": "top-secret-token",
+            "credentialFingerprint": "pat-01",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "선택한 후보 저장소를 찾을 수 없습니다." in response.text
+    assert "top-secret-token" not in response.text
+    assert "other-repo" in response.text
+
+
+def test_connections_create_route_uses_selected_gitlab_candidate_defaults(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    app = cast(FastAPI, client.app)
+    object.__setattr__(
+        app.state.dependencies,
+        "repository_candidate_source",
+        StaticCandidateSource(
+            (
+                RepositoryCandidateProjection(
+                    id="gitlab:group/sample-repo",
+                    workspace_id=workspace_id,
+                    provider=RepositoryProvider.GITLAB_SELF_MANAGED,
+                    provider_scope="https://gitlab.example.com",
+                    remote_url="https://gitlab.example.com/group/sample-repo.git",
+                    repository_owner="group",
+                    repository_name="sample-repo",
+                    provider_project_path="group/sample-repo",
+                    access_status="available",
+                    provider_instance_url="https://gitlab.example.com",
+                ),
+            )
+        ),
+    )
+
+    response = client.post(
+        f"/connections?workspaceId={workspace_id}",
+        data={
+            "candidateId": "gitlab:group/sample-repo",
+            "provider": "github_cloud",
+            "remoteUrl": "",
+            "transport": "https",
+            "defaultRefType": "branch",
+            "defaultRefName": "main",
+            "credentialType": "https_pat",
+            "credentialSecret": "readonly-token-value",
+            "credentialFingerprint": "pat-01",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    connection_id = uuid.UUID(
+        response.headers["location"].split("/connections/")[1].split("?")[0]
+    )
+    connection = store.connections[connection_id]
+    assert connection.provider is RepositoryProvider.GITLAB_SELF_MANAGED
+    assert connection.remote_url == "https://gitlab.example.com/group/sample-repo.git"
+
+
+def test_connections_create_route_rejects_unselectable_candidate(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    app = cast(FastAPI, client.app)
+    object.__setattr__(
+        app.state.dependencies,
+        "repository_candidate_source",
+        StaticCandidateSource(
+            (
+                RepositoryCandidateProjection(
+                    id="github:acme/private-repo",
+                    workspace_id=workspace_id,
+                    provider=RepositoryProvider.GITHUB_CLOUD,
+                    provider_scope="acme",
+                    remote_url="https://github.com/acme/private-repo.git",
+                    repository_owner="acme",
+                    repository_name="private-repo",
+                    provider_project_path="acme/private-repo",
+                    access_status="permission_denied",
+                ),
+            )
+        ),
+    )
+
+    response = client.post(
+        f"/connections?workspaceId={workspace_id}",
+        data={
+            "candidateId": "github:acme/private-repo",
+            "provider": "github_cloud",
+            "remoteUrl": "https://github.com/acme/private-repo.git",
+            "transport": "https",
+            "defaultRefType": "branch",
+            "defaultRefName": "main",
+            "credentialType": "https_pat",
+            "credentialSecret": "top-secret-token",
+            "credentialFingerprint": "pat-01",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "선택할 수 없는 후보 저장소입니다." in response.text
+    assert "top-secret-token" not in response.text
+
+
+def test_connections_create_route_redacts_secret_bearing_remote_url(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    response = client.post(
+        f"/connections?workspaceId={workspace_id}",
+        data={
+            "provider": "github_cloud",
+            "remoteUrl": "https://operator:embedded-token@github.com/acme/sample-repo.git",
+            "transport": "https",
+            "defaultRefType": "branch",
+            "defaultRefName": "main",
+            "credentialType": "https_pat",
+            "credentialSecret": "top-secret-token",
+            "credentialFingerprint": "pat-01",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "top-secret-token" not in response.text
+    assert "embedded-token" not in response.text
+    assert "operator:" not in response.text
 
 
 def test_operator_session_bootstraps_browser_cookie_for_operator_pages(

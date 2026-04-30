@@ -4,26 +4,26 @@
 
 | ID | Evidence Status | Notes |
 |----|-----------------|-------|
-| FR-001 | Partial | Manual URL workspace-start repository connection flow is covered; candidate decision support remains US3. |
+| FR-001 | Verified | Manual URL workspace-start connection flow and operator candidate decision support are covered. |
 | FR-002 | Verified | New connections do not require or store planning/spec/plan trace in create/detail/snapshot coverage. |
 | FR-002a | Verified | Obsolete planning/spec/plan create fields are rejected and create no connection. |
 | FR-003 | Verified | GitHub and GitLab are available in workspace-first manual URL flow. |
-| FR-003a | Partial | Manual URL path is covered; candidate list path remains US3. |
+| FR-003a | Verified | Manual URL path, candidate list display, already-connected candidate state, and candidate-selected validation are covered. |
 | FR-003b | Verified | Create, verify, collect, scope preview, event processing, event status lookup, and ref-update/reverify paths reject missing, revoked, or non-readonly operation credentials without falling back to personal provider grants. |
 | FR-003c | Partial | Candidate endpoint returns configured provider-scope projections; real provider account/instance integration remains open. |
-| FR-003d | Partial | Candidate endpoint returns manual URL fallback empty state when provider candidates are not configured. |
-| FR-004 | Partial | Operator list/detail now show workspace-origin context; full mixed-provider management remains US3. |
+| FR-003d | Verified | Candidate endpoint and operator page return manual URL fallback empty state when provider candidates are not configured. |
+| FR-004 | Verified | Operator list/detail/event pages expose workspace, provider, repository identity, origin, and mixed-provider separation context. |
 | FR-005 | Partial | Legacy planning trace is preserved in API/operator detail coverage; full provider history regression remains open. |
 | FR-006 | Verified | Planning trace is optional legacy provenance only. |
 | FR-007 | Verified | Connection origin is visible in API and operator list/detail. |
 | FR-008 | Partial | Existing GitHub Cloud focused regression passed; full final regression remains open. |
 | FR-009 | Partial | Existing GitLab Self-Managed focused regression passed; full final regression remains open. |
 | FR-010 | Verified | Same workspace/provider/repository duplicate connections are blocked across manual and candidate-selected create payloads before git access. |
-| FR-011 | Pending | Mixed GitHub/GitLab status, event, snapshot, and history stay separated. |
+| FR-011 | Verified | Mixed GitHub/GitLab status, event, snapshot, sync history, and operator event timeline projections stay separated. |
 | FR-012 | Partial | Auth-failed and non-readonly create attempts block connection creation with no side effects; final operator remediation coverage remains open. |
 | FR-012a | Verified | Candidate personal grant material is not persisted as an operation credential and cannot create an active connection without submitted workspace credential validation. |
 | FR-012b | Verified | Create rejects auth-failed and write-capable credentials without creating rows; revoked/non-active stored operation credentials map to reauth-required remediation paths across repository operations. |
-| FR-013 | Pending | Empty candidate state is not treated as an error. |
+| FR-013 | Verified | Empty candidate state is rendered as manual URL fallback, not an error. |
 | FR-014 | Verified | Legacy planning trace projections remain visible for GitHub/GitLab list/detail, verification, snapshot, and webhook coverage. |
 | FR-014a | Verified | Persisted legacy planning row keeps existing `workspace_id` as canonical list/detail scope. |
 | FR-014b | Verified | Missing or cross-workspace legacy planning references are visible as `legacy_unassigned`; mismatched planning trace is hidden from API/operator/snapshot detail. |
@@ -318,6 +318,47 @@
   - `rtk pytest tests/unit/repository_connections tests/integration/repository_connections tests/contract/repository_ingestion -q` result: 605 passed.
   - `rtk alembic heads` result: `009_repository_first_connections (head)`.
   - `rtk proxy git diff --check` result: passed.
+- 2026-04-30 Operator candidate UI RED: `rtk proxy pytest tests/integration/repository_connections/test_operator_connection_pages.py -q`
+  - Result: 4 failed and 29 passed because the operator page did not render candidate repositories, candidate empty state, already-connected candidate state, or pass `candidateId` through create validation.
+- 2026-04-30 Operator candidate UI GREEN: `rtk pytest tests/integration/repository_connections/test_operator_connection_pages.py -q`
+  - Result: 33 passed after loading candidate projections in the operator route, rendering candidate/manual fallback states, preserving secret sanitization, and forwarding `candidateId` into create validation.
+- 2026-04-30 Mixed-provider workspace RED: `rtk proxy pytest tests/integration/repository_connections/test_mixed_provider_workspace.py -q`
+  - Result: 1 failed because the operator list/event pages did not expose provider identity strongly enough for GitHub/GitLab distinction.
+- 2026-04-30 Mixed-provider workspace GREEN: `rtk pytest tests/integration/repository_connections/test_mixed_provider_workspace.py -q`
+  - Result: 1 passed after adding provider, GitLab instance, and project path context to the operator list and event timeline pages.
+- 2026-04-30 SC-004 fixture RED: `rtk proxy pytest tests/integration/repository_connections/test_operator_mixed_provider_identification.py -q`
+  - Result: collection failed because the 60-task operator identification rehearsal fixture module did not exist.
+- 2026-04-30 SC-004 fixture GREEN: `rtk pytest tests/integration/repository_connections/test_operator_mixed_provider_identification.py -q`
+  - Result: 1 passed after adding deterministic SC-004 fixture generation for 60 provider/repository/origin identification tasks. This is fixture evidence only; SC-004 remains pending until real operator answers are recorded in T072.
+- 2026-04-30 US3 operator/mixed focused regression: `rtk pytest tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_mixed_provider_workspace.py tests/integration/repository_connections/test_operator_mixed_provider_identification.py -q`
+  - Result: 35 passed.
+- 2026-04-30 US3 operator/mixed broad verification:
+  - `rtk pytest tests/unit/repository_connections tests/integration/repository_connections tests/contract/repository_ingestion -q` result: 611 passed.
+  - `rtk black --check .` result: 165 files would be left unchanged.
+  - `rtk ruff check .` result: no issues found.
+  - `rtk mypy src/tci/web/routes/repository_connections.py tests/support/operator_identification_rehearsal.py` result: no issues found.
+  - `rtk alembic heads` result: `009_repository_first_connections (head)`.
+  - `rtk proxy git diff --check` result: passed.
+- 2026-04-30 Reviewer remediation RED:
+  - `rtk proxy pytest tests/integration/repository_connections/test_operator_connection_pages.py::test_connections_create_route_uses_selected_gitlab_candidate_defaults tests/integration/repository_connections/test_operator_connection_pages.py::test_connections_create_route_rejects_unselectable_candidate tests/integration/repository_connections/test_operator_connection_pages.py::test_connections_create_route_redacts_secret_bearing_remote_url -q` result: 3 failed because candidate radio selection did not drive provider/remote URL defaults, non-selectable candidates were only disabled in HTML, and secret-bearing remote URLs were reflected on validation errors.
+  - `rtk proxy pytest tests/integration/repository_connections/test_repository_first_permission_failures.py::test_candidate_selected_create_rejects_unavailable_candidate_without_side_effects -q` result: 1 failed because API create accepted a selected candidate with `access_status != available`.
+  - `rtk proxy pytest tests/integration/repository_connections/test_mixed_provider_workspace.py -q` result: 1 failed because operator detail did not expose workspace context explicitly enough for mixed-provider identification evidence.
+- 2026-04-30 Reviewer remediation GREEN:
+  - `rtk pytest tests/integration/repository_connections/test_operator_connection_pages.py::test_connections_create_route_uses_selected_gitlab_candidate_defaults tests/integration/repository_connections/test_operator_connection_pages.py::test_connections_create_route_rejects_unselectable_candidate tests/integration/repository_connections/test_operator_connection_pages.py::test_connections_create_route_redacts_secret_bearing_remote_url -q` result: 3 passed after deriving selected candidate provider/remote URL from sanitized candidate projections, rejecting non-selectable candidate submissions server-side, and clearing secret-bearing `remoteUrl` before error re-render.
+  - `rtk pytest tests/integration/repository_connections/test_repository_first_permission_failures.py::test_candidate_selected_create_rejects_unavailable_candidate_without_side_effects -q` result: 1 passed after create service rejected selected candidates whose `access_status` is not `available`.
+  - `rtk pytest tests/integration/repository_connections/test_mixed_provider_workspace.py -q` result: 1 passed after adding explicit workspace context to the operator detail page.
+  - `rtk pytest tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_repository_first_permission_failures.py tests/integration/repository_connections/test_mixed_provider_workspace.py tests/integration/repository_connections/test_operator_mixed_provider_identification.py -q` result: 43 passed.
+  - `rtk black --check src/tci/domain/services/create_repository_connection.py src/tci/web/routes/repository_connections.py tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_repository_first_permission_failures.py tests/integration/repository_connections/test_mixed_provider_workspace.py` result: 5 files would be left unchanged.
+  - `rtk ruff check src/tci/domain/services/create_repository_connection.py src/tci/web/routes/repository_connections.py tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_repository_first_permission_failures.py tests/integration/repository_connections/test_mixed_provider_workspace.py` result: no issues found.
+  - `rtk mypy src/tci/domain/services/create_repository_connection.py src/tci/web/routes/repository_connections.py tests/support/operator_identification_rehearsal.py` result: no issues found.
+  - `rtk pytest tests/unit/repository_connections tests/integration/repository_connections tests/contract/repository_ingestion -q` result: 615 passed.
+  - `rtk alembic heads` result: `009_repository_first_connections (head)`.
+  - `rtk proxy git diff --check` result: passed.
+- 2026-04-30 Reviewer re-review closure:
+  - General reviewer: no findings; confirmed candidate selection defaults, server-side non-selectable candidate rejection, and detail/evidence scope.
+  - Python reviewer: no findings; noted whole touched test-file mypy still has pre-existing `client.app.state` typing noise outside changed hunks.
+  - Security reviewer: no findings; confirmed secret-bearing `remoteUrl` clearing, candidate trust boundary, sanitized candidate URL display, and preserved operator auth/same-origin behavior.
+  - Security reviewer also ran `uvx pip-audit .`; result: no known vulnerabilities found.
 
 ## Final Evidence
 
