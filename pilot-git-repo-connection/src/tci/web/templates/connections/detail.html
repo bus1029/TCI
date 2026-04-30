@@ -28,6 +28,9 @@
       <section>
         <h2>연결 출처</h2>
         <p>{{ connection.origin.message }}</p>
+        {% if connection.origin.kind == "legacy_unassigned" %}
+        <p>호환성 확인 필요</p>
+        {% endif %}
         <p>호환성 상태: {{ connection.origin.compatibilityState }}</p>
       </section>
 

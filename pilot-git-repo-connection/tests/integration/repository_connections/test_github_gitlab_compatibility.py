@@ -14,6 +14,7 @@ from tests.support.repository_connection_testkit import (
     create_connection_payload,
     create_test_client,
     seed_active_webhook_secret,
+    seed_legacy_planning_repository_connection,
     seed_planning_input_reference,
     serialize_github_webhook_payload,
     serialize_gitlab_webhook_payload,
@@ -293,3 +294,192 @@ def test_webhook_routes_reject_wrong_provider_connection_without_state_mutation(
     assert gitlab_to_github_response.json() == {"status": "accepted"}
     assert store.repository_events == {}
     assert store.sync_runs == {}
+
+
+def test_legacy_github_planning_connection_remains_visible_and_operational(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    connection, planning_reference = seed_legacy_planning_repository_connection(
+        client=client,
+        store=store,
+        workspace_id=workspace_id,
+        provider="github_cloud",
+        remote_url="https://github.com/acme/legacy-repo.git",
+    )
+
+    verify_repository_connection(
+        VerifyRepositoryConnectionCommand(
+            workspace_id=workspace_id,
+            connection_id=connection.id,
+        ),
+        dependencies=_dependencies(client),
+    )
+    sync_run = create_initial_snapshot(
+        CreateInitialSnapshotCommand(
+            workspace_id=workspace_id,
+            connection_id=connection.id,
+        ),
+        dependencies=_dependencies(client),
+    )
+    snapshot = build_code_snapshot(
+        BuildCodeSnapshotCommand(
+            workspace_id=workspace_id,
+            connection_id=connection.id,
+            sync_run_id=sync_run.id,
+        ),
+        dependencies=_dependencies(client),
+    )
+
+    list_response = client.get(f"/connections?workspaceId={workspace_id}")
+    detail_response = client.get(f"/api/repository-connections/{connection.id}")
+
+    assert list_response.status_code == 200
+    assert "legacy-repo" in list_response.text
+    assert "출처: 기존 planning trace" in list_response.text
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["provider"] == "github_cloud"
+    assert detail_payload["origin"]["kind"] == "legacy_planning"
+    assert detail_payload["origin"]["compatibilityState"] == "legacy_trace_preserved"
+    assert detail_payload["traceability"]["planningInputReference"]["id"] == str(
+        planning_reference.id
+    )
+    assert snapshot.connection_id == connection.id
+
+
+def test_legacy_gitlab_planning_connection_remains_visible_and_operational(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    connection, planning_reference = seed_legacy_planning_repository_connection(
+        client=client,
+        store=store,
+        workspace_id=workspace_id,
+        provider="gitlab_self_managed",
+        remote_url="https://gitlab.example.com/group/legacy-repo.git",
+    )
+
+    verify_repository_connection(
+        VerifyRepositoryConnectionCommand(
+            workspace_id=workspace_id,
+            connection_id=connection.id,
+        ),
+        dependencies=_dependencies(client),
+    )
+    sync_run = create_initial_snapshot(
+        CreateInitialSnapshotCommand(
+            workspace_id=workspace_id,
+            connection_id=connection.id,
+        ),
+        dependencies=_dependencies(client),
+    )
+    snapshot = build_code_snapshot(
+        BuildCodeSnapshotCommand(
+            workspace_id=workspace_id,
+            connection_id=connection.id,
+            sync_run_id=sync_run.id,
+        ),
+        dependencies=_dependencies(client),
+    )
+
+    list_response = client.get(f"/connections?workspaceId={workspace_id}")
+    detail_response = client.get(f"/api/repository-connections/{connection.id}")
+
+    assert list_response.status_code == 200
+    assert "group/legacy-repo" in list_response.text
+    assert "출처: 기존 planning trace" in list_response.text
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["provider"] == "gitlab_self_managed"
+    assert detail_payload["providerInstanceUrl"] == "https://gitlab.example.com"
+    assert detail_payload["providerProjectPath"] == "group/legacy-repo"
+    assert detail_payload["origin"]["kind"] == "legacy_planning"
+    assert detail_payload["traceability"]["planningInputReference"]["id"] == str(
+        planning_reference.id
+    )
+    assert snapshot.connection_id == connection.id
+
+
+def test_legacy_github_gitlab_webhooks_preserve_provider_isolation(
+    tmp_path, monkeypatch
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    github_connection, _github_reference = seed_legacy_planning_repository_connection(
+        client=client,
+        store=store,
+        workspace_id=workspace_id,
+        provider="github_cloud",
+        remote_url="https://github.com/acme/sample-repo.git",
+    )
+    gitlab_connection, _gitlab_reference = seed_legacy_planning_repository_connection(
+        client=client,
+        store=store,
+        workspace_id=workspace_id,
+        provider="gitlab_self_managed",
+        remote_url="https://gitlab.example.com/group/sample-repo.git",
+    )
+    seed_active_webhook_secret(
+        store, connection_id=github_connection.id, secret="github-secret"
+    )
+    seed_active_webhook_secret(
+        store, connection_id=gitlab_connection.id, secret="gitlab-token"
+    )
+    store.resolved_ref_commits["main"] = "a" * 40
+    object.__setattr__(
+        cast(Any, client.app).state.settings, "redis_url", "redis://example"
+    )
+    monkeypatch.setattr(
+        "tci.api.routes.github_webhooks.create_celery_app",
+        lambda settings: SimpleNamespace(send_task=lambda name, kwargs: None),
+    )
+    monkeypatch.setattr(
+        "tci.api.routes.gitlab_webhooks.create_celery_app",
+        lambda settings: SimpleNamespace(send_task=lambda name, kwargs: None),
+    )
+
+    github_payload = build_github_push_payload(after_sha="a" * 40)
+    github_headers = build_github_webhook_headers(
+        secret="github-secret",
+        payload=github_payload,
+        delivery_id="legacy-github-delivery",
+        event_name="push",
+    )
+    github_headers["content-type"] = "application/json"
+    gitlab_payload = build_gitlab_push_payload(after_sha="a" * 40)
+    gitlab_headers = build_gitlab_webhook_headers(
+        token="gitlab-token",
+        event_name="Push Hook",
+        idempotency_key="legacy-gitlab-delivery",
+    )
+    gitlab_headers["content-type"] = "application/json"
+
+    github_webhook_response = client.post(
+        f"/api/webhooks/github/{github_connection.id}",
+        content=serialize_github_webhook_payload(github_payload),
+        headers=github_headers,
+    )
+    gitlab_webhook_response = client.post(
+        f"/api/webhooks/gitlab/{gitlab_connection.id}",
+        content=serialize_gitlab_webhook_payload(gitlab_payload),
+        headers=gitlab_headers,
+    )
+
+    assert github_webhook_response.status_code == 202
+    assert gitlab_webhook_response.status_code == 202
+    assert [
+        event.provider_delivery_id
+        for event in store.repository_events.values()
+        if event.connection_id == github_connection.id
+    ] == ["legacy-github-delivery"]
+    assert [
+        event.provider_delivery_id
+        for event in store.repository_events.values()
+        if event.connection_id == gitlab_connection.id
+    ] == [
+        "legacy-gitlab-delivery",
+        f"legacy-gitlab-delivery:commit:{'a' * 40}",
+    ]

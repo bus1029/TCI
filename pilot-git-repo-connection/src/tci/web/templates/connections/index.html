@@ -94,7 +94,7 @@
             <div>상태: {{ connection.status.value }}</div>
             <div>기본 ref: {{ connection.default_ref_type.value }} {{ connection.default_ref_name }}</div>
             {% if connection.planning_input_reference_id %}
-            {% if connection.planning_input_reference %}
+            {% if connection.planning_input_reference and connection.planning_input_reference.workspace_id == connection.workspace_id %}
             <div>출처: 기존 planning trace</div>
             {% else %}
             <div>출처: 호환성 확인 필요</div>

@@ -175,6 +175,7 @@ class InMemoryRepositoryStore:
     resolver_requires_bound_credential: bool = False
     auth_failure_ref_names: set[str] = field(default_factory=set)
     missing_ref_names: set[str] = field(default_factory=set)
+    readonly_probe_result: ReadonlyProbeResult | None = None
     last_resolved_remote_url: str | None = None
     resolved_ref_commits: dict[str, str] = field(default_factory=dict)
     mirror_sync_error: Exception | None = None
@@ -1012,7 +1013,12 @@ class FakeGitRefResolver:
 
 
 class FakeGitReadonlyValidator:
+    def __init__(self, *, store: InMemoryRepositoryStore) -> None:
+        self._store = store
+
     def probe(self, *, remote_url: str) -> ReadonlyProbeResult:
+        if self._store.readonly_probe_result is not None:
+            return self._store.readonly_probe_result
         return ReadonlyProbeResult(
             is_read_only=True,
             problem_code=None,
@@ -1650,7 +1656,7 @@ def create_test_client(
         dependencies = AppDependencies(
             settings=settings,
             git_ref_resolver=FakeGitRefResolver(store=store),
-            git_readonly_validator=FakeGitReadonlyValidator(),
+            git_readonly_validator=FakeGitReadonlyValidator(store=store),
             git_mirror_manager=fake_mirror_manager,
             snapshot_archive_store=SnapshotArchiveStore(settings=settings),
             snapshot_manifest_writer=SnapshotManifestWriter(),
@@ -1670,7 +1676,7 @@ def create_test_client(
         dependencies = AppDependencies(
             settings=settings,
             git_ref_resolver=FakeGitRefResolver(store=store),
-            git_readonly_validator=FakeGitReadonlyValidator(),
+            git_readonly_validator=FakeGitReadonlyValidator(store=store),
             git_mirror_manager=fake_mirror_manager,
             snapshot_archive_store=SnapshotArchiveStore(settings=settings),
             snapshot_manifest_writer=SnapshotManifestWriter(),
@@ -1761,6 +1767,38 @@ def create_obsolete_planning_connection_payload(
     )
     payload["planningInputReferenceId"] = str(planning_input_reference_id)
     return payload
+
+
+def seed_legacy_planning_repository_connection(
+    *,
+    client: TestClient,
+    store: InMemoryRepositoryStore,
+    workspace_id: uuid.UUID,
+    provider: str = "github_cloud",
+    remote_url: str = "https://github.com/acme/sample-repo.git",
+    transport: str = "https",
+    default_ref_name: str = "main",
+) -> tuple[RepositoryConnection, PlanningInputReference]:
+    planning_reference = seed_planning_input_reference(
+        store,
+        workspace_id=workspace_id,
+    )
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            provider=provider,
+            remote_url=remote_url,
+            transport=transport,
+            default_ref_name=default_ref_name,
+        ),
+    )
+    if create_response.status_code != 201:
+        raise AssertionError(create_response.text)
+    connection = store.connections[uuid.UUID(create_response.json()["id"])]
+    connection.workspace_id = workspace_id
+    connection.planning_input_reference_id = planning_reference.id
+    connection.planning_input_reference = planning_reference
+    return connection, planning_reference
 
 
 def create_test_ssh_private_key(tmp_path: Path) -> str:

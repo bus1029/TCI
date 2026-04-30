@@ -47,6 +47,19 @@ def get_code_snapshot_detail(
         )
         return CodeSnapshotDetail(
             snapshot=snapshot,
-            planning_input_reference=connection.planning_input_reference,
+            planning_input_reference=_matching_workspace_planning_input_reference(
+                connection
+            ),
             trigger_event_id=None if sync_run is None else sync_run.trigger_event_id,
         )
+
+
+def _matching_workspace_planning_input_reference(connection):
+    planning_input_reference = getattr(connection, "planning_input_reference", None)
+    if planning_input_reference is None:
+        return None
+    if getattr(planning_input_reference, "workspace_id", None) != getattr(
+        connection, "workspace_id", None
+    ):
+        return None
+    return planning_input_reference

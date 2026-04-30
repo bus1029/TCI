@@ -98,7 +98,7 @@ def serialize_repository_connection(connection) -> dict[str, object]:
 
 def serialize_repository_connection_detail(connection) -> dict[str, object]:
     payload = serialize_repository_connection(connection)
-    planning_input_reference = connection.planning_input_reference
+    planning_input_reference = _matching_workspace_planning_input_reference(connection)
     latest_snapshot = getattr(connection, "latest_snapshot", None)
     latest_sync_run = getattr(connection, "latest_sync_run", None)
     latest_scope_rule = getattr(connection, "latest_scope_rule", None)
@@ -231,7 +231,7 @@ def serialize_connection_origin(connection) -> dict[str, object]:
     planning_input_reference_id = getattr(
         connection, "planning_input_reference_id", None
     )
-    planning_input_reference = getattr(connection, "planning_input_reference", None)
+    planning_input_reference = _matching_workspace_planning_input_reference(connection)
     if planning_input_reference_id is None:
         return {
             "kind": "workspace_repository",
@@ -239,7 +239,9 @@ def serialize_connection_origin(connection) -> dict[str, object]:
             "compatibilityState": "normal",
             "message": "워크스페이스에서 직접 생성된 저장소 연결입니다.",
         }
-    if planning_input_reference is not None:
+    if planning_input_reference is not None and getattr(
+        planning_input_reference, "workspace_id", None
+    ) == getattr(connection, "workspace_id", None):
         return {
             "kind": "legacy_planning",
             "hasLegacyPlanningTrace": True,
@@ -252,6 +254,17 @@ def serialize_connection_origin(connection) -> dict[str, object]:
         "compatibilityState": "workspace_assignment_unclear",
         "message": "기존 planning trace를 확인할 수 없어 호환성 확인이 필요합니다.",
     }
+
+
+def _matching_workspace_planning_input_reference(connection):
+    planning_input_reference = getattr(connection, "planning_input_reference", None)
+    if planning_input_reference is None:
+        return None
+    if getattr(planning_input_reference, "workspace_id", None) != getattr(
+        connection, "workspace_id", None
+    ):
+        return None
+    return planning_input_reference
 
 
 def _serialize_planning_input_reference(

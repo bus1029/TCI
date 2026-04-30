@@ -59,7 +59,7 @@
 
 - [x] T017 [P] [US1] Add contract tests for `POST /api/repository-connections` succeeding without `planningInputReferenceId` in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
 - [x] T018 [P] [US1] Add contract tests proving `POST /api/repository-connections` rejects each obsolete planning/spec/plan reference field and creates no connection in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
-- [ ] T019 [P] [US1] Add contract tests proving shared read-only credential is required for create and is reflected in permission problem responses in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
+- [x] T019 [P] [US1] Add contract tests proving shared read-only credential is required for create and is reflected in permission problem responses in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
 - [x] T020 [P] [US1] Add GitHub workspace-first create/detail/snapshot integration test in `pilot-git-repo-connection/tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
 - [x] T021 [P] [US1] Add GitLab workspace-first create/detail/snapshot integration test in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
 - [x] T022 [P] [US1] Add operator UI integration test for create form without planning input selection in `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_connection_pages.py`
@@ -88,11 +88,11 @@
 ### Tests for User Story 2
 
 - [x] T031 [P] [US2] Add contract test proving legacy connection detail still returns non-null planning reference in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
-- [ ] T032 [P] [US2] Add GitHub legacy planning connection visibility/regression test in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
-- [ ] T033 [P] [US2] Add GitLab legacy planning connection visibility/regression test in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
-- [ ] T034 [P] [US2] Add compatibility-state test for unclear legacy workspace assignment in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_legacy_compatibility.py`
+- [x] T032 [P] [US2] Add GitHub legacy planning connection visibility/regression test in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+- [x] T033 [P] [US2] Add GitLab legacy planning connection visibility/regression test in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+- [x] T034 [P] [US2] Add compatibility-state test for unclear legacy workspace assignment in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_legacy_compatibility.py`
 - [x] T035 [P] [US2] Add regression test proving legacy rows keep existing `workspace_id` as canonical list/detail scope in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_migration.py`
-- [ ] T036 [P] [US2] Add GitHub/GitLab webhook no-regression tests after nullable planning change in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+- [x] T036 [P] [US2] Add GitHub/GitLab webhook no-regression tests after nullable planning change in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
 
 ### Implementation for User Story 2
 
@@ -102,8 +102,8 @@
 - [x] T040 [US2] Update snapshot detail serializer to preserve legacy planning trace when present in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
 - [x] T041 [US2] Update operator connection list template to distinguish workspace repository and legacy planning origins in `pilot-git-repo-connection/src/tci/web/templates/connections/index.html`
 - [x] T042 [US2] Update operator connection detail template to show legacy planning trace and compatibility state in `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
-- [ ] T043 [US2] Update legacy fixture helper to seed GitHub/GitLab planning references and canonical `workspace_id` explicitly in `pilot-git-repo-connection/tests/support/repository_connection_testkit.py`
-- [ ] T044 [US2] Record US2 GitHub/GitLab compatibility and canonical workspace evidence in `specs/003-repository-first-connections/delivery-evidence.md`
+- [x] T043 [US2] Update legacy fixture helper to seed GitHub/GitLab planning references and canonical `workspace_id` explicitly in `pilot-git-repo-connection/tests/support/repository_connection_testkit.py`
+- [x] T044 [US2] Record US2 GitHub/GitLab compatibility and canonical workspace evidence in `specs/003-repository-first-connections/delivery-evidence.md`
 
 **Checkpoint**: User Stories 1 and 2 both work independently.
 

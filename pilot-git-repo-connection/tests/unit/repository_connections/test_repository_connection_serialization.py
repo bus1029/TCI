@@ -50,3 +50,26 @@ def test_connection_detail_preserves_legacy_planning_reference() -> None:
 
     assert planning_reference_payload["id"] == str(planning_reference.id)
     assert origin["kind"] == "legacy_planning"
+
+
+def test_connection_detail_hides_cross_workspace_planning_reference() -> None:
+    store = InMemoryRepositoryStore()
+    workspace_id = uuid.uuid4()
+    other_workspace_id = uuid.uuid4()
+    planning_reference = seed_planning_input_reference(
+        store,
+        workspace_id=other_workspace_id,
+    )
+    connection = build_workspace_repository_connection(
+        workspace_id=workspace_id,
+        planning_input_reference_id=planning_reference.id,
+    )
+    connection.planning_input_reference = planning_reference
+
+    payload = serialize_repository_connection_detail(connection)
+    traceability = cast(dict[str, object], payload["traceability"])
+    origin = cast(dict[str, object], payload["origin"])
+
+    assert traceability["planningInputReference"] is None
+    assert origin["kind"] == "legacy_unassigned"
+    assert origin["compatibilityState"] == "workspace_assignment_unclear"

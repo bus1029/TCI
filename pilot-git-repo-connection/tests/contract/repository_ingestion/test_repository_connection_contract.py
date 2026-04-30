@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 from sqlalchemy.exc import OperationalError
 
+from tci.api.problem_details import ProblemCode
+from tci.infrastructure.git.git_readonly_validator import ReadonlyProbeResult
 from tci.infrastructure.persistence.models import (
     RefType,
     RepositoryConnectionStatus,
@@ -125,6 +127,58 @@ def test_repository_management_routes_fail_closed_when_operator_token_unconfigur
 
     assert response.status_code == 503
     assert response.json() == {"detail": "운영 API 토큰이 설정되지 않았습니다."}
+
+
+def test_create_connection_rejects_write_capable_credential_without_row(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    store.readonly_probe_result = ReadonlyProbeResult(
+        is_read_only=False,
+        problem_code=ProblemCode.READ_WRITE_CREDENTIAL_NOT_ALLOWED,
+        detail="쓰기 가능한 자격 증명입니다.",
+    )
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(credential_secret="top-secret-token"),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "READ_WRITE_CREDENTIAL_NOT_ALLOWED",
+        "message": "쓰기 가능한 자격 증명입니다.",
+    }
+    assert store.connections == {}
+    assert store.credentials == {}
+    assert store.repository_events == {}
+    assert store.sync_runs == {}
+    assert "top-secret-token" not in response.text
+
+
+def test_create_connection_rejects_auth_failed_credential_without_row(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    store.auth_failure_ref_names.add("main")
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(credential_secret="top-secret-token"),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "CONNECTION_AUTH_FAILED",
+        "message": "저장소 자격 증명 검증에 실패했습니다.",
+    }
+    assert store.connections == {}
+    assert store.credentials == {}
+    assert store.repository_events == {}
+    assert store.sync_runs == {}
+    assert "top-secret-token" not in response.text
 
 
 def test_create_planning_input_reference_route_requires_workspace_header(

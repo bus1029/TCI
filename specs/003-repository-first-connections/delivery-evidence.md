@@ -22,12 +22,12 @@
 | FR-011 | Pending | Mixed GitHub/GitLab status, event, snapshot, and history stay separated. |
 | FR-012 | Pending | Unauthorized repository access blocks connection creation. |
 | FR-012a | Pending | Personal provider grant alone cannot create active connections. |
-| FR-012b | Pending | Missing/expired/revoked/invalid shared credential returns remediation. |
+| FR-012b | Partial | Create rejects auth-failed and write-capable credentials without creating rows; expired/revoked remediation remains US3. |
 | FR-013 | Pending | Empty candidate state is not treated as an error. |
-| FR-014 | Partial | Legacy planning trace projections remain visible in API/operator detail coverage; full GitHub/GitLab legacy visibility suite remains open. |
+| FR-014 | Verified | Legacy planning trace projections remain visible for GitHub/GitLab list/detail, verification, snapshot, and webhook coverage. |
 | FR-014a | Verified | Persisted legacy planning row keeps existing `workspace_id` as canonical list/detail scope. |
-| FR-014b | Pending | Unclear legacy workspace assignment is visible as compatibility state. |
-| FR-015 | Pending | New and legacy connections keep equivalent provider operations. |
+| FR-014b | Verified | Missing or cross-workspace legacy planning references are visible as `legacy_unassigned`; mismatched planning trace is hidden from API/operator/snapshot detail. |
+| FR-015 | Partial | Legacy GitHub/GitLab verify, snapshot, and webhook flows pass; final full provider regression remains open. |
 | FR-016 | Verified | Planning-free connection verification, collection, snapshot, detail, status paths are covered by focused regression. |
 | SC-001 | Pending | Six operator timing attempts, 5 of 6 within 10 minutes. |
 | SC-002 | Pending | Planning-free create/detail acceptance coverage. |
@@ -35,7 +35,7 @@
 | SC-004 | Pending | Mixed-provider identification rehearsal, 57 of 60 correct. |
 | SC-005 | Pending | Duplicate connection attempts are blocked or routed to existing connection. |
 | SC-006 | Pending | Existing planning/spec/plan history remains accessible. |
-| SC-007 | Pending | Invalid shared credential attempts do not create connections. |
+| SC-007 | Partial | Auth-failed and write-capable create attempts create no connection; personal provider grant scenario remains US3. |
 
 ## Foundation Evidence
 
@@ -126,6 +126,10 @@
   - Result: 5 passed.
 - 2026-04-29 Focused US1/operator/API regression: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
   - Result after US1/US2 evidence additions: 105 passed.
+- 2026-04-30 RED: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_rejects_write_capable_credential_without_row tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_rejects_auth_failed_credential_without_row -q`
+  - Result: 1 passed, 1 failed because the in-memory repository testkit could not express a write-capable readonly probe result yet.
+- 2026-04-30 GREEN: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_rejects_write_capable_credential_without_row tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_rejects_auth_failed_credential_without_row -q`
+  - Result: 2 passed.
 - SC-001 operator timing rehearsal is not yet performed; keep SC-001 pending until 3 operators complete 6 recorded attempts.
 
 ## User Story 2 Evidence
@@ -138,6 +142,22 @@
   - Result: 1 passed.
 - 2026-04-29 Focused US1/US2 regression: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
   - Result after US1/US2 evidence additions: 105 passed.
+- 2026-04-30 RED: `rtk proxy pytest tests/integration/repository_connections/test_github_gitlab_compatibility.py::test_legacy_github_planning_connection_remains_visible_and_operational -q`
+  - Result: collection failed because `seed_legacy_planning_repository_connection` did not exist yet.
+- 2026-04-30 GREEN: `rtk pytest tests/integration/repository_connections/test_github_gitlab_compatibility.py::test_legacy_github_planning_connection_remains_visible_and_operational tests/integration/repository_connections/test_github_gitlab_compatibility.py::test_legacy_gitlab_planning_connection_remains_visible_and_operational tests/integration/repository_connections/test_github_gitlab_compatibility.py::test_legacy_github_gitlab_webhooks_preserve_provider_isolation tests/integration/repository_connections/test_repository_first_legacy_compatibility.py::test_connection_with_missing_legacy_planning_reference_shows_compatibility_state -q`
+  - Result: 4 passed.
+- 2026-04-30 Focused US1/US2 regression: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_github_gitlab_compatibility.py tests/integration/repository_connections/test_repository_first_legacy_compatibility.py tests/integration/repository_connections/test_operator_connection_pages.py -q`
+  - Result: 98 passed.
+- 2026-04-30 Reviewer remediation targeted checks: `rtk pytest tests/integration/repository_connections/test_repository_first_legacy_compatibility.py tests/unit/repository_connections/test_repository_connection_serialization.py -q`
+  - Result after adding loaded cross-workspace planning reference coverage: 5 passed.
+- 2026-04-30 Snapshot traceability remediation targeted checks: `rtk pytest tests/integration/repository_connections/test_repository_first_legacy_compatibility.py tests/unit/repository_connections/test_snapshot_traceability.py -q`
+  - Result after hiding cross-workspace planning references from snapshot detail: 5 passed.
+- 2026-04-30 Final focused US1/US2 regression: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_github_gitlab_compatibility.py tests/integration/repository_connections/test_repository_first_legacy_compatibility.py tests/integration/repository_connections/test_operator_connection_pages.py tests/unit/repository_connections/test_repository_connection_serialization.py tests/unit/repository_connections/test_snapshot_traceability.py -q`
+  - Result: 105 passed.
+- 2026-04-30 Reviewer loop:
+  - General reviewer: initial T034/FR-014b overclaim finding fixed; snapshot traceability leak finding fixed; final re-review approved with no remaining findings.
+  - Python reviewer: no findings.
+  - Security reviewer: initial snapshot traceability leak finding fixed; final re-review no remaining security findings.
 
 ## User Story 3 Evidence
 
@@ -159,3 +179,15 @@ No commands recorded yet.
   - Result: 105 passed.
 - 2026-04-29 Broad repository ingestion regression: `rtk pytest tests/unit/repository_connections tests/integration/repository_connections tests/contract/repository_ingestion -q`
   - Result after persisted legacy workspace scope regression: 555 passed.
+- 2026-04-30 Final formatting check: `rtk black --check .`
+  - Result: 153 files would be left unchanged.
+- 2026-04-30 Final lint check: `rtk ruff check .`
+  - Result: no issues found.
+- 2026-04-30 Final focused typing: `rtk mypy src/tci/api/schemas/repository_connection.py src/tci/domain/services/get_code_snapshot_detail.py src/tci/domain/services/get_repository_connection_detail.py src/tci/domain/services/list_repository_connections.py tests/support/repository_connection_testkit.py`
+  - Result: no issues found.
+- 2026-04-30 Final Alembic graph check: `rtk alembic heads`
+  - Result: `009_repository_first_connections (head)`.
+- 2026-04-30 Final broad repository ingestion regression: `rtk pytest tests/unit/repository_connections tests/integration/repository_connections tests/contract/repository_ingestion -q`
+  - Result: 564 passed.
+- 2026-04-30 Final diff whitespace check: `rtk proxy git diff --check`
+  - Result: passed.
