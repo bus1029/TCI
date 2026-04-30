@@ -4,31 +4,31 @@
 
 | ID | Evidence Status | Notes |
 |----|-----------------|-------|
-| FR-001 | Pending | Workspace-start repository connection flow. |
-| FR-002 | Pending | New connections do not require or store planning/spec/plan trace. |
-| FR-002a | Pending | Obsolete planning/spec/plan create fields are rejected. |
-| FR-003 | Pending | GitHub and GitLab are available in workspace-first flow. |
-| FR-003a | Pending | Candidate list and manual URL paths are supported. |
+| FR-001 | Partial | Manual URL workspace-start repository connection flow is covered; candidate decision support remains US3. |
+| FR-002 | Verified | New connections do not require or store planning/spec/plan trace in create/detail/snapshot coverage. |
+| FR-002a | Verified | Obsolete planning/spec/plan create fields are rejected and create no connection. |
+| FR-003 | Verified | GitHub and GitLab are available in workspace-first manual URL flow. |
+| FR-003a | Partial | Manual URL path is covered; candidate list path remains US3. |
 | FR-003b | Pending | Operation paths use workspace shared read-only credentials only. |
 | FR-003c | Pending | Candidates are limited to configured provider account/instance scope. |
 | FR-003d | Pending | Manual URL fallback remains available without candidates. |
-| FR-004 | Pending | Connections show workspace context in list/detail. |
-| FR-005 | Pending | Existing planning-based GitHub/GitLab history is preserved. |
-| FR-006 | Pending | Planning trace is optional legacy provenance only. |
-| FR-007 | Pending | Connection origin is visible to operators. |
-| FR-008 | Pending | Existing GitHub Cloud provider behavior regresses cleanly. |
-| FR-009 | Pending | Existing GitLab Self-Managed provider behavior regresses cleanly. |
+| FR-004 | Partial | Operator list/detail now show workspace-origin context; full mixed-provider management remains US3. |
+| FR-005 | Partial | Legacy planning trace is preserved in API/operator detail coverage; full provider history regression remains open. |
+| FR-006 | Verified | Planning trace is optional legacy provenance only. |
+| FR-007 | Verified | Connection origin is visible in API and operator list/detail. |
+| FR-008 | Partial | Existing GitHub Cloud focused regression passed; full final regression remains open. |
+| FR-009 | Partial | Existing GitLab Self-Managed focused regression passed; full final regression remains open. |
 | FR-010 | Pending | Same workspace/provider/repository duplicate connections are blocked. |
 | FR-011 | Pending | Mixed GitHub/GitLab status, event, snapshot, and history stay separated. |
 | FR-012 | Pending | Unauthorized repository access blocks connection creation. |
 | FR-012a | Pending | Personal provider grant alone cannot create active connections. |
 | FR-012b | Pending | Missing/expired/revoked/invalid shared credential returns remediation. |
 | FR-013 | Pending | Empty candidate state is not treated as an error. |
-| FR-014 | Pending | Existing planning-based rows remain visible. |
-| FR-014a | Pending | Existing `workspace_id` remains canonical for legacy rows. |
+| FR-014 | Partial | Legacy planning trace projections remain visible in API/operator detail coverage; full GitHub/GitLab legacy visibility suite remains open. |
+| FR-014a | Verified | Persisted legacy planning row keeps existing `workspace_id` as canonical list/detail scope. |
 | FR-014b | Pending | Unclear legacy workspace assignment is visible as compatibility state. |
 | FR-015 | Pending | New and legacy connections keep equivalent provider operations. |
-| FR-016 | Pending | Planning-free connection verification, collection, snapshot, detail, status work. |
+| FR-016 | Verified | Planning-free connection verification, collection, snapshot, detail, status paths are covered by focused regression. |
 | SC-001 | Pending | Six operator timing attempts, 5 of 6 within 10 minutes. |
 | SC-002 | Pending | Planning-free create/detail acceptance coverage. |
 | SC-003 | Pending | Existing GitHub/GitLab baseline scenarios pass. |
@@ -120,11 +120,24 @@
 
 ## User Story 1 Evidence
 
-No commands recorded yet.
+- 2026-04-29 RED: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_rejects_obsolete_planning_field_matrix_without_row tests/integration/repository_connections/test_operator_connection_pages.py::test_connections_page_renders_existing_connection_summary tests/integration/repository_connections/test_operator_connection_pages.py::test_connections_page_marks_legacy_planning_connections tests/integration/repository_connections/test_operator_connection_pages.py::test_connection_detail_page_renders_workspace_origin_without_planning_labels tests/integration/repository_connections/test_operator_connection_pages.py::test_connection_detail_page_preserves_legacy_planning_trace -q`
+  - Result after setup correction: 1 passed, 4 failed because operator list/detail did not yet render origin state or nullable planning trace correctly.
+- 2026-04-29 GREEN: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_rejects_obsolete_planning_field_matrix_without_row tests/integration/repository_connections/test_operator_connection_pages.py::test_connections_page_renders_existing_connection_summary tests/integration/repository_connections/test_operator_connection_pages.py::test_connections_page_marks_legacy_planning_connections tests/integration/repository_connections/test_operator_connection_pages.py::test_connection_detail_page_renders_workspace_origin_without_planning_labels tests/integration/repository_connections/test_operator_connection_pages.py::test_connection_detail_page_preserves_legacy_planning_trace -q`
+  - Result: 5 passed.
+- 2026-04-29 Focused US1/operator/API regression: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
+  - Result after US1/US2 evidence additions: 105 passed.
+- SC-001 operator timing rehearsal is not yet performed; keep SC-001 pending until 3 operators complete 6 recorded attempts.
 
 ## User Story 2 Evidence
 
-No commands recorded yet.
+- 2026-04-29 Legacy detail contract characterization correction: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py::test_get_legacy_connection_detail_preserves_planning_reference -q`
+  - Result: initial assertion used the wrong fixture source reference; corrected to assert the seeded planning reference values directly.
+- 2026-04-29 Legacy detail contract GREEN: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py::test_get_legacy_connection_detail_preserves_planning_reference -q`
+  - Result: 1 passed.
+- 2026-04-29 Persisted legacy workspace scope regression: `rtk pytest tests/integration/repository_connections/test_repository_first_migration.py::test_persisted_legacy_planning_row_keeps_workspace_scope_and_trace -q`
+  - Result: 1 passed.
+- 2026-04-29 Focused US1/US2 regression: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
+  - Result after US1/US2 evidence additions: 105 passed.
 
 ## User Story 3 Evidence
 
@@ -132,4 +145,17 @@ No commands recorded yet.
 
 ## Final Evidence
 
-No commands recorded yet.
+- 2026-04-29 Formatting check: `rtk black --check .`
+  - Result: 152 files would be left unchanged.
+- 2026-04-29 Lint check: `rtk ruff check .`
+  - Result: no issues found.
+- 2026-04-29 Production focused typing: `rtk mypy src/tci/api/schemas/repository_connection.py src/tci/web/routes/repository_connection_detail.py`
+  - Result: no issues found.
+- 2026-04-29 Test-file typing attempt: `rtk mypy src/tci/api/schemas/repository_connection.py src/tci/web/routes/repository_connection_detail.py tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_operator_connection_pages.py`
+  - Result: failed on existing TestClient/test payload typing noise in the test files; production focused typing passed separately.
+- 2026-04-29 Alembic graph check: `rtk alembic heads`
+  - Result: `009_repository_first_connections (head)`.
+- 2026-04-29 Focused US1/US2 regression: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
+  - Result: 105 passed.
+- 2026-04-29 Broad repository ingestion regression: `rtk pytest tests/unit/repository_connections tests/integration/repository_connections tests/contract/repository_ingestion -q`
+  - Result after persisted legacy workspace scope regression: 555 passed.

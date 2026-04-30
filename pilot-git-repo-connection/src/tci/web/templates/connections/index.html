@@ -93,6 +93,15 @@
             >
             <div>상태: {{ connection.status.value }}</div>
             <div>기본 ref: {{ connection.default_ref_type.value }} {{ connection.default_ref_name }}</div>
+            {% if connection.planning_input_reference_id %}
+            {% if connection.planning_input_reference %}
+            <div>출처: 기존 planning trace</div>
+            {% else %}
+            <div>출처: 호환성 확인 필요</div>
+            {% endif %}
+            {% else %}
+            <div>출처: 워크스페이스 저장소 연결</div>
+            {% endif %}
             <div>{{ connection.remote_url }}</div>
             <a
               href="/connections/{{ connection.id }}?workspaceId={{ workspace_id }}"

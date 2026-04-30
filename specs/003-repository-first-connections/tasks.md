@@ -57,22 +57,22 @@
 
 ### Tests for User Story 1
 
-- [ ] T017 [P] [US1] Add contract tests for `POST /api/repository-connections` succeeding without `planningInputReferenceId` in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
-- [ ] T018 [P] [US1] Add contract tests proving `POST /api/repository-connections` rejects each obsolete planning/spec/plan reference field and creates no connection in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
+- [x] T017 [P] [US1] Add contract tests for `POST /api/repository-connections` succeeding without `planningInputReferenceId` in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
+- [x] T018 [P] [US1] Add contract tests proving `POST /api/repository-connections` rejects each obsolete planning/spec/plan reference field and creates no connection in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
 - [ ] T019 [P] [US1] Add contract tests proving shared read-only credential is required for create and is reflected in permission problem responses in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
-- [ ] T020 [P] [US1] Add GitHub workspace-first create/detail/snapshot integration test in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_connection_flow.py`
-- [ ] T021 [P] [US1] Add GitLab workspace-first create/detail/snapshot integration test in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_connection_flow.py`
-- [ ] T022 [P] [US1] Add operator UI integration test for create form without planning input selection in `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_connection_pages.py`
+- [x] T020 [P] [US1] Add GitHub workspace-first create/detail/snapshot integration test in `pilot-git-repo-connection/tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
+- [x] T021 [P] [US1] Add GitLab workspace-first create/detail/snapshot integration test in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+- [x] T022 [P] [US1] Add operator UI integration test for create form without planning input selection in `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_connection_pages.py`
 
 ### Implementation for User Story 1
 
-- [ ] T023 [US1] Remove planning/spec/plan reference fields from create request validation and reject `planningInputReferenceId`, `planningInputReference`, `planningTrace`, `traceability`, `approvedSpecPath`, `approvedPlanPath`, `specPath`, and `planPath` in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
-- [ ] T024 [US1] Update create route to build connection command from workspace header and repository fields only in `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
-- [ ] T025 [US1] Update create command/service to skip planning reference lookup and store null planning reference for new rows in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
-- [ ] T026 [US1] Ensure manual URL create path still uses existing GitHub/GitLab parser, allowlist, shared read-only credential validator, and mirror sync in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
-- [ ] T027 [US1] Update planning-free snapshot creation/detail serialization to work when connection planning reference is null, without redesigning snapshot creation rules, across `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py`, `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`, `pilot-git-repo-connection/src/tci/domain/services/get_code_snapshot_detail.py`, and `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
-- [ ] T028 [US1] Update operator create route to remove planning input selection requirement in `pilot-git-repo-connection/src/tci/web/routes/repository_connections.py`
-- [ ] T029 [US1] Update operator connection create template to show workspace repository connection fields without planning input controls in `pilot-git-repo-connection/src/tci/web/templates/connections/create.html`
+- [x] T023 [US1] Remove planning/spec/plan reference fields from create request validation and reject `planningInputReferenceId`, `planningInputReference`, `planningTrace`, `traceability`, `approvedSpecPath`, `approvedPlanPath`, `specPath`, and `planPath` in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
+- [x] T024 [US1] Update create route to build connection command from workspace header and repository fields only in `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
+- [x] T025 [US1] Update create command/service to skip planning reference lookup and store null planning reference for new rows in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
+- [x] T026 [US1] Ensure manual URL create path still uses existing GitHub/GitLab parser, allowlist, shared read-only credential validator, and mirror sync in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py`
+- [x] T027 [US1] Update planning-free snapshot creation/detail serialization to work when connection planning reference is null, without redesigning snapshot creation rules, across `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py`, `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`, `pilot-git-repo-connection/src/tci/domain/services/get_code_snapshot_detail.py`, and `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
+- [x] T028 [US1] Update operator create route to remove planning input selection requirement in `pilot-git-repo-connection/src/tci/web/routes/repository_connections.py`
+- [x] T029 [US1] Update operator connection create template to show workspace repository connection fields without planning input controls in `pilot-git-repo-connection/src/tci/web/templates/connections/index.html`
 - [ ] T030 [US1] Record US1 GitHub/GitLab workspace-first, obsolete-field rejection, permission problem, and SC-001 six-attempt timing validation evidence in `specs/003-repository-first-connections/delivery-evidence.md`
 
 **Checkpoint**: User Story 1 is independently functional as MVP.
@@ -87,21 +87,21 @@
 
 ### Tests for User Story 2
 
-- [ ] T031 [P] [US2] Add contract test proving legacy connection detail still returns non-null planning reference in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
+- [x] T031 [P] [US2] Add contract test proving legacy connection detail still returns non-null planning reference in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
 - [ ] T032 [P] [US2] Add GitHub legacy planning connection visibility/regression test in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
 - [ ] T033 [P] [US2] Add GitLab legacy planning connection visibility/regression test in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
 - [ ] T034 [P] [US2] Add compatibility-state test for unclear legacy workspace assignment in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_legacy_compatibility.py`
-- [ ] T035 [P] [US2] Add regression test proving legacy rows keep existing `workspace_id` as canonical list/detail scope in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_legacy_compatibility.py`
+- [x] T035 [P] [US2] Add regression test proving legacy rows keep existing `workspace_id` as canonical list/detail scope in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_migration.py`
 - [ ] T036 [P] [US2] Add GitHub/GitLab webhook no-regression tests after nullable planning change in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
 
 ### Implementation for User Story 2
 
 - [ ] T037 [US2] Update connection detail service to compute `legacy_planning` and `legacy_unassigned` origin states in `pilot-git-repo-connection/src/tci/domain/services/get_repository_connection_detail.py`
 - [ ] T038 [US2] Update connection listing service to include origin information and use existing `workspace_id` without dropping legacy rows in `pilot-git-repo-connection/src/tci/domain/services/list_repository_connections.py`
-- [ ] T039 [US2] Update detail serializer to preserve legacy planning trace when present in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
-- [ ] T040 [US2] Update snapshot detail serializer to preserve legacy planning trace when present in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
-- [ ] T041 [US2] Update operator connection list template to distinguish workspace repository and legacy planning origins in `pilot-git-repo-connection/src/tci/web/templates/connections/list.html`
-- [ ] T042 [US2] Update operator connection detail template to show legacy planning trace and compatibility state in `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
+- [x] T039 [US2] Update detail serializer to preserve legacy planning trace when present in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
+- [x] T040 [US2] Update snapshot detail serializer to preserve legacy planning trace when present in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
+- [x] T041 [US2] Update operator connection list template to distinguish workspace repository and legacy planning origins in `pilot-git-repo-connection/src/tci/web/templates/connections/index.html`
+- [x] T042 [US2] Update operator connection detail template to show legacy planning trace and compatibility state in `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
 - [ ] T043 [US2] Update legacy fixture helper to seed GitHub/GitLab planning references and canonical `workspace_id` explicitly in `pilot-git-repo-connection/tests/support/repository_connection_testkit.py`
 - [ ] T044 [US2] Record US2 GitHub/GitLab compatibility and canonical workspace evidence in `specs/003-repository-first-connections/delivery-evidence.md`
 
@@ -121,7 +121,7 @@
 - [ ] T046 [P] [US3] Add unit tests for candidate service provider scope and access states in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_candidates.py`
 - [ ] T047 [P] [US3] Add unit tests for canonical duplicate key calculation across candidate and manual URL paths in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_identity.py`
 - [ ] T048 [P] [US3] Add operator integration test for candidate list, empty state, and manual URL fallback in `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_connection_pages.py`
-- [ ] T049 [P] [US3] Add integration test for duplicate prevention across candidate-selected and manual URL connections in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_connection_flow.py`
+- [ ] T049 [P] [US3] Add integration test for duplicate prevention across candidate-selected and manual URL connections in `pilot-git-repo-connection/tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
 - [ ] T050 [P] [US3] Add unit tests proving personal provider candidate grants are not persisted as operation credentials in `pilot-git-repo-connection/tests/unit/repository_connections/test_repository_connection_credentials.py`
 - [ ] T051 [P] [US3] Add contract and integration tests for missing, expired, revoked, or invalid shared read-only credential create failures and remediation responses in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_permission_failures.py`
 - [ ] T052 [P] [US3] Add integration tests proving verify, collect, event, status, and reverify paths never use personal provider grants and return operation-appropriate remediation problems on credential boundary failure in `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_operation_credential_boundary.py`
@@ -140,8 +140,8 @@
 - [ ] T062 [US3] Enforce workspace shared read-only credential usage for verification, collection, event, status, and reverify support paths in `pilot-git-repo-connection/src/tci/domain/services/repository_connection_support.py`
 - [ ] T063 [US3] Map repository authorization, expired grant, revoked access, shared credential validation failures, and operation credential boundary failures to remediation problem responses in `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
 - [ ] T064 [US3] Update operator create route to load candidate lists, manual URL guidance, and credential failure states in `pilot-git-repo-connection/src/tci/web/routes/repository_connections.py`
-- [ ] T065 [US3] Update operator create template to render provider candidates, empty state, provider identity, manual URL fallback, and credential remediation guidance in `pilot-git-repo-connection/src/tci/web/templates/connections/create.html`
-- [ ] T066 [US3] Update operator list/detail UI to show provider, repository identity, workspace context, and origin clearly for SC-004 distinction in `pilot-git-repo-connection/src/tci/web/templates/connections/list.html`
+- [ ] T065 [US3] Update operator create template to render provider candidates, empty state, provider identity, manual URL fallback, and credential remediation guidance in `pilot-git-repo-connection/src/tci/web/templates/connections/index.html`
+- [ ] T066 [US3] Update operator list/detail UI to show provider, repository identity, workspace context, and origin clearly for SC-004 distinction in `pilot-git-repo-connection/src/tci/web/templates/connections/index.html`
 - [ ] T067 [US3] Record US3 candidate/manual/duplicate/credential/mixed-provider and SC-004 60-task identification evidence in `specs/003-repository-first-connections/delivery-evidence.md`
 
 **Checkpoint**: All user stories are independently functional.

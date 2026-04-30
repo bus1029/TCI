@@ -453,7 +453,26 @@ def test_connections_page_renders_existing_connection_summary(tmp_path) -> None:
     assert response.status_code == 200
     assert "acme/sample-repo" in response.text
     assert "기본 ref: branch main" in response.text
+    assert "출처: 워크스페이스 저장소 연결" in response.text
     assert f"/connections/{connection_id}?workspaceId={workspace_id}" in response.text
+
+
+def test_connections_page_marks_legacy_planning_connections(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    planning_reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection = store.connections[uuid.UUID(create_response.json()["id"])]
+    connection.planning_input_reference_id = planning_reference.id
+    connection.planning_input_reference = planning_reference
+
+    response = client.get(f"/connections?workspaceId={workspace_id}")
+
+    assert response.status_code == 200
+    assert "출처: 기존 planning trace" in response.text
 
 
 def test_connections_page_does_not_render_obsolete_planning_input(tmp_path) -> None:
@@ -528,7 +547,7 @@ def test_connections_page_requires_workspace_id_query_parameter(tmp_path) -> Non
     assert "workspaceId 쿼리 파라미터가 필요합니다." in response.text
 
 
-def test_connection_detail_page_renders_summary_guidance_and_traceability(
+def test_connection_detail_page_renders_workspace_origin_without_planning_labels(
     tmp_path,
 ) -> None:
     workspace_id = uuid.uuid4()
@@ -564,8 +583,34 @@ def test_connection_detail_page_renders_summary_guidance_and_traceability(
     assert "아직 처리된 이벤트가 없습니다." in response.text
     assert "이 연결은 기본 ref 1개만 지원합니다." in response.text
     assert str(snapshot.id) in response.text
+    assert "워크스페이스에서 직접 생성된 저장소 연결입니다." in response.text
+    assert "승인된 스펙" not in response.text
+    assert "승인된 계획" not in response.text
+    assert "계획 입력 참조" not in response.text
+
+
+def test_connection_detail_page_preserves_legacy_planning_trace(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    planning_reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    connection = store.connections[connection_id]
+    connection.planning_input_reference_id = planning_reference.id
+    connection.planning_input_reference = planning_reference
+
+    response = client.get(f"/connections/{connection_id}?workspaceId={workspace_id}")
+
+    assert response.status_code == 200
+    assert "기존 planning trace가 보존된 저장소 연결입니다." in response.text
     assert "승인된 스펙" in response.text
+    assert planning_reference.approved_spec_path in response.text
     assert "승인된 계획" in response.text
+    assert planning_reference.approved_plan_path in response.text
+    assert str(planning_reference.id) in response.text
 
 
 def test_connection_detail_page_renders_gitlab_provider_summary_without_auth_mode(

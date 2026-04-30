@@ -1,164 +1,167 @@
 # 짧은 요약
 
-- `003-repository-first-connections` Foundation 범위 `T001-T016` 구현 완료.
-- 리뷰어 루프 반복 완료. 최종 일반/Python/DB/Security 리뷰 모두 `no findings` 또는 `approve`.
-- 다음 세션은 커밋 전 diff 검토 후 `tasks.md`의 다음 미완료 작업부터 시작하면 된다.
+- `003-repository-first-connections` Foundation은 이전 커밋 `4515a12 feat: 저장소 연결을 워크스페이스 기준으로 전환`에 들어간 상태다.
+- 이번 세션은 `US1` 수동 URL 기반 repository-first MVP와 `US2` 일부 legacy compatibility gap을 TDD로 보강했다.
+- operator 목록/상세 UI가 `origin`과 nullable `traceability.planningInputReference`를 안전하게 표시한다.
+- obsolete planning/spec/plan field rejection matrix와 persisted legacy planning row의 workspace scope/trace 보존 테스트를 추가했다.
+- 리뷰어 루프를 돌렸고 최종 General/Python/Security/DB 리뷰는 `approve` 또는 `no findings` 상태다.
 - 커밋은 아직 하지 않았다.
 
 # 현재 상태
 
-- 작업 범위: `specs/003-repository-first-connections/tasks.md`의 Foundation `T001-T016`.
-- `tasks.md`에서 `T001-T016`은 `[x]`로 체크되어 있다.
-- 핵심 구현은 `pilot-git-repo-connection` 하위 Python/FastAPI/SQLAlchemy/Alembic 코드다.
-- `rtk black .`를 repo-wide로 실행해 기존 미포맷 Python 파일 35개도 포맷됐다.
-- 현재 worktree는 많은 수정 파일과 신규 파일을 포함한다. 정상 상태다. 아직 커밋 전이다.
+- 브랜치: `003-repository-first-connections`
+- 현재 worktree는 uncommitted 변경 7개가 있다.
+- 변경 파일:
+  - `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
+  - `pilot-git-repo-connection/src/tci/web/templates/connections/index.html`
+  - `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
+  - `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_connection_pages.py`
+  - `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_migration.py`
+  - `specs/003-repository-first-connections/delivery-evidence.md`
+  - `specs/003-repository-first-connections/tasks.md`
+- `git diff --stat` 기준: `7 files changed, 474 insertions(+), 39 deletions(-)`.
+- `tasks.md` 주요 완료 상태:
+  - 완료: `T017`, `T018`, `T020-T029`, `T031`, `T035`, `T039-T042`
+  - 아직 미완료: `T019`, `T030`, `T032-T034`, `T036-T038`, `T043-T044`, `US3`, Final phase
 
 # 이번 세션에서 바뀐 것
 
-- `specs/003-repository-first-connections/delivery-evidence.md` 신규 작성.
-  - FR/SC 커버리지 맵과 검증 명령 기록.
-- `specs/003-repository-first-connections/tasks.md` 수정.
-  - `T001-T016` 완료 표시.
-- `pilot-git-repo-connection/alembic/versions/009_repository_first_connections.py` 신규 작성.
-  - `repository_connections.planning_input_reference_id` nullable.
-  - `collection_scope_rule_versions.planning_input_reference_id` nullable.
-  - GitHub/GitLab provider별 unique index 추가.
-  - `CREATE UNIQUE INDEX CONCURRENTLY` 사용.
-  - GitHub canonical `provider_project_path` check를 `NOT VALID` 후 `VALIDATE CONSTRAINT`로 추가.
-  - downgrade 전 repository-first nullable row 존재 시 중단.
-- `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py` 수정.
-  - planning reference nullable typing 반영.
-  - GitHub canonical path DB check 반영.
-  - provider별 repository identity unique index 반영.
-- `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py` 수정.
-  - 새 연결은 `planning_input_reference_id=None`.
-  - obsolete planning trace 없이 create.
-  - duplicate preflight를 credential encryption/git access 전 실행.
-  - concurrent duplicate race 방지를 위해 repository identity creation lock 구간 안에서 duplicate check, secret encryption, git probe, mirror sync, final insert 수행.
-- `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py` 수정.
-  - `ensure_repository_identity_available(...)` 추가.
-  - PostgreSQL에서는 `pg_advisory_xact_lock` 기반 `repository_identity_creation_lock(...)` 추가.
-  - non-PostgreSQL 테스트 환경에서는 no-op lock.
-- `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py` 수정.
-  - `CreateRepositoryConnectionRequest`에서 `planningInputReferenceId` 제거.
-  - `extra="forbid"`로 obsolete planning 필드 차단.
-  - base response에 `origin` 추가.
-  - nullable `planningInputReference` 직렬화 추가.
-- `pilot-git-repo-connection/src/tci/app.py` 수정.
-  - validation error에서 `input`, `ctx`, `url` 제거.
-  - `/api/repository-connections` obsolete planning 필드는 `400 INVALID_INPUT` 반환.
-  - secret-bearing validation echo 방지.
-- `pilot-git-repo-connection/src/tci/web/routes/repository_connections.py` 및 `src/tci/web/templates/connections/index.html` 수정.
-  - operator form에서 `planningInputReferenceId` 제거.
-  - web POST에서 obsolete planning/spec/plan field 차단.
-  - error rerender 시 `credentialSecret` 제거.
-- snapshot/detail/traceability 관련 서비스와 manifest writer 수정.
-  - planning reference가 `None`이어도 snapshot/detail/manifest 직렬화 가능.
-  - manifest에서 null planning reference는 JSON `null`, 문자열 `"None"` 아님.
-- 테스트 신규 추가.
-  - `tests/integration/repository_connections/test_repository_first_migration.py`
-  - `tests/support/repository_first_connection_testkit.py`
-  - `tests/unit/repository_connections/test_repository_connection_origin.py`
-  - `tests/unit/repository_connections/test_repository_connection_serialization.py`
-  - `tests/unit/repository_connections/test_repository_operation_credentials.py`
-  - `tests/unit/repository_connections/test_snapshot_traceability.py`
-- 기존 repository ingestion 테스트 다수 수정.
-  - planning reference가 create payload 필수가 아니게 된 점 반영.
-  - `ruff F841` unused planning locals 제거.
-  - `black .`로 프로젝트 전체 formatting 정리.
+- `connections/index.html`
+  - 연결 목록에 `출처: 워크스페이스 저장소 연결`, `출처: 기존 planning trace`, `출처: 호환성 확인 필요`를 표시한다.
+  - 실제 create/list UI 파일은 `connections/index.html`이다. `create.html`, `list.html` 경로는 stale path로 정리했다.
+- `connections/detail.html`
+  - `연결 출처` 섹션을 추가해 `connection.origin.message`와 `compatibilityState`를 표시한다.
+  - `planningInputReference`가 있을 때만 승인된 스펙/계획/계획 입력 참조를 표시한다.
+  - 새 workspace 기반 연결에는 planning/spec/plan trace가 저장되지 않는다는 문구를 표시한다.
+- `test_repository_connection_contract.py`
+  - legacy detail이 non-null planning reference와 `origin.kind = legacy_planning`을 반환하는 contract test를 추가했다.
+  - `planningInputReferenceId`, `planningInputReference`, `planningTrace`, `traceability`, `approvedSpecPath`, `approvedPlanPath`, `specPath`, `planPath` rejection matrix를 추가했다.
+  - 각 obsolete field 요청은 `400 INVALID_INPUT`이고 connection row가 생성되지 않아야 한다.
+- `test_operator_connection_pages.py`
+  - 목록에서 workspace/legacy origin label을 검증한다.
+  - 새 workspace connection 상세에서 승인된 스펙/계획 라벨이 숨겨지는지 검증한다.
+  - legacy planning trace가 있는 상세에서는 기존 trace가 표시되는지 검증한다.
+- `test_repository_first_migration.py`
+  - persisted SQLite legacy row를 직접 삽입한 뒤 `RepositoryConnectionRepository.list_for_workspace/get`과 serializer를 통해 `workspace_id` scope, wrong-workspace isolation, `legacy_planning` origin, trace 보존을 검증한다.
+- `tasks.md`
+  - 실제 완료된 task만 `[x]`로 갱신했다.
+  - nonexistent `test_repository_first_connection_flow.py`, `connections/create.html`, `connections/list.html` 경로를 현재 실제 파일 구조에 맞춰 정리했다.
+- `delivery-evidence.md`
+  - US1/US2 evidence와 최종 검증 결과를 기록했다.
+  - `SC-001`, `SC-004`는 실제 운영자 리허설이 아직 없어 `Pending`으로 유지했다.
 
 # 다음 에이전트가 먼저 봐야 할 파일
 
-- `specs/003-repository-first-connections/tasks.md` - 완료된 `T001-T016`과 다음 미완료 task 확인.
-- `specs/003-repository-first-connections/delivery-evidence.md` - 이번 세션 검증 기록과 커버리지 근거.
-- `pilot-git-repo-connection/alembic/versions/009_repository_first_connections.py` - migration 핵심.
-- `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py` - repository-first create 흐름과 identity lock.
-- `pilot-git-repo-connection/src/tci/infrastructure/persistence/repository_connection_repository.py` - duplicate preflight와 advisory lock.
-- `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py` - request/response shape 변화.
-- `pilot-git-repo-connection/src/tci/app.py` - validation error redaction과 obsolete field rejection.
-- `pilot-git-repo-connection/src/tci/web/routes/repository_connections.py` - web form obsolete field 처리.
-- `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py` - create contract, duplicate, lock 관련 검증.
+- `specs/003-repository-first-connections/tasks.md`
+  - 현재 완료/미완료 task 기준선.
+- `specs/003-repository-first-connections/delivery-evidence.md`
+  - 이번 세션 RED/GREEN, focused regression, broad regression, reviewer loop 후 검증 근거.
+- `pilot-git-repo-connection/src/tci/web/templates/connections/index.html`
+  - operator create/list 통합 화면. `create.html`, `list.html`은 현재 없다.
+- `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
+  - nullable planning trace와 origin 표시 핵심.
+- `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
+  - obsolete field rejection matrix와 legacy detail contract.
+- `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_connection_pages.py`
+  - operator UI origin/trace regression.
+- `pilot-git-repo-connection/tests/integration/repository_connections/test_repository_first_migration.py`
+  - migration text checks와 persisted legacy workspace scope regression.
 
 # 꼭 유지해야 할 기준
 
-- 새 repository connection create는 `planningInputReferenceId`를 받지 않아야 한다.
+- 새 repository connection create는 `planningInputReferenceId` 또는 planning/spec/plan 출처 필드를 받지 않아야 한다.
+- obsolete planning/spec/plan field는 compatibility로 수용하지 말고 `400 INVALID_INPUT`으로 거부해야 한다.
 - 새 connection은 `planning_input_reference_id=None`이어야 한다.
 - legacy planning trace는 삭제하거나 덮어쓰지 말아야 한다.
+- 새 workspace 기반 연결에서 `traceability.planningInputReference = null`은 정상 상태다.
+- operator UI는 새 연결에 `승인된 스펙`, `승인된 계획`, `계획 입력 참조` 라벨을 보여주면 안 된다.
+- legacy planning trace가 있는 연결은 API/detail/operator UI에서 trace를 보존해서 보여줘야 한다.
 - API validation error와 web form error는 credential secret을 echo하지 않아야 한다.
-- GitHub `provider_project_path`는 DB에서 `repository_owner || '/' || repository_name`와 일치해야 하고 `NULL`을 허용하면 안 된다.
-- GitLab identity unique key는 `workspace_id`, `provider`, `provider_instance_url`, `provider_project_path` 기준을 유지해야 한다.
-- duplicate create는 credential encryption/git access 전에 차단되어야 한다.
-- PostgreSQL 환경에서는 repository identity lock이 `pg_advisory_xact_lock`으로 동작해야 한다.
-- migration index는 concurrent로 생성해야 한다.
-- check constraint는 `NOT VALID` 후 `VALIDATE CONSTRAINT` 흐름을 유지해야 한다.
-- downgrade는 repository-first nullable row가 있으면 중단해야 한다.
+- `connections/index.html`이 create/list 통합 템플릿이다. nonexistent `connections/create.html`, `connections/list.html` 경로를 다시 쓰지 말아야 한다.
+- `SC-001`, `SC-004`는 실제 운영자 리허설 없이 완료 처리하지 말아야 한다.
 
 # 다시 논의하지 말아야 할 결정
 
 - repository-first create에서 planning/spec/plan reference를 요구하지 않는다.
 - obsolete planning/spec/plan create field는 호환 수용하지 않고 명시적으로 거부한다.
-- `origin`은 detail-only가 아니라 base create/list response에도 포함한다.
-- GitHub repository identity는 `provider_project_path`를 canonical owner/name으로 DB에서 강제한다.
-- duplicate create race는 final unique index만으로 충분하지 않다. credential/git access 전 identity lock이 필요하다.
-- repo-wide `black .` 적용은 완료했다. formatter 변경을 임의로 되돌리지 말아야 한다.
+- `origin`은 detail-only가 아니라 create/list/detail response와 operator UI 이해 모델에 필요하다.
+- GitHub/GitLab provider semantics, webhook 의미, snapshot trigger rule은 이번 범위에서 재설계하지 않는다.
+- 후보 목록 기반 판단 지원은 `US3` 범위다. `US1` MVP는 수동 URL 입력으로 독립 검증한다.
+- persisted legacy row의 workspace scope는 기존 `workspace_id`를 canonical로 사용한다.
 
 # 이번 세션에서 얻은 중요한 메모
 
-- PostgreSQL `CHECK`는 `UNKNOWN`을 통과시킨다. `provider_project_path = ...`만 쓰면 `NULL`이 빠져나간다.
-  - 현재 조건은 `provider_project_path IS NOT NULL AND provider_project_path = ...` 형태다.
-- SQLAlchemy naming convention 때문에 raw check constraint name은 drift를 만들 수 있다.
-  - migration은 `conv(...)`와 PostgreSQL preparer로 convention-compatible 이름을 렌더링한다.
-- duplicate preflight만으로는 concurrent create race를 막지 못한다.
-  - 현재 create flow는 identity lock 안에서 duplicate check, encryption, git access, insert를 수행한다.
-- `rtk black .`가 변경 파일 외 기존 미포맷 파일 35개도 정리했다.
-  - diff가 넓어진 이유다.
-- `pip-audit`, `safety`는 로컬에서 unavailable로 리뷰어가 보고했다.
-  - 이번 세션은 dependency/lockfile 변경 없음.
-- full `mypy .`는 기존 광범위 typing noise가 있다고 리뷰어가 언급했다.
-  - 이번 변경 경로와 새 테스트에 대한 focused mypy는 통과했다.
+- `tasks.md`에는 이전 계획 단계의 예상 파일명이 남아 있을 수 있다. 실제 repo 파일 구조와 맞춰야 한다.
+- legacy detail 테스트에서 in-memory store mutation만으로는 persisted legacy row 보존을 검증했다고 말할 수 없다.
+  - 이를 닫기 위해 `test_persisted_legacy_planning_row_keeps_workspace_scope_and_trace`를 추가했다.
+- SQLite에서는 현재 full model metadata create가 PostgreSQL regex check constraint 때문에 바로 돌기 어렵다.
+  - persisted legacy row regression은 필요한 projection table만 직접 생성해 `RepositoryConnectionRepository` read path를 검증한다.
+- test-file focused `mypy`는 기존 `TestClient` typing noise가 있다.
+  - 이번 세션에서 새로 추가한 production path와 migration test focused mypy는 통과했다.
+- dependency/lockfile 변경은 없다. dependency audit는 이번 세션 범위에서 실행하지 않았다.
 
 # 테스트와 검증 상태
 
 - 최종 검증 통과.
 - 실행한 주요 명령:
+  - `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py::test_get_legacy_connection_detail_preserves_planning_reference -q`
+    - 결과: `1 passed`
+  - `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py::test_create_connection_rejects_obsolete_planning_field_matrix_without_row ... -q`
+    - 결과: 관련 RED 후 GREEN, 최종 targeted `6 passed`
+  - `rtk pytest tests/integration/repository_connections/test_repository_first_migration.py::test_persisted_legacy_planning_row_keeps_workspace_scope_and_trace -q`
+    - 결과: `1 passed`
+  - `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py tests/integration/repository_connections/test_github_gitlab_compatibility.py -q`
+    - 결과: `105 passed`
   - `rtk black --check .`
-    - 결과: `152 files would be left unchanged`.
+    - 결과: `152 files would be left unchanged`
   - `rtk ruff check .`
-    - 결과: no issues found.
-  - `rtk mypy src/tci/app.py src/tci/api/schemas/repository_connection.py src/tci/domain/services/create_repository_connection.py src/tci/infrastructure/persistence/repository_connection_repository.py src/tci/infrastructure/persistence/models.py src/tci/infrastructure/snapshots/snapshot_manifest_writer.py tests/unit/repository_connections/test_repository_connection_serialization.py tests/unit/repository_connections/test_snapshot_traceability.py tests/support/repository_connection_testkit.py`
-    - 결과: no issues found.
+    - 결과: no issues found
+  - `rtk mypy src/tci/api/schemas/repository_connection.py src/tci/web/routes/repository_connection_detail.py tests/integration/repository_connections/test_repository_first_migration.py`
+    - 결과: no issues found
   - `rtk alembic heads`
-    - 결과: `009_repository_first_connections (head)`.
+    - 결과: `009_repository_first_connections (head)`
   - `rtk pytest tests/unit/repository_connections tests/integration/repository_connections tests/contract/repository_ingestion -q`
-    - 결과: `550 passed`.
+    - 결과: `555 passed`
+  - `rtk proxy git diff --check`
+    - 결과: 통과
 - 리뷰어 최종 상태:
-  - DB reviewer: no blocking findings.
-  - Security reviewer: no blocking findings.
-  - Python reviewer: approve.
-  - General reviewer: approve.
+  - General reviewer: initial low finding 수정 후 approve
+  - Python reviewer: no findings / approve
+  - Security reviewer: no blocking findings
+  - DB reviewer: persisted legacy-row evidence finding 수정 후 final no findings
 - 미검증 또는 잔여 리스크:
-  - full `mypy .`는 이번 세션 최종으로 돌리지 않았다. 기존 project-wide typing noise가 있다고 리뷰어가 언급했다.
-  - dependency audit는 도구 부재로 실행하지 못했다. dependency 변경 없음.
+  - `full mypy .`는 실행하지 않았다. 기존 project-wide typing noise가 있다.
+  - dependency audit는 실행하지 않았다. dependency/lockfile 변경 없음.
+  - `T019`, `T030`, `T032-T034`, `T036-T038`, `T043-T044`, `US3`, Final phase는 아직 남아 있다.
+  - `SC-001`, `SC-004` 운영자 리허설은 아직 수행하지 않았다.
 
 # 다음 세션의 시작 순서
 
-1. `rtk git status --short`로 현재 변경 목록 확인.
-2. `rtk git diff --stat`와 핵심 파일 diff를 검토.
-3. `specs/003-repository-first-connections/tasks.md`에서 `T017` 이후 다음 미완료 작업 확인.
-4. 커밋이 필요하면 이번 Foundation 변경을 하나의 커밋으로 묶을지, formatting 변경을 분리할지 결정.
-5. 다음 user story 작업 전 `delivery-evidence.md`에 새 검증 항목을 이어서 기록.
+1. `rtk proxy git status --short`와 `rtk proxy git diff --stat`로 현재 7개 변경 파일을 확인한다.
+2. 커밋 요청이 있으면 이번 변경을 `test/docs/ui` 성격의 하나의 커밋으로 묶을지 먼저 결정한다.
+3. 다음 개발은 `tasks.md`의 남은 항목 중 우선순위에 따라 시작한다.
+   - `US1`을 더 닫으려면 `T019`, `T030`
+   - `US2`를 더 닫으려면 `T032-T034`, `T036-T038`, `T043-T044`
+   - candidate/manual 판단 지원은 `US3`부터
+4. 새 작업 전 `delivery-evidence.md`의 해당 section에 RED/GREEN/검증 명령을 이어서 기록한다.
+5. `SC-001`, `SC-004`는 실제 리허설 데이터가 생기기 전까지 Pending으로 유지한다.
 
 # 마지막 액션과 바로 다음 액션
 
-- 마지막 액션: reviewer 경고를 모두 닫고 `black --check .`, `ruff`, focused `mypy`, Alembic head, repository ingestion pytest `550 passed` 확인.
-- 바로 다음 액션: 커밋 전 diff review. 특히 repo-wide `black .`로 넓어진 formatting-only 변경과 기능 변경을 구분해서 확인.
+- 마지막 액션:
+  - persisted legacy row regression 추가.
+  - formatter, lint, focused mypy, Alembic head, focused pytest, broad repository ingestion pytest `555 passed` 확인.
+  - DB final re-review에서 `no findings` 확인.
+- 바로 다음 액션:
+  - 변경 diff를 최종 리뷰하고 커밋 여부를 결정한다.
+  - 구현을 계속한다면 `T019` 또는 `T032-T034/T036` 중 하나를 골라 TDD로 시작한다.
 
 # 병렬 작업과 소유권
 
-- 이번 세션에서 reviewer subagent를 반복 사용했다.
-- 최종 승인:
-  - General reviewer `019dd844-7321-7e53-a825-901a5e55792e`: approve.
-  - Python reviewer `019dd844-720e-72d3-9307-f2ccb8b8f994`: approve.
-  - DB reviewer `019dd839-99b0-7ca2-87c9-4815ed13d762`: no blocking findings.
-  - Security reviewer `019dd839-9800-74f3-b1de-f2da7c094f8d`: no blocking findings.
-- 모든 subagent는 close 완료.
+- 이번 세션에서 subagent reviewer를 사용했다. 모든 subagent는 read-only였다.
+- 사용한 reviewer:
+  - General reviewer: task/template path mismatch 지적 후 수정 완료
+  - Python reviewer: no findings
+  - Security reviewer: no blocking findings
+  - DB reviewer: stale path와 persisted legacy-row evidence 지적 후 수정 완료, 최종 no findings
+- subagent가 파일을 직접 수정하지 않았다. 모든 파일 수정은 메인 세션에서 수행했다.

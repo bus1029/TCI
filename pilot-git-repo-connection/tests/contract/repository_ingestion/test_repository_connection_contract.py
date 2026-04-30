@@ -627,6 +627,78 @@ def test_get_connection_detail_returns_null_last_processed_event_and_traceabilit
     }
 
 
+def test_get_legacy_connection_detail_preserves_planning_reference(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    planning_reference = seed_planning_input_reference(
+        store,
+        workspace_id=workspace_id,
+    )
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = create_response.json()["id"]
+    connection = store.connections[uuid.UUID(connection_id)]
+    connection.planning_input_reference_id = planning_reference.id
+    connection.planning_input_reference = planning_reference
+
+    detail_response = client.get(f"/api/repository-connections/{connection_id}")
+
+    assert detail_response.status_code == 200
+    payload = detail_response.json()
+    assert payload["origin"]["kind"] == "legacy_planning"
+    assert payload["traceability"]["planningInputReference"] == {
+        "id": str(planning_reference.id),
+        "sourceType": planning_reference.source_type.value,
+        "sourceReference": planning_reference.source_reference,
+        "approvedSpecPath": planning_reference.approved_spec_path,
+        "approvedPlanPath": planning_reference.approved_plan_path,
+    }
+
+
+def test_create_connection_rejects_obsolete_planning_field_matrix_without_row(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    obsolete_reference_id = uuid.uuid4()
+    obsolete_fields = [
+        ("planningInputReferenceId", str(obsolete_reference_id)),
+        ("planningInputReference", {"id": str(obsolete_reference_id)}),
+        ("planningTrace", {"id": str(obsolete_reference_id)}),
+        (
+            "traceability",
+            {"planningInputReference": {"id": str(obsolete_reference_id)}},
+        ),
+        ("approvedSpecPath", "specs/001-git-repo-connection/spec.md"),
+        ("approvedPlanPath", "specs/001-git-repo-connection/plan.md"),
+        ("specPath", "specs/001-git-repo-connection/spec.md"),
+        ("planPath", "specs/001-git-repo-connection/plan.md"),
+    ]
+
+    for field_name, field_value in obsolete_fields:
+        field_tmp_path = tmp_path / field_name
+        field_tmp_path.mkdir()
+        client, store = create_test_client(
+            tmp_path=field_tmp_path,
+            workspace_id=workspace_id,
+        )
+        payload = create_connection_payload()
+        payload[field_name] = field_value
+
+        response = client.post("/api/repository-connections", json=payload)
+
+        assert response.status_code == 400
+        assert response.json() == {
+            "code": "INVALID_INPUT",
+            "message": (
+                "새 저장소 연결 생성 요청은 planning/spec/plan 참조 필드를 "
+                "받을 수 없습니다."
+            ),
+        }
+        assert store.connections == {}
+
+
 def test_create_connection_accepts_gitlab_provider_and_derives_provider_metadata(
     tmp_path,
 ) -> None:
