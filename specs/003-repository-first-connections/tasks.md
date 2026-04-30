@@ -152,11 +152,11 @@
 
 **Purpose**: Validate full spec coverage, update examples, and capture final evidence.
 
-- [ ] T068 [P] Update quickstart with SC-001 timing rehearsal commands, SC-004 identification rehearsal commands, actual command outputs, and any finalized test names in `specs/003-repository-first-connections/quickstart.md`
-- [ ] T069 Run FR-001/FR-002/FR-002a/FR-003/FR-003a/FR-003b/FR-003c/FR-003d/FR-016 repository-first focused contract, obsolete-field matrix, planning-free snapshot path, and integration checks and record results in `specs/003-repository-first-connections/delivery-evidence.md`
-- [ ] T070 Run FR-005/FR-008/FR-009/FR-014/FR-014a/FR-014b/FR-015 existing GitHub/GitLab regression suite and record results in `specs/003-repository-first-connections/delivery-evidence.md`
-- [ ] T071 Run the SC-001 timed operator rehearsal for GitHub and GitLab workspace-first connection completion and record 6 attempts, start/end timestamps, elapsed minutes, and 5-of-6 success calculation in `specs/003-repository-first-connections/delivery-evidence.md`
-- [ ] T072 Run the SC-004 mixed-provider identification rehearsal and record 60 answers, per-task correctness, and 57-of-60 success calculation in `specs/003-repository-first-connections/delivery-evidence.md`
+- [x] T068 [P] Update quickstart with SC-001 timing rehearsal commands, SC-004 identification rehearsal commands, actual command outputs, and any finalized test names in `specs/003-repository-first-connections/quickstart.md`
+- [x] T069 Run FR-001/FR-002/FR-002a/FR-003/FR-003a/FR-003b/FR-003c/FR-003d/FR-016 repository-first focused contract, obsolete-field matrix, planning-free snapshot path, and integration checks and record results in `specs/003-repository-first-connections/delivery-evidence.md`
+- [x] T070 Run FR-005/FR-008/FR-009/FR-014/FR-014a/FR-014b/FR-015 existing GitHub/GitLab regression suite and record results in `specs/003-repository-first-connections/delivery-evidence.md`
+- [ ] T071 Run the SC-001 timed operator rehearsal for GitHub and GitLab workspace-first connection completion and record 6 redacted attempts, pseudonymous operator IDs, sanitized repository labels, start/end timestamps, elapsed minutes, and 5-of-6 success calculation in `specs/003-repository-first-connections/delivery-evidence.md`
+- [ ] T072 Run the SC-004 mixed-provider identification rehearsal and record 60 redacted answers, pseudonymous operator IDs, sanitized task/repository labels, per-task correctness, and 57-of-60 success calculation in `specs/003-repository-first-connections/delivery-evidence.md`
 - [ ] T073 Map completed evidence back to FR-001, FR-002, FR-002a, FR-003, FR-003a, FR-003b, FR-003c, FR-003d, FR-004 through FR-016, FR-012a, FR-012b, FR-014a, FR-014b, and SC-001 through SC-007 in `specs/003-repository-first-connections/delivery-evidence.md`
 
 ---

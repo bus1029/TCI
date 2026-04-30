@@ -76,6 +76,27 @@
 
 ## Scenario 7: Operator Rehearsal Evidence
 
+Before recording `SC-001`, run the automated workspace-first checks below so the
+manual rehearsal starts from a green baseline.
+
+```bash
+cd pilot-git-repo-connection
+rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py tests/integration/repository_connections/test_repository_first_permission_failures.py tests/integration/repository_connections/test_repository_operation_credential_boundary.py tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_mixed_provider_workspace.py tests/integration/repository_connections/test_operator_mixed_provider_identification.py -q
+```
+
+Latest automated output:
+
+```text
+Pytest: 140 passed
+```
+
+Evidence redaction rules:
+
+- Use synthetic or throwaway repositories when possible.
+- Record pseudonymous operator IDs such as `operator-01`; do not record real names, emails, usernames, cookies, session IDs, or auth headers.
+- Record provider, sanitized repository label, start timestamp, completion timestamp, elapsed minutes, and pass/fail only.
+- Do not record credentials, tokens, full remote URLs, credential-bearing URLs, screenshots, terminal raw logs, private repository paths, or provider account secrets.
+
 1. Run the workspace-first GitHub connection rehearsal once per representative operator.
 2. Run the workspace-first GitLab connection rehearsal once per representative operator.
 3. Record 3 operators x 2 providers = 6 attempts in `delivery-evidence.md`.
@@ -83,6 +104,26 @@
 5. Verify at least 5 of 6 attempts complete within 10 minutes.
 
 ## Scenario 8: Mixed-Provider Identification Evidence
+
+Before recording `SC-004`, run the deterministic fixture check.
+
+```bash
+cd pilot-git-repo-connection
+rtk pytest tests/integration/repository_connections/test_operator_mixed_provider_identification.py -q
+```
+
+Latest automated output:
+
+```text
+Pytest: 1 passed
+```
+
+Evidence redaction rules:
+
+- Use synthetic or throwaway mixed-provider repositories when possible.
+- Record pseudonymous operator IDs and sanitized task IDs only.
+- Record expected provider, sanitized repository label, answer provider/repository label, correctness, and aggregate score.
+- Do not record screenshots, full remote URLs, private repository paths, operator names, cookies, tokens, raw browser logs, or provider account secrets.
 
 1. Prepare a mixed-provider workspace screen with GitHub and GitLab connections/candidates that include similar names or paths.
 2. Give each of 3 representative operators 20 provider/repository identification tasks.
@@ -93,11 +134,29 @@
 
 ```bash
 cd pilot-git-repo-connection
-pytest tests/contract/repository_ingestion/test_repository_connection_contract.py -q
-pytest tests/contract/repository_ingestion/test_gitlab_connection_contract.py -q
-pytest tests/integration/repository_connections/test_github_gitlab_compatibility.py -q
-pytest tests/integration/repository_connections/test_connection_and_initial_snapshot.py -q
-pytest tests/integration/repository_connections/test_gitlab_connection_lifecycle.py -q
+rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py tests/contract/repository_ingestion/test_repository_candidate_contract.py -q
+rtk pytest tests/integration/repository_connections/test_connection_and_initial_snapshot.py tests/integration/repository_connections/test_repository_first_permission_failures.py tests/integration/repository_connections/test_repository_operation_credential_boundary.py -q
+rtk pytest tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_mixed_provider_workspace.py tests/integration/repository_connections/test_operator_mixed_provider_identification.py -q
+rtk pytest tests/integration/repository_connections/test_github_gitlab_compatibility.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_webhook_refresh.py tests/integration/repository_connections/test_gitlab_provider_flows.py tests/integration/repository_connections/test_operator_event_pages.py tests/contract/repository_ingestion/test_github_webhook_contract.py tests/contract/repository_ingestion/test_gitlab_webhook_contract.py tests/contract/repository_ingestion/test_gitlab_connection_contract.py tests/contract/repository_ingestion/test_gitlab_scope_contract.py -q
+rtk pytest tests/unit/repository_connections tests/integration/repository_connections tests/contract/repository_ingestion -q
+rtk black --check .
+rtk ruff check .
+rtk mypy src/tci/api/schemas/repository_candidate.py src/tci/api/schemas/repository_connection.py src/tci/api/routes/repository_candidates.py src/tci/api/routes/repository_connections.py src/tci/api/routes/repository_events.py src/tci/app.py src/tci/domain/services/create_repository_connection.py src/tci/domain/services/get_repository_connection_detail.py src/tci/domain/services/list_repository_candidates.py src/tci/domain/services/list_repository_connections.py src/tci/domain/services/list_repository_events.py src/tci/domain/services/process_github_event.py src/tci/domain/services/process_gitlab_event.py src/tci/domain/services/repository_connection_support.py src/tci/domain/services/verify_repository_connection.py src/tci/domain/services/build_code_snapshot.py src/tci/domain/services/update_default_ref.py src/tci/web/routes/repository_connections.py src/tci/web/routes/repository_events.py tests/support/operator_identification_rehearsal.py tests/unit/repository_connections/test_repository_candidates.py tests/unit/repository_connections/test_repository_connection_credentials.py tests/unit/repository_connections/test_repository_connection_identity.py tests/integration/repository_connections/test_repository_operation_credential_boundary.py
+rtk alembic heads
+rtk proxy git diff --check
+```
+
+Latest automated outputs:
+
+```text
+T069 focused repository-first checks: Pytest: 140 passed
+T070 GitHub/GitLab regression checks: Pytest: 113 passed
+Broad repository ingestion regression: Pytest: 615 passed
+black: 165 files would be left unchanged
+ruff: No issues found
+mypy: No issues found
+alembic heads: 009_repository_first_connections (head)
+git diff --check: passed
 ```
 
 Add new focused tests for:

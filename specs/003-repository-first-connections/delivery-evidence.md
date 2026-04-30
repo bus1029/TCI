@@ -13,29 +13,29 @@
 | FR-003c | Partial | Candidate endpoint returns configured provider-scope projections; real provider account/instance integration remains open. |
 | FR-003d | Verified | Candidate endpoint and operator page return manual URL fallback empty state when provider candidates are not configured. |
 | FR-004 | Verified | Operator list/detail/event pages expose workspace, provider, repository identity, origin, and mixed-provider separation context. |
-| FR-005 | Partial | Legacy planning trace is preserved in API/operator detail coverage; full provider history regression remains open. |
+| FR-005 | Verified | Legacy planning trace is preserved in API/operator detail coverage and final provider regression. |
 | FR-006 | Verified | Planning trace is optional legacy provenance only. |
 | FR-007 | Verified | Connection origin is visible in API and operator list/detail. |
-| FR-008 | Partial | Existing GitHub Cloud focused regression passed; full final regression remains open. |
-| FR-009 | Partial | Existing GitLab Self-Managed focused regression passed; full final regression remains open. |
+| FR-008 | Verified | Existing GitHub Cloud compatibility, webhook, event, and mixed-provider regression passed. |
+| FR-009 | Verified | Existing GitLab Self-Managed compatibility, lifecycle, scope, webhook, and provider regression passed. |
 | FR-010 | Verified | Same workspace/provider/repository duplicate connections are blocked across manual and candidate-selected create payloads before git access. |
 | FR-011 | Verified | Mixed GitHub/GitLab status, event, snapshot, sync history, and operator event timeline projections stay separated. |
-| FR-012 | Partial | Auth-failed and non-readonly create attempts block connection creation with no side effects; final operator remediation coverage remains open. |
+| FR-012 | Verified | Candidate, credential, permission, and operator validation failures block connection creation without secret echo or side effects. |
 | FR-012a | Verified | Candidate personal grant material is not persisted as an operation credential and cannot create an active connection without submitted workspace credential validation. |
 | FR-012b | Verified | Create rejects auth-failed and write-capable credentials without creating rows; revoked/non-active stored operation credentials map to reauth-required remediation paths across repository operations. |
 | FR-013 | Verified | Empty candidate state is rendered as manual URL fallback, not an error. |
 | FR-014 | Verified | Legacy planning trace projections remain visible for GitHub/GitLab list/detail, verification, snapshot, and webhook coverage. |
 | FR-014a | Verified | Persisted legacy planning row keeps existing `workspace_id` as canonical list/detail scope. |
 | FR-014b | Verified | Missing or cross-workspace legacy planning references are visible as `legacy_unassigned`; mismatched planning trace is hidden from API/operator/snapshot detail. |
-| FR-015 | Partial | Legacy GitHub/GitLab verify, snapshot, and webhook flows pass; final full provider regression remains open. |
+| FR-015 | Verified | Legacy and workspace-first GitHub/GitLab provider operations passed final regression. |
 | FR-016 | Verified | Planning-free connection verification, collection, snapshot, detail, status paths are covered by focused regression. |
 | SC-001 | Pending | Six operator timing attempts, 5 of 6 within 10 minutes. |
-| SC-002 | Pending | Planning-free create/detail acceptance coverage. |
-| SC-003 | Pending | Existing GitHub/GitLab baseline scenarios pass. |
+| SC-002 | Verified | Planning-free create/detail/snapshot and repository-first focused acceptance checks passed. |
+| SC-003 | Verified | Existing GitHub/GitLab baseline regression passed. |
 | SC-004 | Pending | Mixed-provider identification rehearsal, 57 of 60 correct. |
 | SC-005 | Verified | Duplicate connection attempts are blocked before git access for manual and candidate-selected payloads. |
-| SC-006 | Pending | Existing planning/spec/plan history remains accessible. |
-| SC-007 | Partial | Auth-failed, write-capable, and candidate-personal-grant create attempts do not create operation credentials from personal grant material; final operator remediation remains open. |
+| SC-006 | Verified | Existing planning/spec/plan history remains accessible in legacy list/detail/snapshot/provider regression. |
+| SC-007 | Verified | Failed create attempts with auth-failed, write-capable, or candidate-personal-grant-only credentials do not create connections or operation credentials, and rejected create/operator validation responses do not echo submitted credential material. |
 
 ## Foundation Evidence
 
@@ -362,6 +362,25 @@
 
 ## Final Evidence
 
+- 2026-04-30 T069 repository-first focused final regression: `rtk pytest tests/contract/repository_ingestion/test_repository_connection_contract.py tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py tests/integration/repository_connections/test_repository_first_permission_failures.py tests/integration/repository_connections/test_repository_operation_credential_boundary.py tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_mixed_provider_workspace.py tests/integration/repository_connections/test_operator_mixed_provider_identification.py -q`
+  - Result: 140 passed.
+- 2026-04-30 T070 GitHub/GitLab final regression: `rtk pytest tests/integration/repository_connections/test_github_gitlab_compatibility.py tests/integration/repository_connections/test_gitlab_connection_lifecycle.py tests/integration/repository_connections/test_github_webhook_refresh.py tests/integration/repository_connections/test_gitlab_provider_flows.py tests/integration/repository_connections/test_operator_event_pages.py tests/contract/repository_ingestion/test_github_webhook_contract.py tests/contract/repository_ingestion/test_gitlab_webhook_contract.py tests/contract/repository_ingestion/test_gitlab_connection_contract.py tests/contract/repository_ingestion/test_gitlab_scope_contract.py -q`
+  - Result: 113 passed.
+- 2026-04-30 Final broad repository ingestion regression after T069/T070: `rtk pytest tests/unit/repository_connections tests/integration/repository_connections tests/contract/repository_ingestion -q`
+  - Result: 615 passed.
+- 2026-04-30 Final formatting check after T068-T070: `rtk black --check .`
+  - Result: 165 files would be left unchanged.
+- 2026-04-30 Final lint check after T068-T070: `rtk ruff check .`
+  - Result: no issues found.
+- 2026-04-30 Final focused typing after T068-T070: `rtk mypy src/tci/api/schemas/repository_candidate.py src/tci/api/schemas/repository_connection.py src/tci/api/routes/repository_candidates.py src/tci/api/routes/repository_connections.py src/tci/api/routes/repository_events.py src/tci/app.py src/tci/domain/services/create_repository_connection.py src/tci/domain/services/get_repository_connection_detail.py src/tci/domain/services/list_repository_candidates.py src/tci/domain/services/list_repository_connections.py src/tci/domain/services/list_repository_events.py src/tci/domain/services/process_github_event.py src/tci/domain/services/process_gitlab_event.py src/tci/domain/services/repository_connection_support.py src/tci/domain/services/verify_repository_connection.py src/tci/domain/services/build_code_snapshot.py src/tci/domain/services/update_default_ref.py src/tci/web/routes/repository_connections.py src/tci/web/routes/repository_events.py tests/support/operator_identification_rehearsal.py tests/unit/repository_connections/test_repository_candidates.py tests/unit/repository_connections/test_repository_connection_credentials.py tests/unit/repository_connections/test_repository_connection_identity.py tests/integration/repository_connections/test_repository_operation_credential_boundary.py`
+  - Result: no issues found.
+- 2026-04-30 Final Alembic graph check after T068-T070: `rtk alembic heads`
+  - Result: `009_repository_first_connections (head)`.
+- 2026-04-30 Final diff whitespace check after T068-T070: `rtk proxy git diff --check`
+  - Result: passed.
+- 2026-04-30 Remaining real-operator evidence:
+  - `SC-001` remains pending until 3 representative operators complete 6 GitHub/GitLab timed attempts and at least 5 complete within 10 minutes.
+  - `SC-004` remains pending until 3 representative operators complete 60 mixed-provider identification tasks and at least 57 are correct.
 - 2026-04-29 Formatting check: `rtk black --check .`
   - Result: 152 files would be left unchanged.
 - 2026-04-29 Lint check: `rtk ruff check .`
