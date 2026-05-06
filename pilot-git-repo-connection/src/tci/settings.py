@@ -11,6 +11,11 @@ from cryptography.fernet import Fernet
 
 DEFAULT_RUNTIME_DIRNAME = ".runtime"
 DEFAULT_TEMPLATE_SUBPATH = Path("src") / "tci" / "web" / "templates"
+DEFAULT_LOCAL_UPLOAD_MAX_COMPRESSED_BYTES = 250 * 1024 * 1024
+DEFAULT_LOCAL_UPLOAD_MAX_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
+DEFAULT_LOCAL_UPLOAD_MAX_FILE_COUNT = 25_000
+DEFAULT_LOCAL_UPLOAD_MAX_FILE_BYTES = 25 * 1024 * 1024
+DEFAULT_LOCAL_UPLOAD_MAX_PATH_SEGMENTS = 50
 
 
 def _resolve_path(raw_value: str | None, *, default: Path, base_dir: Path) -> Path:
@@ -74,6 +79,13 @@ class Settings:
     gitlab_self_managed_allowed_hosts: tuple[str, ...]
     gitlab_webhook_trusted_proxy_hosts: tuple[str, ...]
     allow_insecure_gitlab_http: bool
+    local_upload_max_compressed_bytes: int = DEFAULT_LOCAL_UPLOAD_MAX_COMPRESSED_BYTES
+    local_upload_max_uncompressed_bytes: int = (
+        DEFAULT_LOCAL_UPLOAD_MAX_UNCOMPRESSED_BYTES
+    )
+    local_upload_max_file_count: int = DEFAULT_LOCAL_UPLOAD_MAX_FILE_COUNT
+    local_upload_max_file_bytes: int = DEFAULT_LOCAL_UPLOAD_MAX_FILE_BYTES
+    local_upload_max_path_segments: int = DEFAULT_LOCAL_UPLOAD_MAX_PATH_SEGMENTS
 
     def runtime_directories(self) -> tuple[Path, Path, Path]:
         return (
@@ -144,6 +156,31 @@ def load_settings() -> Settings:
         ),
         allow_insecure_gitlab_http=_parse_bool(
             os.getenv("TCI_ALLOW_INSECURE_GITLAB_HTTP")
+        ),
+        local_upload_max_compressed_bytes=_parse_positive_int(
+            os.getenv("TCI_LOCAL_UPLOAD_MAX_COMPRESSED_BYTES"),
+            default=DEFAULT_LOCAL_UPLOAD_MAX_COMPRESSED_BYTES,
+            label="TCI_LOCAL_UPLOAD_MAX_COMPRESSED_BYTES",
+        ),
+        local_upload_max_uncompressed_bytes=_parse_positive_int(
+            os.getenv("TCI_LOCAL_UPLOAD_MAX_UNCOMPRESSED_BYTES"),
+            default=DEFAULT_LOCAL_UPLOAD_MAX_UNCOMPRESSED_BYTES,
+            label="TCI_LOCAL_UPLOAD_MAX_UNCOMPRESSED_BYTES",
+        ),
+        local_upload_max_file_count=_parse_positive_int(
+            os.getenv("TCI_LOCAL_UPLOAD_MAX_FILE_COUNT"),
+            default=DEFAULT_LOCAL_UPLOAD_MAX_FILE_COUNT,
+            label="TCI_LOCAL_UPLOAD_MAX_FILE_COUNT",
+        ),
+        local_upload_max_file_bytes=_parse_positive_int(
+            os.getenv("TCI_LOCAL_UPLOAD_MAX_FILE_BYTES"),
+            default=DEFAULT_LOCAL_UPLOAD_MAX_FILE_BYTES,
+            label="TCI_LOCAL_UPLOAD_MAX_FILE_BYTES",
+        ),
+        local_upload_max_path_segments=_parse_positive_int(
+            os.getenv("TCI_LOCAL_UPLOAD_MAX_PATH_SEGMENTS"),
+            default=DEFAULT_LOCAL_UPLOAD_MAX_PATH_SEGMENTS,
+            label="TCI_LOCAL_UPLOAD_MAX_PATH_SEGMENTS",
         ),
     )
 
@@ -226,3 +263,15 @@ def _parse_bool(raw_value: str | None) -> bool:
     if raw_value is None:
         return False
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_positive_int(raw_value: str | None, *, default: int, label: str) -> int:
+    if raw_value is None or not raw_value.strip():
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise RuntimeError(f"{label}는 양의 정수여야 합니다.") from error
+    if value <= 0:
+        raise RuntimeError(f"{label}는 양의 정수여야 합니다.")
+    return value

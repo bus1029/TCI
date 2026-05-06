@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session, joinedload
 from tci.infrastructure.persistence.models import (
     CodeSnapshot,
     CodeSnapshotFile,
+    CodeSnapshotSourceKind,
     RefType,
+    RepositoryConnection,
     SnapshotInclusionReason,
 )
 
@@ -38,6 +40,7 @@ class CodeSnapshotDraft:
     archive_path: str
     file_count: int
     total_bytes: int
+    workspace_id: uuid.UUID | None = None
 
 
 class CodeSnapshotRepository:
@@ -50,8 +53,17 @@ class CodeSnapshotRepository:
         draft: CodeSnapshotDraft,
         files: tuple[CodeSnapshotFileDraft, ...],
     ) -> CodeSnapshot:
+        workspace_id = self._workspace_id_for_connection(
+            connection_id=draft.connection_id
+        )
+        if draft.workspace_id is not None and draft.workspace_id != workspace_id:
+            raise ValueError(
+                "CodeSnapshotDraft.workspace_id must match the repository connection."
+            )
         snapshot = CodeSnapshot(
             id=draft.id,
+            workspace_id=workspace_id,
+            source_kind=CodeSnapshotSourceKind.REPOSITORY_CONNECTION,
             connection_id=draft.connection_id,
             sync_run_id=draft.sync_run_id,
             scope_rule_version_id=draft.scope_rule_version_id,
@@ -79,6 +91,17 @@ class CodeSnapshotRepository:
         self._session.flush()
         self._session.refresh(snapshot)
         return snapshot
+
+    def _workspace_id_for_connection(self, *, connection_id: uuid.UUID) -> uuid.UUID:
+        statement = select(RepositoryConnection.workspace_id).where(
+            RepositoryConnection.id == connection_id
+        )
+        workspace_id = self._session.scalar(statement)
+        if workspace_id is None:
+            raise ValueError(
+                "CodeSnapshotDraft.workspace_id is required for snapshots."
+            )
+        return workspace_id
 
     def get(
         self, *, connection_id: uuid.UUID, snapshot_id: uuid.UUID

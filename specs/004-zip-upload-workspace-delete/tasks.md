@@ -31,11 +31,11 @@
 
 **Purpose**: Prepare test scaffolding, configuration entry points, and documentation evidence files used by later implementation tasks.
 
-- [ ] T001 Create Local Upload test package markers in `pilot-git-repo-connection/tests/unit/local_uploads/__init__.py`, `pilot-git-repo-connection/tests/contract/local_uploads/__init__.py`, and `pilot-git-repo-connection/tests/integration/local_uploads/__init__.py`
-- [ ] T002 Create workspace lifecycle test package markers in `pilot-git-repo-connection/tests/contract/workspaces/__init__.py` and `pilot-git-repo-connection/tests/integration/workspaces/__init__.py`
-- [ ] T003 [P] Add reusable ZIP fixture builders and unsafe archive helpers in `pilot-git-repo-connection/tests/support/local_upload_testkit.py`
-- [ ] T004 [P] Add Local Upload ZIP limit settings with defaults in `pilot-git-repo-connection/src/tci/settings.py`
-- [ ] T005 [P] Add delivery evidence tracking scaffold for SC-001 through SC-010 in `specs/004-zip-upload-workspace-delete/delivery-evidence.md`
+- [x] T001 Create Local Upload test package markers in `pilot-git-repo-connection/tests/unit/local_uploads/__init__.py`, `pilot-git-repo-connection/tests/contract/local_uploads/__init__.py`, and `pilot-git-repo-connection/tests/integration/local_uploads/__init__.py`
+- [x] T002 Create workspace lifecycle test package markers in `pilot-git-repo-connection/tests/contract/workspaces/__init__.py` and `pilot-git-repo-connection/tests/integration/workspaces/__init__.py`
+- [x] T003 [P] Add reusable ZIP fixture builders and unsafe archive helpers in `pilot-git-repo-connection/tests/support/local_upload_testkit.py`
+- [x] T004 [P] Add Local Upload ZIP limit settings with defaults in `pilot-git-repo-connection/src/tci/settings.py`
+- [x] T005 [P] Add delivery evidence tracking scaffold for SC-001 through SC-010 in `specs/004-zip-upload-workspace-delete/delivery-evidence.md`
 
 ---
 
@@ -45,11 +45,11 @@
 
 **Critical**: No user story implementation should begin until this phase is complete.
 
-- [ ] T006 [P] Add failing model tests for `Workspace`, `LocalUpload`, `WorkspaceDeletionRecord`, and source-aware `CodeSnapshot` constraints in `pilot-git-repo-connection/tests/unit/local_uploads/test_workspace_lifecycle_models.py`
+- [x] T006 [P] Add failing model tests for `Workspace`, `LocalUpload`, `WorkspaceDeletionRecord`, and source-aware `CodeSnapshot` constraints in `pilot-git-repo-connection/tests/unit/local_uploads/test_workspace_lifecycle_models.py`
 - [ ] T007 [P] Add failing repository tests for source-aware snapshot create, lookup, and latest Local Upload selection in `pilot-git-repo-connection/tests/unit/local_uploads/test_source_aware_snapshot_repository.py`
 - [ ] T008 [P] Add failing workspace guard tests for active, deleting, and deleted states in `pilot-git-repo-connection/tests/unit/local_uploads/test_workspace_lifecycle_guard.py`
-- [ ] T009 Add Alembic migration for `workspaces`, `local_uploads`, `workspace_deletion_records`, and source-aware `code_snapshots` fields in `pilot-git-repo-connection/alembic/versions/010_local_upload_workspace_delete.py`
-- [ ] T010 Update SQLAlchemy models for workspace lifecycle, Local Upload metadata, deletion audit records, and source-aware snapshots in `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
+- [x] T009 Add Alembic migration for `workspaces`, `local_uploads`, `workspace_deletion_records`, and source-aware `code_snapshots` fields in `pilot-git-repo-connection/alembic/versions/010_local_upload_workspace_delete.py`
+- [x] T010 Update SQLAlchemy models for workspace lifecycle, Local Upload metadata, deletion audit records, and source-aware snapshots in `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
 - [ ] T011 Implement workspace persistence methods for create, get, status transition, active list, and deletion audit lookup in `pilot-git-repo-connection/src/tci/infrastructure/persistence/workspace_repository.py`
 - [ ] T012 Implement Local Upload persistence methods for create, mark processing, mark succeeded, mark failed, and latest snapshot linkage in `pilot-git-repo-connection/src/tci/infrastructure/persistence/local_upload_repository.py`
 - [ ] T013 Extend snapshot persistence for Local Upload drafts, source owner validation, workspace snapshot listing, and latest Local Upload lookup in `pilot-git-repo-connection/src/tci/infrastructure/persistence/code_snapshot_repository.py`

@@ -21,6 +21,8 @@ from tci.infrastructure.persistence.models import (
     RepositoryProvider,
     RepositoryTransport,
     ScopeRuleWarningState,
+    Workspace,
+    WorkspaceStatus,
     WebhookAuthMode,
     WebhookHealthState,
     WebhookRejectionReason,
@@ -114,6 +116,7 @@ class RepositoryConnectionRepository:
             provider_instance_url=provider_instance_url,
             provider_project_path=provider_project_path,
         )
+        self.ensure_active_workspace(workspace_id=draft.workspace_id)
 
         connection = RepositoryConnection(
             id=draft.id,
@@ -137,6 +140,17 @@ class RepositoryConnectionRepository:
         self._session.flush()
         self._session.refresh(connection)
         return connection
+
+    def ensure_active_workspace(self, *, workspace_id: uuid.UUID) -> None:
+        workspace = self._session.get(Workspace, workspace_id)
+        if workspace is None:
+            self._session.add(Workspace(id=workspace_id))
+            self._session.flush()
+            return
+        if not isinstance(workspace, Workspace):
+            return
+        if workspace.status is not WorkspaceStatus.ACTIVE:
+            raise ValueError("Repository connection requires an active workspace.")
 
     def _raise_if_duplicate_connection_exists(
         self,

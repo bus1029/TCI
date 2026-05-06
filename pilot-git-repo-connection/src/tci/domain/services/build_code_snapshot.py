@@ -31,6 +31,8 @@ from tci.infrastructure.persistence.models import (
     RepositoryProvider,
     SyncFailureCode,
     SyncRunStatus,
+    Workspace,
+    WorkspaceStatus,
 )
 
 
@@ -358,6 +360,22 @@ def _load_snapshot_context(
         )
         if connection is None:
             raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        workspace = (
+            session.get(Workspace, workspace_id) if hasattr(session, "get") else None
+        )
+        if workspace is None and hasattr(session, "get"):
+            raise RepositoryConnectionProblem(
+                ProblemCode.INVALID_INPUT,
+                "활성 워크스페이스에서만 스냅샷을 생성할 수 있습니다.",
+            )
+        if (
+            isinstance(workspace, Workspace)
+            and workspace.status is not WorkspaceStatus.ACTIVE
+        ):
+            raise RepositoryConnectionProblem(
+                ProblemCode.INVALID_INPUT,
+                "활성 워크스페이스에서만 스냅샷을 생성할 수 있습니다.",
+            )
         sync_run = sync_run_repository.get(
             connection_id=connection.id,
             sync_run_id=sync_run_id,

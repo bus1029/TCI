@@ -194,6 +194,30 @@ class SnapshotInclusionReason(StrEnum):
     PR_SOURCE_SNAPSHOT = "pr_source_snapshot"
 
 
+class WorkspaceStatus(StrEnum):
+    ACTIVE = "active"
+    DELETING = "deleting"
+    DELETED = "deleted"
+
+
+class LocalUploadStatus(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class CodeSnapshotSourceKind(StrEnum):
+    REPOSITORY_CONNECTION = "repository_connection"
+    LOCAL_UPLOAD = "local_upload"
+
+
+class WorkspaceDeletionPurgeStatus(StrEnum):
+    PENDING = "pending"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
 def sql_enum(enum_type: type[StrEnum], *, name: str) -> Enum:
     return Enum(
         enum_type,
@@ -203,14 +227,67 @@ def sql_enum(enum_type: type[StrEnum], *, name: str) -> Enum:
     )
 
 
+class Workspace(Base):
+    __tablename__ = "workspaces"
+    __table_args__ = (
+        CheckConstraint(
+            "status != 'deleted' OR (deleted_at IS NOT NULL AND deleted_by IS NOT NULL)",
+            name="ck_workspace_deleted_requires_audit",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
+    status: Mapped[WorkspaceStatus] = mapped_column(
+        sql_enum(WorkspaceStatus, name="workspace_status"),
+        nullable=False,
+        default=WorkspaceStatus.ACTIVE,
+        server_default=text("'active'"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_by: Mapped[str | None] = mapped_column(String(255))
+    delete_reason: Mapped[str | None] = mapped_column(String(255))
+
+    repository_connections: Mapped[list[RepositoryConnection]] = relationship(
+        back_populates="workspace",
+        foreign_keys="RepositoryConnection.workspace_id",
+    )
+    local_uploads: Mapped[list[LocalUpload]] = relationship(
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+        foreign_keys="LocalUpload.workspace_id",
+    )
+    deletion_records: Mapped[list[WorkspaceDeletionRecord]] = relationship(
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+        foreign_keys="WorkspaceDeletionRecord.workspace_id",
+    )
+    code_snapshots: Mapped[list[CodeSnapshot]] = relationship(
+        back_populates="workspace",
+        foreign_keys="CodeSnapshot.workspace_id",
+    )
+
+
 class PlanningInputReference(Base):
     __tablename__ = "planning_input_references"
     __table_args__ = (
         UniqueConstraint("workspace_id", "id", name="uq_plan_input_workspace_id_id"),
+        Index("ix_plan_input_workspace_id", "workspace_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
-    workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid(), nullable=False)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", name="fk_plan_input_workspace_id"),
+        nullable=False,
+    )
     source_type: Mapped[PlanningInputSourceType] = mapped_column(
         sql_enum(PlanningInputSourceType, name="planning_input_source_type"),
         nullable=False,
@@ -239,6 +316,11 @@ class RepositoryConnection(Base):
             "id",
             "planning_input_reference_id",
             name="uq_repo_conn_id_plan_input_id",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "id",
+            name="uq_repo_conn_workspace_id_id",
         ),
         CheckConstraint(
             "((provider = 'github_cloud' AND "
@@ -447,6 +529,7 @@ class RepositoryConnection(Base):
             "last_processed_event_id",
         ),
         Index("ix_repo_conn_plan_input_ref_id", "planning_input_reference_id"),
+        Index("ix_repo_conn_workspace_created_id", "workspace_id", "created_at", "id"),
         Index(
             "uq_repo_conn_workspace_github_repo",
             "workspace_id",
@@ -472,7 +555,10 @@ class RepositoryConnection(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
-    workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid(), nullable=False)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", name="fk_repo_conn_workspace_id"),
+        nullable=False,
+    )
     planning_input_reference_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("planning_input_references.id", name="fk_repo_conn_plan_input_id"),
         nullable=True,
@@ -585,6 +671,10 @@ class RepositoryConnection(Base):
         back_populates="repository_connections",
         foreign_keys=[planning_input_reference_id],
     )
+    workspace: Mapped[Workspace] = relationship(
+        back_populates="repository_connections",
+        foreign_keys=[workspace_id],
+    )
     credential_revisions: Mapped[list[RepositoryCredentialRevision]] = relationship(
         back_populates="connection",
         cascade="all, delete-orphan",
@@ -628,7 +718,9 @@ class RepositoryConnection(Base):
         foreign_keys="RepositoryEventCursor.connection_id",
     )
     code_snapshots: Mapped[list[CodeSnapshot]] = relationship(
-        back_populates="connection", cascade="all, delete-orphan"
+        back_populates="connection",
+        cascade="all, delete-orphan",
+        foreign_keys="CodeSnapshot.connection_id",
     )
     last_processed_event: Mapped[RepositoryEvent | None] = relationship(
         foreign_keys=[last_processed_event_id],
@@ -1010,14 +1102,178 @@ class RepositorySyncRun(Base):
     )
 
 
+class LocalUpload(Base):
+    __tablename__ = "local_uploads"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "id",
+            name="uq_local_upload_workspace_id_id",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "id", "latest_snapshot_id"],
+            [
+                "code_snapshots.workspace_id",
+                "code_snapshots.local_upload_id",
+                "code_snapshots.id",
+            ],
+            name="fk_local_upload_latest_snapshot_owner",
+            use_alter=True,
+        ),
+        CheckConstraint(
+            "compressed_size_bytes >= 0 "
+            "AND uncompressed_size_bytes >= 0 "
+            "AND file_count >= 0 "
+            "AND directory_count >= 0",
+            name="ck_local_upload_counts_non_negative",
+        ),
+        CheckConstraint(
+            "status != 'succeeded' OR latest_snapshot_id IS NOT NULL",
+            name="ck_local_upload_success_requires_snapshot",
+        ),
+        CheckConstraint(
+            "status != 'failed' OR failure_code IS NOT NULL",
+            name="ck_local_upload_failure_requires_code",
+        ),
+        Index("ix_local_upload_workspace_id", "workspace_id"),
+        Index("ix_local_upload_latest_snapshot_id", "latest_snapshot_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", name="fk_local_upload_workspace_id"),
+        nullable=False,
+    )
+    status: Mapped[LocalUploadStatus] = mapped_column(
+        sql_enum(LocalUploadStatus, name="local_upload_status"),
+        nullable=False,
+        default=LocalUploadStatus.PENDING,
+        server_default=text("'pending'"),
+    )
+    original_filename_display: Mapped[str] = mapped_column(String(255), nullable=False)
+    upload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    compressed_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    uncompressed_size_bytes: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default=text("0")
+    )
+    file_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    directory_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    latest_snapshot_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(),
+    )
+    failure_code: Mapped[str | None] = mapped_column(String(64))
+    failure_message: Mapped[str | None] = mapped_column(String(512))
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    workspace: Mapped[Workspace] = relationship(
+        back_populates="local_uploads",
+        foreign_keys=[workspace_id],
+    )
+    snapshots: Mapped[list[CodeSnapshot]] = relationship(
+        back_populates="local_upload",
+        cascade="all, delete-orphan",
+        foreign_keys="CodeSnapshot.local_upload_id",
+    )
+
+
+class WorkspaceDeletionRecord(Base):
+    __tablename__ = "workspace_deletion_records"
+    __table_args__ = (
+        CheckConstraint(
+            "repository_connection_count >= 0 "
+            "AND local_upload_count >= 0 "
+            "AND snapshot_count >= 0 "
+            "AND purged_archive_count >= 0",
+            name="ck_workspace_deletion_counts_non_negative",
+        ),
+        Index("ix_workspace_deletion_record_workspace_id", "workspace_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", name="fk_workspace_deletion_workspace_id"),
+        nullable=False,
+    )
+    deleted_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    purge_status: Mapped[WorkspaceDeletionPurgeStatus] = mapped_column(
+        sql_enum(WorkspaceDeletionPurgeStatus, name="workspace_deletion_purge_status"),
+        nullable=False,
+        default=WorkspaceDeletionPurgeStatus.PENDING,
+        server_default=text("'pending'"),
+    )
+    repository_connection_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    local_upload_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    snapshot_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    purged_archive_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    failure_message: Mapped[str | None] = mapped_column(String(512))
+
+    workspace: Mapped[Workspace] = relationship(
+        back_populates="deletion_records",
+        foreign_keys=[workspace_id],
+    )
+
+
 class CodeSnapshot(Base):
     __tablename__ = "code_snapshots"
     __table_args__ = (
         UniqueConstraint("sync_run_id", name="uq_code_snapshot_sync_run_id"),
+        UniqueConstraint(
+            "workspace_id",
+            "local_upload_id",
+            "id",
+            name="uq_code_snapshot_workspace_local_upload_id",
+        ),
         CheckConstraint(
             "archive_path NOT LIKE '/%' AND archive_path NOT LIKE '%..%'",
             name="ck_code_snapshot_archive_path_safe",
         ),
+        CheckConstraint(
+            "("
+            "source_kind = 'repository_connection' "
+            "AND workspace_id IS NOT NULL "
+            "AND connection_id IS NOT NULL "
+            "AND local_upload_id IS NULL "
+            "AND sync_run_id IS NOT NULL "
+            "AND scope_rule_version_id IS NOT NULL "
+            "AND requested_ref_type IS NOT NULL "
+            "AND requested_ref_name IS NOT NULL "
+            "AND resolved_commit_sha IS NOT NULL "
+            "AND tree_sha IS NOT NULL"
+            ") OR ("
+            "source_kind = 'local_upload' "
+            "AND workspace_id IS NOT NULL "
+            "AND local_upload_id IS NOT NULL "
+            "AND connection_id IS NULL "
+            "AND sync_run_id IS NULL "
+            "AND scope_rule_version_id IS NULL "
+            "AND requested_ref_type IS NULL "
+            "AND requested_ref_name IS NULL "
+            "AND resolved_commit_sha IS NULL "
+            "AND tree_sha IS NULL"
+            ")",
+            name="ck_code_snapshot_source_owner",
+        ),
+        CheckConstraint("file_count > 0", name="ck_code_snapshot_file_count_positive"),
         ForeignKeyConstraint(
             ["connection_id", "sync_run_id"],
             ["repository_sync_runs.connection_id", "repository_sync_runs.id"],
@@ -1031,32 +1287,58 @@ class CodeSnapshot(Base):
             ],
             name="fk_code_snapshot_scope_owner",
         ),
+        ForeignKeyConstraint(
+            ["workspace_id", "connection_id"],
+            ["repository_connections.workspace_id", "repository_connections.id"],
+            name="fk_code_snapshot_connection_workspace_owner",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "local_upload_id"],
+            ["local_uploads.workspace_id", "local_uploads.id"],
+            name="fk_code_snapshot_local_upload_workspace_owner",
+        ),
         Index("ix_code_snapshot_connection_id", "connection_id"),
+        Index("ix_code_snapshot_workspace_id", "workspace_id"),
+        Index("ix_code_snapshot_local_upload_id", "local_upload_id"),
         Index("ix_code_snapshot_scope_rule_version_id", "scope_rule_version_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
-    connection_id: Mapped[uuid.UUID] = mapped_column(
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", name="fk_code_snapshot_workspace_id"),
+        nullable=False,
+    )
+    source_kind: Mapped[CodeSnapshotSourceKind] = mapped_column(
+        sql_enum(CodeSnapshotSourceKind, name="code_snapshot_source_kind"),
+        nullable=False,
+        default=CodeSnapshotSourceKind.REPOSITORY_CONNECTION,
+        server_default=text("'repository_connection'"),
+    )
+    connection_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("repository_connections.id", name="fk_code_snapshot_conn_id"),
-        nullable=False,
+        nullable=True,
     )
-    sync_run_id: Mapped[uuid.UUID] = mapped_column(
+    local_upload_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("local_uploads.id", name="fk_code_snapshot_local_upload_id"),
+        nullable=True,
+    )
+    sync_run_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("repository_sync_runs.id", name="fk_code_snapshot_sync_id"),
-        nullable=False,
+        nullable=True,
     )
-    scope_rule_version_id: Mapped[uuid.UUID] = mapped_column(
+    scope_rule_version_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey(
             "collection_scope_rule_versions.id", name="fk_code_snapshot_scope_id"
         ),
-        nullable=False,
+        nullable=True,
     )
-    requested_ref_type: Mapped[RefType] = mapped_column(
+    requested_ref_type: Mapped[RefType | None] = mapped_column(
         sql_enum(RefType, name="requested_ref_type"),
-        nullable=False,
+        nullable=True,
     )
-    requested_ref_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    resolved_commit_sha: Mapped[str] = mapped_column(String(64), nullable=False)
-    tree_sha: Mapped[str] = mapped_column(String(64), nullable=False)
+    requested_ref_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    resolved_commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tree_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
     archive_path: Mapped[str] = mapped_column(String(2048), nullable=False)
     file_count: Mapped[int] = mapped_column(Integer, nullable=False)
     total_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -1064,14 +1346,23 @@ class CodeSnapshot(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    connection: Mapped[RepositoryConnection] = relationship(
-        back_populates="code_snapshots"
+    workspace: Mapped[Workspace] = relationship(
+        back_populates="code_snapshots",
+        foreign_keys=[workspace_id],
     )
-    sync_run: Mapped[RepositorySyncRun] = relationship(
+    connection: Mapped[RepositoryConnection | None] = relationship(
+        back_populates="code_snapshots",
+        foreign_keys=[connection_id],
+    )
+    local_upload: Mapped[LocalUpload | None] = relationship(
+        back_populates="snapshots",
+        foreign_keys=[local_upload_id],
+    )
+    sync_run: Mapped[RepositorySyncRun | None] = relationship(
         back_populates="code_snapshot",
         foreign_keys=[sync_run_id],
     )
-    scope_rule_version: Mapped[CollectionScopeRuleVersion] = relationship(
+    scope_rule_version: Mapped[CollectionScopeRuleVersion | None] = relationship(
         back_populates="snapshots",
         foreign_keys=[scope_rule_version_id],
     )

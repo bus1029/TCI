@@ -97,6 +97,9 @@ def create_repository_connection(command, *, dependencies):
                 provider_instance_url=repository_identity.provider_instance_url,
                 provider_project_path=repository_identity.provider_project_path,
             ):
+                connection_repository.ensure_active_workspace(
+                    workspace_id=command.workspace_id
+                )
                 connection_repository.ensure_repository_identity_available(
                     workspace_id=command.workspace_id,
                     provider=provider,

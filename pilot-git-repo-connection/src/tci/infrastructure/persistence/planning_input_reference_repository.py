@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from tci.infrastructure.persistence.models import (
     PlanningInputReference,
     PlanningInputSourceType,
+    Workspace,
 )
 
 
@@ -31,6 +32,7 @@ class PlanningInputReferenceRepository:
             spec_path=draft.approved_spec_path,
             plan_path=draft.approved_plan_path,
         )
+        self._ensure_workspace(workspace_id=draft.workspace_id)
 
         reference = PlanningInputReference(
             workspace_id=draft.workspace_id,
@@ -44,6 +46,11 @@ class PlanningInputReferenceRepository:
         self._session.flush()
         self._session.refresh(reference)
         return reference
+
+    def _ensure_workspace(self, *, workspace_id: uuid.UUID) -> None:
+        if self._session.get(Workspace, workspace_id) is None:
+            self._session.add(Workspace(id=workspace_id))
+            self._session.flush()
 
     def get(
         self, *, workspace_id: uuid.UUID, reference_id: uuid.UUID

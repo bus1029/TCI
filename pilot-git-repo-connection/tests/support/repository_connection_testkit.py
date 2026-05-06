@@ -42,6 +42,7 @@ from tci.infrastructure.persistence.credential_revision_repository import (
 from tci.infrastructure.persistence.models import (
     CodeSnapshot,
     CodeSnapshotFile,
+    CodeSnapshotSourceKind,
     CollectionScopeRuleVersion,
     CredentialRevisionStatus,
     CredentialType,
@@ -349,6 +350,9 @@ class FakeRepositoryConnectionRepository:
                 raise ValueError(
                     "Repository connection already exists for this workspace."
                 )
+
+    def ensure_active_workspace(self, *, workspace_id: uuid.UUID) -> None:
+        return
 
     @contextmanager
     def repository_identity_creation_lock(
@@ -1517,6 +1521,7 @@ class CodeSnapshotDraft:
     archive_path: str
     file_count: int
     total_bytes: int
+    workspace_id: uuid.UUID | None = None
 
 
 class FakeCodeSnapshotRepository:
@@ -1529,8 +1534,18 @@ class FakeCodeSnapshotRepository:
         draft: CodeSnapshotDraft,
         files: tuple[CodeSnapshotFileDraft, ...],
     ) -> CodeSnapshot:
+        connection = self._store.connections[draft.connection_id]
+        if (
+            draft.workspace_id is not None
+            and draft.workspace_id != connection.workspace_id
+        ):
+            raise ValueError(
+                "CodeSnapshotDraft.workspace_id must match the repository connection."
+            )
         snapshot = CodeSnapshot(
             id=draft.id,
+            workspace_id=draft.workspace_id or connection.workspace_id,
+            source_kind=CodeSnapshotSourceKind.REPOSITORY_CONNECTION,
             connection_id=draft.connection_id,
             sync_run_id=draft.sync_run_id,
             scope_rule_version_id=draft.scope_rule_version_id,

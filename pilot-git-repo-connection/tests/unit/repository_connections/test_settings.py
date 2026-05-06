@@ -52,6 +52,11 @@ def test_load_settings_uses_project_runtime_defaults(
     assert settings.gitlab_self_managed_allowed_hosts == ()
     assert settings.gitlab_webhook_trusted_proxy_hosts == ()
     assert settings.allow_insecure_gitlab_http is False
+    assert settings.local_upload_max_compressed_bytes == 250 * 1024 * 1024
+    assert settings.local_upload_max_uncompressed_bytes == 1024 * 1024 * 1024
+    assert settings.local_upload_max_file_count == 25_000
+    assert settings.local_upload_max_file_bytes == 25 * 1024 * 1024
+    assert settings.local_upload_max_path_segments == 50
 
 
 def test_load_settings_parses_gitlab_self_managed_allowed_hosts(
