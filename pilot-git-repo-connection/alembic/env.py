@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from logging.config import fileConfig
+import os
 from pathlib import Path
 import sys
 
@@ -12,6 +13,32 @@ SRC_ROOT = PROJECT_ROOT / "src"
 
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
+
+
+def _load_database_url_from_env_file(env_path: Path) -> None:
+    if "TCI_DATABASE_URL" in os.environ or not env_path.is_file():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].lstrip()
+
+        key, separator, value = line.partition("=")
+        if separator and key.strip() == "TCI_DATABASE_URL":
+            os.environ["TCI_DATABASE_URL"] = _parse_env_file_value(value.strip())
+            return
+
+
+def _parse_env_file_value(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+_load_database_url_from_env_file(PROJECT_ROOT / ".env")
 
 from tci.infrastructure.persistence.models import Base  # noqa: E402
 from tci.settings import get_settings  # noqa: E402
