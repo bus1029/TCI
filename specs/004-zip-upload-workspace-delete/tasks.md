@@ -13,6 +13,18 @@
 - **[Story]**: Maps a task to a user story. Setup, foundational, and polish tasks intentionally have no story label.
 - Every task includes an exact file path so it can be moved directly into a backlog or issue.
 
+## Requirement Traceability
+
+| Requirement / Criterion | Primary Task Coverage |
+|-------------------------|-----------------------|
+| FR-001, FR-002, FR-003, FR-006, FR-007, FR-007a, SC-002, SC-003, SC-010 | T018-T035 |
+| FR-004 | T010, T012, T020, T025, T028, T031, T034 |
+| FR-005 | T018, T022, T023, T029, T034, T035 |
+| FR-008, FR-009, FR-010, SC-004, SC-005 | T053-T063, T067, T069 |
+| FR-011, FR-012, FR-013, FR-014, FR-015, FR-016, FR-017, FR-018, FR-019, SC-006, SC-007, SC-008, SC-009 | T036-T052, T068 |
+| SC-001 | T005, T066, T070 |
+| Cross-cutting evidence and final validation | T064-T070 |
+
 ---
 
 ## Phase 1: Setup (Shared Infrastructure)
@@ -60,9 +72,9 @@
 
 - [ ] T018 [P] [US1] Add ZIP validation unit tests for corrupt archives, traversal paths, absolute paths, encrypted entries, duplicate logical paths, reserved `manifest.json`, zero-file archives, and size/count limits in `pilot-git-repo-connection/tests/unit/local_uploads/test_local_zip_extractor.py`
 - [ ] T019 [P] [US1] Add Local Upload snapshot service unit tests for success, repeated uploads, latest snapshot default, failure cleanup, and no active snapshot on failure in `pilot-git-repo-connection/tests/unit/local_uploads/test_create_local_upload_snapshot.py`
-- [ ] T020 [P] [US1] Add contract tests for `POST /api/local-uploads`, `GET /api/local-uploads/{uploadId}`, and `GET /api/local-uploads/{uploadId}/snapshots/{snapshotId}` in `pilot-git-repo-connection/tests/contract/local_uploads/test_local_upload_contract.py`
+- [ ] T020 [P] [US1] Add contract tests for `POST /api/local-uploads`, `GET /api/local-uploads/{uploadId}`, and `GET /api/local-uploads/{uploadId}/snapshots/{snapshotId}`, including Local Upload source, uploaded-by, uploaded-at, sanitized filename, and limit-exceeded problem details in `pilot-git-repo-connection/tests/contract/local_uploads/test_local_upload_contract.py`
 - [ ] T021 [P] [US1] Add integration tests for valid root-folder ZIP, nested ZIP, hidden files, empty directory metadata, and three repeated uploads in `pilot-git-repo-connection/tests/integration/local_uploads/test_local_upload_snapshot_flow.py`
-- [ ] T022 [P] [US1] Add integration tests for corrupt ZIP, unsafe path ZIP, and limit-exceeded ZIP leaving no active snapshot in `pilot-git-repo-connection/tests/integration/local_uploads/test_local_upload_failure_flow.py`
+- [ ] T022 [P] [US1] Add integration tests for corrupt ZIP, unsafe path ZIP, and limit-exceeded ZIP leaving no active snapshot and showing allowed limits plus retry guidance in `pilot-git-repo-connection/tests/integration/local_uploads/test_local_upload_failure_flow.py`
 
 ### Implementation for User Story 1
 
@@ -71,13 +83,13 @@
 - [ ] T025 [US1] Extend snapshot manifest metadata with `source.kind`, Local Upload ID, sanitized original filename, upload hash, file count, and byte totals in `pilot-git-repo-connection/src/tci/infrastructure/snapshots/snapshot_manifest_writer.py`
 - [ ] T026 [US1] Implement Local Upload snapshot creation command with success/failure transitions and latest snapshot selection in `pilot-git-repo-connection/src/tci/domain/services/create_local_upload_snapshot.py`
 - [ ] T027 [US1] Add Local Upload ingestion task entry point and synchronous test/development fallback in `pilot-git-repo-connection/src/tci/infrastructure/queue/repository_ingestion_tasks.py`
-- [ ] T028 [US1] Add Local Upload API request and response schemas in `pilot-git-repo-connection/src/tci/api/schemas/local_upload.py`
+- [ ] T028 [US1] Add Local Upload API request and response schemas with source, uploaded-by, uploaded-at, sanitized original filename, file count, byte totals, latest snapshot, and failure problem fields in `pilot-git-repo-connection/src/tci/api/schemas/local_upload.py`
 - [ ] T029 [US1] Implement Local Upload API routes for upload, status, and snapshot detail in `pilot-git-repo-connection/src/tci/api/routes/local_uploads.py`
 - [ ] T030 [US1] Register Local Upload API routes in `pilot-git-repo-connection/src/tci/app.py`
-- [ ] T031 [US1] Extend snapshot detail service to return Local Upload source metadata and nullable repository-only fields in `pilot-git-repo-connection/src/tci/domain/services/get_code_snapshot_detail.py`
+- [ ] T031 [US1] Extend snapshot detail service to return Local Upload source metadata, uploaded-by, uploaded-at, sanitized original filename, and nullable repository-only fields in `pilot-git-repo-connection/src/tci/domain/services/get_code_snapshot_detail.py`
 - [ ] T032 [US1] Extend snapshot serializers for Local Upload source details in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
 - [ ] T033 [US1] Add operator UI route for Local Upload form, status, and latest snapshot redirect in `pilot-git-repo-connection/src/tci/web/routes/local_uploads.py`
-- [ ] T034 [US1] Add Local Upload operator templates for upload form, status panel, failure details, and source label in `pilot-git-repo-connection/src/tci/web/templates/local_uploads/index.html`
+- [ ] T034 [US1] Add Local Upload operator templates for upload form, status panel, failure details with allowed limits and retry guidance, source label, uploaded-by, uploaded-at, and latest marker in `pilot-git-repo-connection/src/tci/web/templates/local_uploads/index.html`
 - [ ] T035 [US1] Run User Story 1 checks with `rtk pytest -q tests/unit/local_uploads/test_local_zip_extractor.py tests/unit/local_uploads/test_create_local_upload_snapshot.py tests/contract/local_uploads/test_local_upload_contract.py tests/integration/local_uploads/test_local_upload_snapshot_flow.py tests/integration/local_uploads/test_local_upload_failure_flow.py` from `pilot-git-repo-connection/`
 
 **Checkpoint**: User Story 1 is independently functional and testable as the MVP.
@@ -94,7 +106,7 @@
 
 - [ ] T036 [P] [US2] Add contract tests for `GET /api/workspaces/{workspaceId}/deletion-impact` and `DELETE /api/workspaces/{workspaceId}` in `pilot-git-repo-connection/tests/contract/workspaces/test_workspace_delete_contract.py`
 - [ ] T037 [P] [US2] Add unit tests for delete authorization, confirmation, idempotent deleted-state response, purge summary, and audit metadata minimization in `pilot-git-repo-connection/tests/unit/local_uploads/test_delete_workspace.py`
-- [ ] T038 [P] [US2] Add integration tests for owner/admin deletion, non-owner rejection, active-list exclusion, direct deleted-state access, and content purge in `pilot-git-repo-connection/tests/integration/workspaces/test_workspace_delete_flow.py`
+- [ ] T038 [P] [US2] Add integration tests for owner/admin deletion, non-owner rejection, active-list exclusion, direct deleted-state access with next-action guidance, and content purge in `pilot-git-repo-connection/tests/integration/workspaces/test_workspace_delete_flow.py`
 - [ ] T039 [P] [US2] Add integration tests that deleted or deleting workspaces reject Local Upload, GitHub connection, GitLab connection, snapshot creation, and worker mutations in `pilot-git-repo-connection/tests/integration/workspaces/test_deleted_workspace_guards.py`
 
 ### Implementation for User Story 2
@@ -110,7 +122,7 @@
 - [ ] T048 [US2] Apply active-workspace guard to repository snapshot and webhook-driven worker entry points in `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py`, `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`, and `pilot-git-repo-connection/src/tci/infrastructure/queue/repository_ingestion_tasks.py`
 - [ ] T049 [US2] Exclude deleted workspaces from active connection and snapshot list queries in `pilot-git-repo-connection/src/tci/domain/services/list_repository_connections.py`
 - [ ] T050 [US2] Add operator UI route for workspace deletion impact, confirmation, and deleted-state page in `pilot-git-repo-connection/src/tci/web/routes/workspaces.py`
-- [ ] T051 [US2] Add workspace deletion confirmation and deleted-state templates in `pilot-git-repo-connection/src/tci/web/templates/workspaces/delete.html` and `pilot-git-repo-connection/src/tci/web/templates/workspaces/deleted.html`
+- [ ] T051 [US2] Add workspace deletion confirmation and deleted-state templates with available next actions in `pilot-git-repo-connection/src/tci/web/templates/workspaces/delete.html` and `pilot-git-repo-connection/src/tci/web/templates/workspaces/deleted.html`
 - [ ] T052 [US2] Run User Story 2 checks with `rtk pytest -q tests/contract/workspaces/test_workspace_delete_contract.py tests/unit/local_uploads/test_delete_workspace.py tests/integration/workspaces/test_workspace_delete_flow.py tests/integration/workspaces/test_deleted_workspace_guards.py` from `pilot-git-repo-connection/`
 
 **Checkpoint**: User Stories 1 and 2 both work independently, and deleted workspaces cannot start new work.
@@ -150,9 +162,11 @@
 
 - [ ] T064 [P] Update quickstart verification steps for Local Upload, workspace deletion, and mixed-provider regression in `specs/004-zip-upload-workspace-delete/quickstart.md`
 - [ ] T065 [P] Update operator rehearsal and redacted validation evidence for SC-001 through SC-010 in `specs/004-zip-upload-workspace-delete/delivery-evidence.md`
-- [ ] T066 Run security-focused ZIP and deletion tests with `rtk pytest -q tests/unit/local_uploads/test_local_zip_extractor.py tests/integration/local_uploads/test_local_upload_failure_flow.py tests/integration/workspaces/test_workspace_delete_flow.py` from `pilot-git-repo-connection/`
-- [ ] T067 Run full repository connection and Local Upload regression with `rtk pytest -q tests/unit tests/contract tests/integration` from `pilot-git-repo-connection/`
-- [ ] T068 Review final diff for secret redaction, provider compatibility, deleted-workspace guards, and scoped documentation updates in `specs/004-zip-upload-workspace-delete/delivery-evidence.md`
+- [ ] T066 Execute SC-001 operator rehearsal for three operators uploading ZIP without GitHub/GitLab and record redacted timing evidence in `specs/004-zip-upload-workspace-delete/delivery-evidence.md`
+- [ ] T067 Execute SC-005 mixed-source identification exercise with 30 GitHub, GitLab, and Local Upload source-identification tasks and record redacted results in `specs/004-zip-upload-workspace-delete/delivery-evidence.md`
+- [ ] T068 Run security-focused ZIP and deletion tests with `rtk pytest -q tests/unit/local_uploads/test_local_zip_extractor.py tests/integration/local_uploads/test_local_upload_failure_flow.py tests/integration/workspaces/test_workspace_delete_flow.py` from `pilot-git-repo-connection/`
+- [ ] T069 Run full repository connection and Local Upload regression with `rtk pytest -q tests/unit tests/contract tests/integration` from `pilot-git-repo-connection/`
+- [ ] T070 Review final diff for secret redaction, provider compatibility, deleted-workspace guards, and scoped documentation updates in `specs/004-zip-upload-workspace-delete/delivery-evidence.md`
 
 ---
 
@@ -237,7 +251,7 @@ Task: "T056 [P] [US3] Extend GitHub/GitLab compatibility regression in pilot-git
 2. **MVP**: T018 through T035 deliver Local Upload snapshots.
 3. **Lifecycle**: T036 through T052 deliver workspace deletion and content purge.
 4. **Compatibility**: T053 through T063 preserve GitHub/GitLab behavior and mixed-source clarity.
-5. **Release Readiness**: T064 through T068 update evidence and run final regression.
+5. **Release Readiness**: T064 through T070 update evidence and run final regression.
 
 ### Review Boundaries
 
@@ -246,4 +260,3 @@ Task: "T056 [P] [US3] Extend GitHub/GitLab compatibility regression in pilot-git
 - Review Phase 4 as the deletion, purge, and mutation guard slice.
 - Review Phase 5 as compatibility and operator-source clarity.
 - Keep unrelated GitHub/GitLab behavior changes out of Phase 3 and Phase 4 unless they are deleted-workspace guards explicitly listed above.
-
