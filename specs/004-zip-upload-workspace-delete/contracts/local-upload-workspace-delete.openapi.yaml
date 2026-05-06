@@ -1,0 +1,426 @@
+openapi: 3.1.0
+info:
+  title: TCI Local Upload and Workspace Delete API
+  version: 0.4.0
+  description: >
+    Adds ZIP-based Local Upload snapshots and workspace soft delete. Local
+    Upload is a snapshot source, not a Repository Connection. Existing GitHub
+    Cloud and GitLab Self-Managed repository connection contracts remain
+    compatible except that deleted workspaces reject new mutations.
+servers:
+  - url: https://tci.example.com
+tags:
+  - name: LocalUploads
+  - name: Workspaces
+security:
+  - OperatorHeaderToken: []
+  - OperatorBearerToken: []
+  - OperatorCookieToken: []
+paths:
+  /api/local-uploads:
+    post:
+      tags: [LocalUploads]
+      summary: ZIP 파일 업로드로 Local Upload 스냅샷 생성 시작
+      operationId: createLocalUpload
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: ZIP file only. Raw ZIP bytes are not retained after processing.
+      responses:
+        '202':
+          description: 업로드가 접수되어 처리 중
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocalUploadResponse'
+        '201':
+          description: 개발/테스트 경로에서 동기 처리 완료
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocalUploadResponse'
+        '400':
+          description: ZIP 파일이 유효하지 않거나 허용 한도를 초과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+        '403':
+          description: 워크스페이스 권한 부족
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+        '409':
+          description: 워크스페이스가 삭제 중이거나 삭제됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+  /api/local-uploads/{uploadId}:
+    get:
+      tags: [LocalUploads]
+      summary: Local Upload 처리 상태 조회
+      operationId: getLocalUpload
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/UploadId'
+      responses:
+        '200':
+          description: 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocalUploadResponse'
+        '404':
+          description: Local Upload를 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+  /api/local-uploads/{uploadId}/snapshots/{snapshotId}:
+    get:
+      tags: [LocalUploads]
+      summary: Local Upload 스냅샷 상세 조회
+      operationId: getLocalUploadSnapshot
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/UploadId'
+        - $ref: '#/components/parameters/SnapshotId'
+      responses:
+        '200':
+          description: 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocalUploadSnapshotDetail'
+        '404':
+          description: 스냅샷을 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+  /api/workspaces/{workspaceId}/deletion-impact:
+    get:
+      tags: [Workspaces]
+      summary: 워크스페이스 삭제 영향 요약 조회
+      operationId: getWorkspaceDeletionImpact
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceIdPath'
+      responses:
+        '200':
+          description: 삭제 영향 요약
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceDeletionImpact'
+        '403':
+          description: 소유자 또는 관리자 권한 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+  /api/workspaces/{workspaceId}:
+    delete:
+      tags: [Workspaces]
+      summary: 워크스페이스 soft delete 및 프로젝트 내용 제거
+      operationId: deleteWorkspace
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteWorkspaceRequest'
+      responses:
+        '202':
+          description: 삭제 처리 시작 또는 완료
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceDeletionResponse'
+        '400':
+          description: 확인 문구 누락 또는 잘못된 요청
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+        '403':
+          description: 소유자 또는 관리자 권한 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+        '409':
+          description: 이미 삭제 중이거나 삭제됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceDeletionResponse'
+components:
+  securitySchemes:
+    OperatorHeaderToken:
+      type: apiKey
+      in: header
+      name: X-TCI-Operator-Token
+    OperatorBearerToken:
+      type: http
+      scheme: bearer
+    OperatorCookieToken:
+      type: apiKey
+      in: cookie
+      name: tci_operator_token
+  parameters:
+    WorkspaceId:
+      name: X-TCI-Workspace-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+    WorkspaceIdPath:
+      name: workspaceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UploadId:
+      name: uploadId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SnapshotId:
+      name: snapshotId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    LocalUploadResponse:
+      type: object
+      required:
+        - id
+        - workspaceId
+        - sourceKind
+        - status
+        - originalFilename
+        - compressedSizeBytes
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        sourceKind:
+          type: string
+          const: local_upload
+        status:
+          type: string
+          enum: [pending, processing, succeeded, failed]
+        originalFilename:
+          type: string
+        compressedSizeBytes:
+          type: integer
+        uncompressedSizeBytes:
+          type: integer
+          nullable: true
+        fileCount:
+          type: integer
+          nullable: true
+        latestSnapshotId:
+          type: string
+          format: uuid
+          nullable: true
+        failureCode:
+          type: string
+          nullable: true
+        failureMessage:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+    LocalUploadSnapshotDetail:
+      type: object
+      required:
+        - id
+        - workspaceId
+        - source
+        - fileCount
+        - totalBytes
+        - archivePath
+        - files
+        - traceability
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        source:
+          $ref: '#/components/schemas/SnapshotSource'
+        fileCount:
+          type: integer
+        totalBytes:
+          type: integer
+        archivePath:
+          type: string
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/SnapshotFile'
+        traceability:
+          $ref: '#/components/schemas/LocalUploadTraceability'
+    SnapshotSource:
+      type: object
+      required: [kind, localUploadId]
+      properties:
+        kind:
+          type: string
+          const: local_upload
+        localUploadId:
+          type: string
+          format: uuid
+        originalFilename:
+          type: string
+    SnapshotFile:
+      type: object
+      required: [path, sizeBytes, contentSha256, archiveBlobPath]
+      properties:
+        path:
+          type: string
+        extension:
+          type: string
+          nullable: true
+        languageHint:
+          type: string
+          nullable: true
+        sizeBytes:
+          type: integer
+        contentSha256:
+          type: string
+        archiveBlobPath:
+          type: string
+    LocalUploadTraceability:
+      type: object
+      required: [sourceKind, localUploadId, workspaceId]
+      properties:
+        sourceKind:
+          type: string
+          const: local_upload
+        localUploadId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        planningInputReference:
+          type: 'null'
+    WorkspaceDeletionImpact:
+      type: object
+      required:
+        - workspaceId
+        - repositoryConnectionCount
+        - localUploadCount
+        - snapshotCount
+        - projectContentWillBeRemoved
+        - auditMetadataWillRemain
+      properties:
+        workspaceId:
+          type: string
+          format: uuid
+        repositoryConnectionCount:
+          type: integer
+        localUploadCount:
+          type: integer
+        snapshotCount:
+          type: integer
+        projectContentWillBeRemoved:
+          type: boolean
+          const: true
+        auditMetadataWillRemain:
+          type: boolean
+          const: true
+    DeleteWorkspaceRequest:
+      type: object
+      required: [confirmation]
+      properties:
+        confirmation:
+          type: string
+          description: User-confirmed phrase or token from deletion impact screen.
+        reason:
+          type: string
+          maxLength: 500
+          nullable: true
+    WorkspaceDeletionResponse:
+      type: object
+      required: [workspaceId, status, auditMetadataRetained]
+      properties:
+        workspaceId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [deleting, deleted]
+        deletionRecordId:
+          type: string
+          format: uuid
+        auditMetadataRetained:
+          type: boolean
+          const: true
+        projectContentRemoved:
+          type: boolean
+        message:
+          type: string
+    ProblemResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - invalid_zip
+            - unsafe_zip_path
+            - zip_limit_exceeded
+            - zip_empty
+            - workspace_deleted
+            - workspace_deleting
+            - workspace_delete_forbidden
+            - workspace_delete_confirmation_required
+            - local_upload_not_found
+            - snapshot_not_found
+            - invalid_request
+        message:
+          type: string
+        remediationAction:
+          type: string
+          enum:
+            - upload_valid_zip
+            - reduce_zip_size
+            - remove_unsafe_paths
+            - choose_active_workspace
+            - request_owner_or_admin
+            - confirm_workspace_delete
+            - none

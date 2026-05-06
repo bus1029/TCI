@@ -1,6 +1,6 @@
 # TCI Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-29
+Auto-generated from all feature plans. Last updated: 2026-05-06
 
 ## Active Technologies
 - TypeScript 5.6 on Node.js 22 LTS + Fastify 5, Zod 3.24, Prisma 6, BullMQ 5, ioredis, pino, React 19, Next.js 15 App Router (004-git-repo-connection)
@@ -13,6 +13,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-29
 - Python 3.12 + FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, Celery 5.x, redis-py, structlog, Jinja2, cryptography (006-gitlab-onprem-connection)
 - PostgreSQL 16 for connection/event/snapshot metadata, Redis 7 for webhook and snapshot jobs, local disk mirror cache under `pilot-git-repo-connection/.runtime/git-mirrors`, local snapshot archive under `pilot-git-repo-connection/.runtime/code-snapshots` (006-gitlab-onprem-connection)
 - PostgreSQL 16 for connection/event/snapshot metadata and legacy planning references, Redis 7 for webhook and snapshot jobs, local disk mirror cache under `pilot-git-repo-connection/.runtime/git-mirrors`, local snapshot archive under `pilot-git-repo-connection/.runtime/code-snapshots` (003-repository-first-connections)
+- Python 3.12 + FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, Celery 5.x, redis-py, structlog, Jinja2, cryptography, Python standard `zipfile`/`pathlib` for archive inspection and extraction (004-zip-upload-workspace-delete)
+- PostgreSQL 16 for workspace deletion metadata, local upload metadata, repository connection metadata, events, sync runs, and snapshot metadata; Redis 7 for async snapshot jobs; local disk mirror cache under `pilot-git-repo-connection/.runtime/git-mirrors`; local snapshot archive under `pilot-git-repo-connection/.runtime/code-snapshots` (004-zip-upload-workspace-delete)
 
 - Markdown, Spec Kit 0.5.1, repository shell workflow + Spec Kit templates, Git branch workflow, GitHub repository/webhook contract artifacts (001-repo-source-traceability)
 
@@ -32,9 +34,9 @@ tests/
 Markdown, Spec Kit 0.5.1, repository shell workflow: Follow standard conventions
 
 ## Recent Changes
+- 004-zip-upload-workspace-delete: Added Python 3.12 + FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, Celery 5.x, redis-py, structlog, Jinja2, cryptography, Python standard `zipfile`/`pathlib` for archive inspection and extraction
 - 003-repository-first-connections: Added Python 3.12 + FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, Celery 5.x, redis-py, structlog, Jinja2, cryptography
 - 003-repository-first-connections: Added Python 3.12 + FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, Celery 5.x, redis-py, structlog, Jinja2, cryptography
-- 002-gitlab-onprem-connection: Added Python 3.12 + FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, Celery 5.x, redis-py, structlog, Jinja2, cryptography
 
 
 <!-- MANUAL ADDITIONS START -->
@@ -102,5 +104,6 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan
+shell commands, and other important information, read
+`specs/004-zip-upload-workspace-delete/plan.md`
 <!-- SPECKIT END -->
