@@ -24,11 +24,11 @@ def _settings(client) -> Any:
 def test_scope_rule_routes_require_workspace_header(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, _store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(_store, workspace_id=workspace_id)
+    seed_planning_input_reference(_store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     client.headers.pop("X-TCI-Workspace-Id")
@@ -48,11 +48,11 @@ def test_scope_rule_routes_require_workspace_header(tmp_path) -> None:
 def test_save_scope_rule_returns_warning_and_latest_scope_projection(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -93,11 +93,11 @@ def test_save_scope_rule_returns_warning_and_latest_scope_projection(tmp_path) -
 def test_save_scope_rule_rejects_non_positive_max_file_size(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -118,11 +118,11 @@ def test_save_scope_rule_rejects_non_positive_max_file_size(tmp_path) -> None:
 def test_save_scope_rule_rejects_max_file_size_above_hard_cap(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -145,11 +145,11 @@ def test_save_scope_rule_uses_neutral_warning_on_preview_infrastructure_failure(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -186,11 +186,11 @@ def test_save_scope_rule_preserves_auth_failure_from_preview(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     store.auth_failure_ref_names.add("main")
@@ -216,11 +216,11 @@ def test_save_scope_rule_preserves_missing_ref_from_preview(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     store.missing_ref_names.add("main")
@@ -246,12 +246,11 @@ def test_save_scope_rule_rejects_unallowlisted_gitlab_before_preview_git_access(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),
@@ -407,13 +406,10 @@ def test_runtime_and_feature_contract_document_operator_auth_and_webhook_health(
         assert contract["security"] == runtime_security
         assert contract["components"]["securitySchemes"] == runtime_security_schemes
         assert (
-            contract["components"]["schemas"]["WebhookHealth"]
-            == runtime_webhook_health
+            contract["components"]["schemas"]["WebhookHealth"] == runtime_webhook_health
         )
         webhook_paths = [
-            path
-            for path in contract["paths"]
-            if path.startswith("/api/webhooks/")
+            path for path in contract["paths"] if path.startswith("/api/webhooks/")
         ]
         assert webhook_paths
         for contract_path in webhook_paths:

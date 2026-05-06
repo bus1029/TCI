@@ -26,10 +26,10 @@ def test_rotate_webhook_secret_replaces_active_secret_and_starts_grace_window(
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     previous_revision = seed_active_webhook_secret(
@@ -76,10 +76,10 @@ def test_rotate_webhook_secret_returns_null_grace_until_for_first_issue(
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
 
@@ -107,10 +107,10 @@ def test_rotation_projection_counts_only_current_previous_secret_revision(
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     seed_active_webhook_secret(
@@ -190,10 +190,10 @@ def test_rotation_projection_excludes_deliveries_before_revision_entered_grace(
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     seed_active_webhook_secret(
@@ -266,10 +266,10 @@ def test_rotated_active_secret_is_accepted_by_webhook_verification(
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     seed_active_webhook_secret(
@@ -322,10 +322,10 @@ def test_rotation_with_reused_secret_prefers_new_active_revision(
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     seed_active_webhook_secret(
@@ -387,10 +387,10 @@ def test_rotation_projection_counts_legacy_previous_grace_events_without_revisio
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     grace_until = datetime.now(tz=UTC) + timedelta(hours=24)

@@ -289,7 +289,10 @@ def _run_webhook_sync_task(
                     connection_id=connection_uuid,
                     sync_run_id=sync_run_uuid,
                 )
-                if getattr(getattr(sync_run, "status", None), "value", None) == "running":
+                if (
+                    getattr(getattr(sync_run, "status", None), "value", None)
+                    == "running"
+                ):
                     if not _running_sync_run_is_stale(sync_run):
                         result["status"] = "in_progress"
                         return result
@@ -576,7 +579,9 @@ def _dispatch_next_pending_sync_for_ref(
     from tci.workers.celery_app import create_celery_app
 
     try:
-        create_celery_app(dependencies.settings).send_task(task_name, kwargs=task_kwargs)
+        create_celery_app(dependencies.settings).send_task(
+            task_name, kwargs=task_kwargs
+        )
     except Exception:
         _mark_pending_sync_dispatch_failed(
             dependencies=dependencies,
@@ -601,9 +606,13 @@ def _build_snapshot_for_worker(
 ):
     if allow_running_retry:
         parameters = inspect.signature(build_service).parameters.values()
-        if any(
-            parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters
-        ) or "_allow_running_retry" in inspect.signature(build_service).parameters:
+        if (
+            any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters
+            )
+            or "_allow_running_retry" in inspect.signature(build_service).parameters
+        ):
             return build_service(
                 command,
                 dependencies=dependencies,

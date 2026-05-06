@@ -19,7 +19,7 @@ def test_gitlab_scope_rule_save_returns_detail_projection_with_binary_policy(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     store.mirror_snapshot_entries = (
         ("src/main.py", b"print('hello')\n"),
         ("assets/logo.bin", b"\x00binary"),
@@ -28,7 +28,6 @@ def test_gitlab_scope_rule_save_returns_detail_projection_with_binary_policy(
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),
@@ -70,11 +69,10 @@ def test_gitlab_scope_rule_save_rejects_unallowlisted_host_before_preview(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),
@@ -113,11 +111,10 @@ def test_gitlab_scope_rule_save_rejects_stored_http_when_opt_in_disabled_before_
     monkeypatch.setenv("TCI_ALLOW_INSECURE_GITLAB_HTTP", "true")
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="http://192.168.10.20/group/sample-repo.git",
             transport="http",

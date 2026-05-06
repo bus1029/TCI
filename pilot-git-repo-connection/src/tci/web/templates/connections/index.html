@@ -23,17 +23,49 @@
           action="/connections?workspaceId={{ workspace_id }}"
         >
           <label>
-            계획 입력 참조
-            <input
-              type="text"
-              name="planningInputReferenceId"
-              value="{{ form_data.planningInputReferenceId }}"
-            />
-          </label>
-          <label>
             제공자
             <input type="text" name="provider" value="{{ form_data.provider }}" />
           </label>
+          <section>
+            <h3>후보 저장소</h3>
+            {% if candidates["items"] %}
+            <ul>
+              {% for candidate in candidates["items"] %}
+              <li>
+                <label>
+                  <input
+                    type="radio"
+                    name="candidateId"
+                    value="{{ candidate.id }}"
+                    {% if candidate.id == form_data.candidateId %}checked{% endif %}
+                    {% if not candidate.selectable %}disabled{% endif %}
+                  />
+                  {{ candidate.provider }} {{ candidate.providerProjectPath }}
+                </label>
+                <div>범위: {{ candidate.providerScope }}</div>
+                <div>저장소: {{ candidate.repositoryOwner }}/{{ candidate.repositoryName }}</div>
+                <div>식별자: {{ candidate.canonicalRepositoryKey }}</div>
+                {% if candidate.remoteUrl %}
+                <div>후보 URL: {{ candidate.remoteUrl }}</div>
+                {% else %}
+                <div>후보 URL: 수동 URL 입력 필요</div>
+                {% endif %}
+                {% if candidate.alreadyConnected %}
+                <div>이미 연결됨: {{ candidate.existingConnectionId }}</div>
+                <div>선택 불가</div>
+                {% elif not candidate.selectable %}
+                <div>선택 불가</div>
+                {% else %}
+                <div>선택 가능</div>
+                {% endif %}
+              </li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <p>{{ candidates["guidance"] }}</p>
+            {% endif %}
+            <p>수동 URL 입력</p>
+          </section>
           <label>
             저장소 주소
             <input
@@ -99,8 +131,24 @@
             <strong
               >{{ connection.repository_owner }}/{{ connection.repository_name }}</strong
             >
+            <div>제공자: {{ connection.provider.value }}</div>
+            {% if connection.provider_project_path %}
+            <div>프로젝트 경로: {{ connection.provider_project_path }}</div>
+            {% endif %}
+            {% if connection.provider_instance_url %}
+            <div>인스턴스: {{ connection.provider_instance_url }}</div>
+            {% endif %}
             <div>상태: {{ connection.status.value }}</div>
             <div>기본 ref: {{ connection.default_ref_type.value }} {{ connection.default_ref_name }}</div>
+            {% if connection.planning_input_reference_id %}
+            {% if connection.planning_input_reference and connection.planning_input_reference.workspace_id == connection.workspace_id %}
+            <div>출처: 기존 planning trace</div>
+            {% else %}
+            <div>출처: 호환성 확인 필요</div>
+            {% endif %}
+            {% else %}
+            <div>출처: 워크스페이스 저장소 연결</div>
+            {% endif %}
             <div>{{ connection.remote_url }}</div>
             <a
               href="/connections/{{ connection.id }}?workspaceId={{ workspace_id }}"

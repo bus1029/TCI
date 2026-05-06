@@ -75,6 +75,50 @@ def test_snapshot_archive_store_creates_canonical_archive_and_writes_files(
     assert archive.files[1].content_sha256 == hashlib.sha256(b"# guide\n").hexdigest()
 
 
+def test_snapshot_manifest_writer_serializes_null_planning_reference(
+    tmp_path: Path,
+) -> None:
+    from tci.domain.services.build_traceability_reference import (
+        build_snapshot_traceability_reference,
+    )
+    from tci.infrastructure.persistence.models import SnapshotInclusionReason
+    from tci.infrastructure.snapshots.snapshot_archive_store import (
+        SnapshotArchiveEntryDraft,
+        SnapshotArchiveStore,
+    )
+    from tci.infrastructure.snapshots.snapshot_manifest_writer import (
+        SnapshotManifestWriter,
+    )
+
+    settings = _build_test_settings(tmp_path)
+    snapshot_id = uuid.uuid4()
+    archive = SnapshotArchiveStore(settings=settings).store(
+        snapshot_id=snapshot_id,
+        entries=(
+            SnapshotArchiveEntryDraft(
+                path="src/app.py",
+                content=b"print('hello')\n",
+                included_by=SnapshotInclusionReason.DEFAULT_POLICY,
+            ),
+        ),
+    )
+    traceability = build_snapshot_traceability_reference(
+        planning_input_reference_id=None,
+        connection_id=uuid.uuid4(),
+        scope_rule_version_id=uuid.uuid4(),
+        sync_run_id=uuid.uuid4(),
+        snapshot_id=snapshot_id,
+    )
+
+    manifest_path = SnapshotManifestWriter().write(
+        archive=archive,
+        traceability=traceability,
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["traceability"]["planningInputReferenceId"] is None
+
+
 def test_snapshot_archive_store_rejects_empty_entry_set(tmp_path: Path) -> None:
     from tci.infrastructure.snapshots.snapshot_archive_store import SnapshotArchiveStore
 

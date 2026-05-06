@@ -48,7 +48,7 @@ class QuickstartValidationResult:
 def run_quickstart_validation(*, tmp_path, monkeypatch) -> QuickstartValidationResult:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     task_recorder = _TaskRecorder()
     object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
     monkeypatch.setattr(
@@ -67,7 +67,7 @@ def run_quickstart_validation(*, tmp_path, monkeypatch) -> QuickstartValidationR
     started_at = time.perf_counter()
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     assert create_response.status_code == 201
     connection_id = uuid.UUID(create_response.json()["id"])
@@ -95,7 +95,9 @@ def run_quickstart_validation(*, tmp_path, monkeypatch) -> QuickstartValidationR
         connection_id=manual_sync_task_kwargs["connection_id"],
         sync_run_id=manual_sync_task_kwargs["sync_run_id"],
     )
-    connection_detail_response = client.get(f"/api/repository-connections/{connection_id}")
+    connection_detail_response = client.get(
+        f"/api/repository-connections/{connection_id}"
+    )
     assert connection_detail_response.status_code == 200
     manual_snapshot_id = connection_detail_response.json()["latestSnapshot"]["id"]
     snapshot_detail_response = client.get(
@@ -162,7 +164,8 @@ def run_quickstart_validation(*, tmp_path, monkeypatch) -> QuickstartValidationR
     previous_revision = next(
         revision
         for revision in store.webhook_secret_revisions.values()
-        if revision.connection_id == connection_id and revision.status == "previous_grace"
+        if revision.connection_id == connection_id
+        and revision.status == "previous_grace"
     )
     previous_revision.grace_until = datetime.now(tz=UTC) - timedelta(minutes=1)
 
@@ -176,14 +179,14 @@ def run_quickstart_validation(*, tmp_path, monkeypatch) -> QuickstartValidationR
     )
     assert expired_secret_response.status_code == 202
 
-    connection_detail_response = client.get(f"/api/repository-connections/{connection_id}")
+    connection_detail_response = client.get(
+        f"/api/repository-connections/{connection_id}"
+    )
     assert connection_detail_response.status_code == 200
     connection_detail = connection_detail_response.json()
     events_response = client.get(f"/api/repository-connections/{connection_id}/events")
     assert events_response.status_code == 200
-    events_by_id = {
-        item["id"]: item for item in events_response.json()["items"]
-    }
+    events_by_id = {item["id"]: item for item in events_response.json()["items"]}
 
     return QuickstartValidationResult(
         first_snapshot_seconds=first_snapshot_seconds,
@@ -301,7 +304,8 @@ def _event_has_verified_secret_status(
     response = client.get(f"/api/repository-connections/{connection_id}/events")
     assert response.status_code == 200
     return any(
-        item["id"] == event_id and item["verifiedSecretRevisionStatus"] == expected_status
+        item["id"] == event_id
+        and item["verifiedSecretRevisionStatus"] == expected_status
         for item in response.json()["items"]
     )
 

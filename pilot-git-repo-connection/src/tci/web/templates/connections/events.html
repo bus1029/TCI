@@ -11,7 +11,14 @@
       >
 
       <h1>이벤트 타임라인</h1>
+      <p>제공자: {{ connection.provider }}</p>
       <p>{{ connection.remoteUrl }}</p>
+      {% if connection.providerInstanceUrl %}
+      <p>인스턴스: {{ connection.providerInstanceUrl }}</p>
+      {% endif %}
+      {% if connection.providerProjectPath %}
+      <p>프로젝트 경로: {{ connection.providerProjectPath }}</p>
+      {% endif %}
       <p>Webhook 상태: {{ connection.webhookHealth.webhookStatus if connection.webhookHealth else "미설정" }}</p>
 
       {% if events %}

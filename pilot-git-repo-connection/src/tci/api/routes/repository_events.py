@@ -8,8 +8,11 @@ from fastapi.responses import JSONResponse
 from tci.api.operator_auth import require_operator_auth
 from tci.api.schemas.repository_connection import serialize_repository_event
 from tci.domain.services.list_repository_events import list_repository_events
+from tci.domain.services.repository_connection_support import (
+    RepositoryConnectionProblem,
+)
 
-from .repository_connections import _extract_workspace_id
+from .repository_connections import _extract_workspace_id, _problem_response
 
 
 router = APIRouter(
@@ -41,6 +44,8 @@ def list_repository_events_route(
         )
     except LookupError as error:
         return JSONResponse(status_code=404, content={"detail": str(error)})
+    except RepositoryConnectionProblem as error:
+        return _problem_response(error)
 
     return JSONResponse(
         status_code=200,

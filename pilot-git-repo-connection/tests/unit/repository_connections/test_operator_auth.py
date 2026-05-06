@@ -95,7 +95,9 @@ def test_operator_auth_rate_limit_uses_redis_outside_development(monkeypatch) ->
     )
 
     monkeypatch.setattr("redis.Redis.from_url", lambda url: FakeRedis())
-    monkeypatch.setattr("tci.api.operator_auth.OPERATOR_AUTH_RATE_LIMIT_MAX_FAILURES", 1)
+    monkeypatch.setattr(
+        "tci.api.operator_auth.OPERATOR_AUTH_RATE_LIMIT_MAX_FAILURES", 1
+    )
 
     assert consume_operator_auth_failure_budget(request)
     assert not consume_operator_auth_failure_budget(request)

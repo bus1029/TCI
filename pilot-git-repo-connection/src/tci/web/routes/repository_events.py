@@ -14,6 +14,9 @@ from tci.domain.services.get_repository_connection_detail import (
     get_repository_connection_detail,
 )
 from tci.domain.services.list_repository_events import list_repository_events
+from tci.domain.services.repository_connection_support import (
+    RepositoryConnectionProblem,
+)
 
 from ._common import build_template_context, extract_workspace_id_from_query
 
@@ -44,6 +47,8 @@ def repository_events_page(connection_id: uuid.UUID, request: Request):
         )
     except LookupError:
         return PlainTextResponse("저장소 연결을 찾을 수 없습니다.", status_code=404)
+    except RepositoryConnectionProblem as error:
+        return PlainTextResponse(str(error.detail), status_code=400)
 
     template = request.app.state.templates
     return template.TemplateResponse(

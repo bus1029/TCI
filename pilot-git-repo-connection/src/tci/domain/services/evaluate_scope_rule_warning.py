@@ -8,6 +8,7 @@ from tci.domain.services.repository_connection_support import (
     bind_git_credential,
     decrypt_secret_from_storage,
     ensure_gitlab_self_managed_host_allowed,
+    require_active_operation_credential,
 )
 from tci.domain.services.scope_filter_engine import (
     ScopeFilterRuleSet,
@@ -52,7 +53,11 @@ def evaluate_scope_rule_warning(
         credential_revision = credential_repository.get_active_for_connection(
             connection_id=connection.id
         )
-        if credential_revision is None:
+        try:
+            operation_credential = require_active_operation_credential(
+                credential_revision
+            )
+        except RepositoryConnectionProblem:
             return ScopeRuleWarningState.PREVIEW_FAILED
 
         try:
@@ -64,13 +69,13 @@ def evaluate_scope_rule_warning(
                 remote_url=connection.remote_url,
             )
             credential_secret = decrypt_secret_from_storage(
-                credential_revision.encrypted_secret,
+                operation_credential.encrypted_secret,
                 settings=dependencies.settings,
             )
             with bind_git_credential(
                 remote_url=connection.remote_url,
                 transport=connection.transport,
-                credential_type=credential_revision.credential_type,
+                credential_type=operation_credential.credential_type,
                 credential_secret=credential_secret,
             ) as credential_bound_remote_url:
                 resolved_ref = dependencies.git_ref_resolver.resolve(

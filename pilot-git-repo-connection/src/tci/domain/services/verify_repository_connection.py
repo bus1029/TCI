@@ -10,6 +10,7 @@ from tci.domain.services.repository_connection_support import (
     bind_git_credential,
     decrypt_secret_from_storage,
     ensure_gitlab_self_managed_host_allowed,
+    require_active_operation_credential,
 )
 from tci.infrastructure.persistence.models import (
     RepositoryConnectionStatus,
@@ -137,6 +138,12 @@ def _load_verification_context(
         credential_revision = credential_repository.get_active_for_connection(
             connection_id=connection.id
         )
+        try:
+            operation_credential = require_active_operation_credential(
+                credential_revision
+            )
+        except RepositoryConnectionProblem:
+            operation_credential = None
         return VerificationContext(
             provider=connection.provider,
             provider_instance_url=connection.provider_instance_url,
@@ -146,13 +153,13 @@ def _load_verification_context(
             default_ref_name=connection.default_ref_name,
             credential_type=(
                 None
-                if credential_revision is None
-                else credential_revision.credential_type
+                if operation_credential is None
+                else operation_credential.credential_type
             ),
             encrypted_secret=(
                 None
-                if credential_revision is None
-                else credential_revision.encrypted_secret
+                if operation_credential is None
+                else operation_credential.encrypted_secret
             ),
         )
 

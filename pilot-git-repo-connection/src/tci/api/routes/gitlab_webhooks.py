@@ -345,8 +345,7 @@ def _allow_gitlab_webhook_request_in_redis(
         f"tci:gitlab-webhook-rate:source-connections:{source_key}"
     )
     connection_key_name = (
-        "tci:gitlab-webhook-rate:connection:"
-        f"{source_key}:{connection_id}"
+        "tci:gitlab-webhook-rate:connection:" f"{source_key}:{connection_id}"
     )
     pipe = redis.pipeline()
     pipe.zremrangebyscore(source_key_name, 0, cutoff_ms)

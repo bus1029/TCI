@@ -80,5 +80,7 @@ class PlanningInputReferenceRepository:
 def _is_repo_spec_path(path: PurePosixPath) -> bool:
     parts = path.parts
     if any(part in {"..", "."} for part in parts):
-        raise ValueError("승인된 spec/plan 경로에는 경로 순회 세그먼트를 넣을 수 없습니다.")
+        raise ValueError(
+            "승인된 spec/plan 경로에는 경로 순회 세그먼트를 넣을 수 없습니다."
+        )
     return len(parts) == 3 and parts[0] == "specs"

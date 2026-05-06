@@ -138,7 +138,9 @@ def test_gitlab_foundation_connection_constraints_enforce_gitlab_instance_and_ho
     assert "provider_instance_url ~ '^https?://" in instance_url_sql
     assert "(?::[0-9]+)?/?$" in instance_url_sql
     assert "!~ '^https?://[^/:/]*-(?::[0-9]+)?/?$'" in instance_url_sql
-    assert "lower(regexp_replace(provider_instance_url, '^https?://" in instance_host_sql
+    assert (
+        "lower(regexp_replace(provider_instance_url, '^https?://" in instance_host_sql
+    )
     assert "WHEN remote_url LIKE 'http://%'" in instance_host_sql
     assert "regexp_replace(remote_url, '^git@([^:]+):.*$', '\\1')" in instance_host_sql
     assert "regexp_replace(remote_url, '^ssh://" in instance_host_sql

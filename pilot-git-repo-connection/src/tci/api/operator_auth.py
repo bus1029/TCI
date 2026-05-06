@@ -45,7 +45,9 @@ def require_operator_auth(request: Request) -> None:
     )
 
 
-def create_operator_session_cookie(*, expected_token: str, now: float | None = None) -> str:
+def create_operator_session_cookie(
+    *, expected_token: str, now: float | None = None
+) -> str:
     issued_at = int(time.time() if now is None else now)
     expires_at = issued_at + OPERATOR_SESSION_COOKIE_MAX_AGE_SECONDS
     nonce = uuid.uuid4().hex
@@ -65,9 +67,13 @@ def _has_valid_operator_auth(*, request: Request, expected_token: str) -> bool:
     authorization = request.headers.get("Authorization")
     if authorization:
         scheme, separator, token = authorization.partition(" ")
-        if separator and scheme.lower() == "bearer" and is_valid_operator_token(
-            expected_token=expected_token,
-            supplied_token=token.strip(),
+        if (
+            separator
+            and scheme.lower() == "bearer"
+            and is_valid_operator_token(
+                expected_token=expected_token,
+                supplied_token=token.strip(),
+            )
         ):
             return True
 
@@ -91,7 +97,9 @@ def is_valid_operator_token(
     )
 
 
-def is_operator_auth_allowed(request: Request, *, now_monotonic: float | None = None) -> bool:
+def is_operator_auth_allowed(
+    request: Request, *, now_monotonic: float | None = None
+) -> bool:
     redis_url = _operator_auth_redis_url(request)
     if redis_url:
         return _is_operator_auth_allowed_in_redis(
@@ -105,7 +113,10 @@ def is_operator_auth_allowed(request: Request, *, now_monotonic: float | None = 
         request_times = _operator_auth_failure_times.get(source_key)
         if request_times is None:
             _prune_operator_auth_failure_buckets(cutoff=cutoff)
-            if len(_operator_auth_failure_times) >= OPERATOR_AUTH_RATE_LIMIT_MAX_BUCKETS:
+            if (
+                len(_operator_auth_failure_times)
+                >= OPERATOR_AUTH_RATE_LIMIT_MAX_BUCKETS
+            ):
                 return False
             request_times = deque()
             _operator_auth_failure_times[source_key] = request_times
@@ -132,7 +143,10 @@ def record_operator_auth_failure(
         request_times = _operator_auth_failure_times.get(source_key)
         if request_times is None:
             _prune_operator_auth_failure_buckets(cutoff=cutoff)
-            if len(_operator_auth_failure_times) >= OPERATOR_AUTH_RATE_LIMIT_MAX_BUCKETS:
+            if (
+                len(_operator_auth_failure_times)
+                >= OPERATOR_AUTH_RATE_LIMIT_MAX_BUCKETS
+            ):
                 _operator_auth_failure_times.popitem(last=False)
             request_times = deque()
             _operator_auth_failure_times[source_key] = request_times
@@ -158,7 +172,10 @@ def consume_operator_auth_failure_budget(
         request_times = _operator_auth_failure_times.get(source_key)
         if request_times is None:
             _prune_operator_auth_failure_buckets(cutoff=cutoff)
-            if len(_operator_auth_failure_times) >= OPERATOR_AUTH_RATE_LIMIT_MAX_BUCKETS:
+            if (
+                len(_operator_auth_failure_times)
+                >= OPERATOR_AUTH_RATE_LIMIT_MAX_BUCKETS
+            ):
                 return False
             request_times = deque()
             _operator_auth_failure_times[source_key] = request_times
@@ -179,9 +196,7 @@ def _operator_auth_redis_url(request: Request) -> str | None:
     return redis_url
 
 
-def _is_operator_auth_allowed_in_redis(
-    *, request: Request, redis_url: str
-) -> bool:
+def _is_operator_auth_allowed_in_redis(*, request: Request, redis_url: str) -> bool:
     from redis import Redis
 
     redis = Redis.from_url(redis_url)
@@ -197,9 +212,7 @@ def _is_operator_auth_allowed_in_redis(
     return int(failure_count) < OPERATOR_AUTH_RATE_LIMIT_MAX_FAILURES
 
 
-def _record_operator_auth_failure_in_redis(
-    *, request: Request, redis_url: str
-) -> None:
+def _record_operator_auth_failure_in_redis(*, request: Request, redis_url: str) -> None:
     from redis import Redis
 
     redis = Redis.from_url(redis_url)

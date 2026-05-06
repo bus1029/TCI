@@ -9,6 +9,7 @@
       <a href="/connections?workspaceId={{ workspace_id }}">목록으로 돌아가기</a>
 
       <h1>저장소 연결 상세</h1>
+      <p>워크스페이스: {{ workspace_id }}</p>
       <p>{{ connection.provider }} / {{ connection.transport }}</p>
       <p>{{ connection.remoteUrl }}</p>
       <p>상태: {{ connection.status }}</p>
@@ -24,6 +25,15 @@
           >수집 범위 설정</a
         >
       </p>
+
+      <section>
+        <h2>연결 출처</h2>
+        <p>{{ connection.origin.message }}</p>
+        {% if connection.origin.kind == "legacy_unassigned" %}
+        <p>호환성 확인 필요</p>
+        {% endif %}
+        <p>호환성 상태: {{ connection.origin.compatibilityState }}</p>
+      </section>
 
       <section>
         <h2>최근 스냅샷 상태</h2>
@@ -91,9 +101,13 @@
 
       <section>
         <h2>추적성 패널</h2>
+        {% if connection.traceability.planningInputReference %}
         <p>승인된 스펙: {{ connection.traceability.planningInputReference.approvedSpecPath }}</p>
         <p>승인된 계획: {{ connection.traceability.planningInputReference.approvedPlanPath }}</p>
         <p>계획 입력 참조: {{ connection.traceability.planningInputReference.id }}</p>
+        {% else %}
+        <p>새 워크스페이스 기반 연결에는 planning/spec/plan trace가 저장되지 않습니다.</p>
+        {% endif %}
         <p>활성 수집 규칙: {{ connection.traceability.activeScopeRuleVersionId or "없음" }}</p>
         <p>최신 스냅샷: {{ connection.traceability.latestSnapshotId or "없음" }}</p>
       </section>

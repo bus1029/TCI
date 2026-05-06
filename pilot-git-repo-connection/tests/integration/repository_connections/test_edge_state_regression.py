@@ -20,11 +20,11 @@ from tests.support.repository_connection_testkit import (
 def test_reauth_required_connection_preserves_operator_guidance(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     store.connections[connection_id].status = RepositoryConnectionStatus.REAUTH_REQUIRED
@@ -33,7 +33,9 @@ def test_reauth_required_connection_preserves_operator_guidance(tmp_path) -> Non
         f"/api/repository-connections/{connection_id}/snapshots",
         json={"reason": "manual_initial"},
     )
-    detail_response = client.get(f"/connections/{connection_id}?workspaceId={workspace_id}")
+    detail_response = client.get(
+        f"/connections/{connection_id}?workspaceId={workspace_id}"
+    )
 
     assert snapshot_response.status_code == 409
     assert snapshot_response.json() == {
@@ -50,11 +52,11 @@ def test_reauth_required_connection_preserves_operator_guidance(tmp_path) -> Non
 def test_ref_missing_connection_preserves_operator_guidance(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     store.connections[connection_id].status = RepositoryConnectionStatus.REF_MISSING
@@ -63,7 +65,9 @@ def test_ref_missing_connection_preserves_operator_guidance(tmp_path) -> None:
         f"/api/repository-connections/{connection_id}/snapshots",
         json={"reason": "manual_initial"},
     )
-    detail_response = client.get(f"/connections/{connection_id}?workspaceId={workspace_id}")
+    detail_response = client.get(
+        f"/connections/{connection_id}?workspaceId={workspace_id}"
+    )
 
     assert snapshot_response.status_code == 409
     assert snapshot_response.json() == {
@@ -80,11 +84,11 @@ def test_ref_missing_connection_preserves_operator_guidance(tmp_path) -> None:
 def test_previous_secret_delivery_is_rejected_after_grace_expiry(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     grace_until = datetime.now(tz=UTC) - timedelta(minutes=5)
@@ -109,7 +113,9 @@ def test_previous_secret_delivery_is_rejected_after_grace_expiry(tmp_path) -> No
         content=serialize_github_webhook_payload(payload),
         headers=headers,
     )
-    detail_response = client.get(f"/connections/{connection_id}?workspaceId={workspace_id}")
+    detail_response = client.get(
+        f"/connections/{connection_id}?workspaceId={workspace_id}"
+    )
     events_response = client.get(
         f"/connections/{connection_id}/events?workspaceId={workspace_id}"
     )
@@ -131,14 +137,16 @@ def test_bad_replay_does_not_overwrite_last_processed_event_or_health(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
-    seed_active_webhook_secret(store, connection_id=connection_id, secret="current-secret")
+    seed_active_webhook_secret(
+        store, connection_id=connection_id, secret="current-secret"
+    )
     store.resolved_ref_commits["main"] = "d" * 40
     payload = build_github_push_payload(after_sha="d" * 40)
     good_headers = build_github_webhook_headers(
@@ -170,7 +178,9 @@ def test_bad_replay_does_not_overwrite_last_processed_event_or_health(
         content=serialize_github_webhook_payload(payload),
         headers=bad_headers,
     )
-    detail_response = client.get(f"/connections/{connection_id}?workspaceId={workspace_id}")
+    detail_response = client.get(
+        f"/connections/{connection_id}?workspaceId={workspace_id}"
+    )
     events_response = client.get(
         f"/connections/{connection_id}/events?workspaceId={workspace_id}"
     )

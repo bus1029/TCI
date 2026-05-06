@@ -10,7 +10,10 @@ from sqlalchemy.exc import IntegrityError
 from tci.api.problem_details import ProblemCode
 from tci.domain.services.repository_connection_support import (
     RepositoryConnectionProblem,
+    bind_git_credential,
     decrypt_secret_from_storage,
+    mark_connection_reauth_required,
+    require_active_operation_credential_for_connection,
 )
 from tci.domain.services.repository_event_processing import (
     ProviderEventDecisionInput,
@@ -219,6 +222,9 @@ def process_gitlab_event(command: ProcessGitLabEventCommand, *, dependencies):
         sync_run_repository = dependencies.repository_sync_run_repository_factory(
             session
         )
+        credential_repository = dependencies.credential_revision_repository_factory(
+            session
+        )
 
         connection = connection_repository.get_any(connection_id=command.connection_id)
         if connection is None:
@@ -289,11 +295,6 @@ def process_gitlab_event(command: ProcessGitLabEventCommand, *, dependencies):
             connection_id=command.connection_id,
             target_key=parsed_event.target_key,
         )
-        resolved_current_head_sha = _resolve_current_head_sha(
-            connection=connection,
-            parsed_event=parsed_event,
-            dependencies=dependencies,
-        )
         existing_delivery = event_repository.get_by_delivery_id_for_update(
             connection_id=command.connection_id,
             provider_delivery_id=command.provider_delivery_id,
@@ -304,6 +305,20 @@ def process_gitlab_event(command: ProcessGitLabEventCommand, *, dependencies):
             sync_run_repository=sync_run_repository,
             connection_id=command.connection_id,
         )
+        latest_cursor_head_sha = (
+            None if latest_cursor is None else latest_cursor.latest_head_sha
+        )
+        is_non_retryable_duplicate = (
+            existing_delivery is not None and not retryable_delivery
+        )
+        is_unsupported_fork_merge_request = _is_unsupported_fork_merge_request(
+            connection=connection,
+            parsed_event=parsed_event,
+        )
+        is_code_moving = _is_code_moving(
+            parsed_event=parsed_event,
+            latest_cursor_head_sha=latest_cursor_head_sha,
+        )
         decision = decide_provider_event_processing(
             ProviderEventDecisionInput(
                 provider_event_type=_effective_provider_event_type(
@@ -313,28 +328,56 @@ def process_gitlab_event(command: ProcessGitLabEventCommand, *, dependencies):
                 provider_action=parsed_event.provider_action,
                 target_head_sha=parsed_event.target_head_sha,
                 delivery_already_seen=existing_delivery is not None,
-                latest_cursor_head_sha=(
-                    None if latest_cursor is None else latest_cursor.latest_head_sha
-                ),
-                resolved_current_head_sha=resolved_current_head_sha,
+                latest_cursor_head_sha=latest_cursor_head_sha,
+                resolved_current_head_sha=None,
                 retryable_delivery=retryable_delivery,
-                is_code_moving=_is_code_moving(
-                    parsed_event=parsed_event,
-                    latest_cursor_head_sha=(
-                        None if latest_cursor is None else latest_cursor.latest_head_sha
-                    ),
-                ),
+                is_code_moving=is_code_moving,
             )
         )
-        if connection.status is not RepositoryConnectionStatus.ACTIVE:
+        if (
+            is_non_retryable_duplicate
+            or decision.processing_decision in {"record_only", "duplicate_head"}
+            or connection.status is not RepositoryConnectionStatus.ACTIVE
+            or is_unsupported_fork_merge_request
+        ):
+            resolved_current_head_sha = None
+        else:
+            operation_credential = _load_operation_credential_for_event(
+                connection=connection,
+                parsed_event=parsed_event,
+                credential_repository=credential_repository,
+                dependencies=dependencies,
+            )
+            resolved_current_head_sha = _resolve_current_head_sha(
+                connection=connection,
+                parsed_event=parsed_event,
+                operation_credential=operation_credential,
+                dependencies=dependencies,
+            )
+            decision = decide_provider_event_processing(
+                ProviderEventDecisionInput(
+                    provider_event_type=_effective_provider_event_type(
+                        connection=connection,
+                        parsed_event=parsed_event,
+                    ),
+                    provider_action=parsed_event.provider_action,
+                    target_head_sha=parsed_event.target_head_sha,
+                    delivery_already_seen=existing_delivery is not None,
+                    latest_cursor_head_sha=latest_cursor_head_sha,
+                    resolved_current_head_sha=resolved_current_head_sha,
+                    retryable_delivery=retryable_delivery,
+                    is_code_moving=is_code_moving,
+                )
+            )
+        if (
+            connection.status is not RepositoryConnectionStatus.ACTIVE
+            and not is_non_retryable_duplicate
+        ):
             decision = ProviderEventDecisionOutcome(
                 processing_decision="record_only",
                 should_queue_sync=False,
             )
-        if _is_unsupported_fork_merge_request(
-            connection=connection,
-            parsed_event=parsed_event,
-        ):
+        if is_unsupported_fork_merge_request and not is_non_retryable_duplicate:
             decision = ProviderEventDecisionOutcome(
                 processing_decision="record_only",
                 should_queue_sync=False,
@@ -712,8 +755,7 @@ def _pending_dispatch_is_stale(dispatch_enqueued_at: datetime) -> bool:
     if dispatch_enqueued_at.tzinfo is None:
         dispatch_enqueued_at = dispatch_enqueued_at.replace(tzinfo=UTC)
     return (
-        datetime.now(tz=UTC) - dispatch_enqueued_at
-        > PENDING_SYNC_DISPATCH_RETRY_AFTER
+        datetime.now(tz=UTC) - dispatch_enqueued_at > PENDING_SYNC_DISPATCH_RETRY_AFTER
     )
 
 
@@ -1054,16 +1096,70 @@ def _target_kind_for(event_name: str):
     return EventTargetKind.NONE
 
 
-def _resolve_current_head_sha(*, connection, parsed_event, dependencies) -> str | None:
+def _load_operation_credential_for_event(
+    *,
+    connection,
+    parsed_event,
+    credential_repository,
+    dependencies,
+):
     if parsed_event.target_head_sha is None or parsed_event.requested_ref_name is None:
         return None
     try:
-        resolved_ref = dependencies.git_ref_resolver.resolve(
-            remote_url=connection.remote_url,
-            ref_type=_resolver_ref_type(parsed_event=parsed_event),
-            ref_name=parsed_event.requested_ref_name,
+        return require_active_operation_credential_for_connection(
+            credential_repository=credential_repository,
+            connection_id=connection.id,
         )
-    except (GitConnectionAuthError, GitRefNotFoundError, RuntimeError):
+    except RepositoryConnectionProblem:
+        mark_connection_reauth_required(
+            dependencies=dependencies,
+            workspace_id=connection.workspace_id,
+            connection_id=connection.id,
+        )
+        raise
+
+
+def _resolve_current_head_sha(
+    *, connection, parsed_event, operation_credential, dependencies
+) -> str | None:
+    if parsed_event.target_head_sha is None or parsed_event.requested_ref_name is None:
+        return None
+    if operation_credential is None:
+        return None
+    try:
+        credential_secret = decrypt_secret_from_storage(
+            operation_credential.encrypted_secret,
+            settings=dependencies.settings,
+        )
+        with bind_git_credential(
+            remote_url=connection.remote_url,
+            transport=connection.transport,
+            credential_type=operation_credential.credential_type,
+            credential_secret=credential_secret,
+        ) as credential_bound_remote_url:
+            resolved_ref = dependencies.git_ref_resolver.resolve(
+                remote_url=credential_bound_remote_url,
+                ref_type=_resolver_ref_type(parsed_event=parsed_event),
+                ref_name=parsed_event.requested_ref_name,
+            )
+    except RepositoryConnectionProblem:
+        mark_connection_reauth_required(
+            dependencies=dependencies,
+            workspace_id=connection.workspace_id,
+            connection_id=connection.id,
+        )
+        raise
+    except GitConnectionAuthError as error:
+        mark_connection_reauth_required(
+            dependencies=dependencies,
+            workspace_id=connection.workspace_id,
+            connection_id=connection.id,
+        )
+        raise RepositoryConnectionProblem(
+            ProblemCode.CONNECTION_AUTH_FAILED,
+            "저장소 자격 증명 검증에 실패했습니다.",
+        ) from error
+    except (GitRefNotFoundError, RuntimeError):
         return None
     return resolved_ref.commit_sha
 

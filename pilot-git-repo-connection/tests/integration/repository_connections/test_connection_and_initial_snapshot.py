@@ -8,12 +8,15 @@ import subprocess
 import sys
 import uuid
 
+from fastapi import FastAPI
 import pytest
 from sqlalchemy.engine import make_url
 
+from tci.domain.services.list_repository_candidates import RepositoryCandidateProjection
 from tci.infrastructure.persistence.credential_revision_repository import (
     CredentialRevisionRepository,
 )
+from tci.infrastructure.persistence.models import RepositoryProvider
 from tci.infrastructure.persistence.planning_input_reference_repository import (
     PlanningInputReferenceRepository,
 )
@@ -23,6 +26,7 @@ from tci.infrastructure.persistence.repository_connection_repository import (
 from tci.infrastructure.git.git_ref_resolver import GitCommandResult, GitRefResolver
 from tests.support.repository_connection_testkit import (
     create_connection_payload,
+    create_obsolete_planning_connection_payload,
     create_planning_input_reference_payload,
     create_test_client,
     seed_planning_input_reference,
@@ -32,6 +36,21 @@ from tests.support.repository_connection_testkit import (
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
+class StaticCandidateSource:
+    def __init__(self, candidates: tuple[RepositoryCandidateProjection, ...]) -> None:
+        self._candidates = candidates
+
+    def list_candidates(self, *, workspace_id: uuid.UUID, provider):
+        del workspace_id
+        if provider is None:
+            return self._candidates
+        return tuple(
+            candidate
+            for candidate in self._candidates
+            if candidate.provider is provider
+        )
+
+
 def _upgrade_test_database_to_head(database_url: str) -> None:
     if os.getenv("TCI_ALLOW_DESTRUCTIVE_MIGRATION_TESTS") != "1":
         pytest.skip("명시적 승인 없이 실DB 마이그레이션 테스트를 실행하지 않습니다.")
@@ -39,10 +58,14 @@ def _upgrade_test_database_to_head(database_url: str) -> None:
         pytest.skip("실DB 마이그레이션 테스트는 전체 DSN 확인값이 필요합니다.")
     expected_database_name = os.getenv("TCI_MIGRATION_TEST_DATABASE_NAME")
     if not expected_database_name:
-        pytest.skip("실DB 마이그레이션 테스트는 전용 데이터베이스 이름 확인값이 필요합니다.")
+        pytest.skip(
+            "실DB 마이그레이션 테스트는 전용 데이터베이스 이름 확인값이 필요합니다."
+        )
     database_name = make_url(database_url).database or ""
     if database_name != expected_database_name:
-        pytest.skip("TCI_MIGRATION_TEST_DATABASE_URL이 승인된 전용 데이터베이스가 아닙니다.")
+        pytest.skip(
+            "TCI_MIGRATION_TEST_DATABASE_URL이 승인된 전용 데이터베이스가 아닙니다."
+        )
 
     env = os.environ.copy()
     env["TCI_DATABASE_URL"] = database_url
@@ -71,11 +94,11 @@ def test_create_connection_with_readonly_credential_creates_active_connection(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
 
     assert response.status_code == 201
@@ -104,7 +127,7 @@ def test_planning_input_reference_create_bootstraps_connection_creation_from_api
     reference_id = uuid.UUID(reference_response.json()["id"])
     connection_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference_id),
+        json=create_connection_payload(),
     )
 
     assert reference_response.status_code == 201
@@ -119,7 +142,9 @@ def test_planning_input_reference_create_bootstraps_connection_creation_with_rea
 ) -> None:
     database_url = os.getenv("TCI_MIGRATION_TEST_DATABASE_URL")
     if not database_url:
-        pytest.skip("TCI_MIGRATION_TEST_DATABASE_URL이 없어 실DB bootstrap 테스트를 건너뜁니다.")
+        pytest.skip(
+            "TCI_MIGRATION_TEST_DATABASE_URL이 없어 실DB bootstrap 테스트를 건너뜁니다."
+        )
     _upgrade_test_database_to_head(database_url)
 
     workspace_id = uuid.uuid4()
@@ -142,7 +167,7 @@ def test_planning_input_reference_create_bootstraps_connection_creation_with_rea
     reference_id = uuid.UUID(reference_payload["id"])
     connection_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference_id),
+        json=create_connection_payload(),
     )
 
     assert reference_payload == {
@@ -179,14 +204,16 @@ def test_planning_input_reference_create_bootstraps_connection_creation_with_rea
     assert credential is not None
 
 
-def test_connection_detail_exposes_traceability_and_placeholder_summaries(tmp_path) -> None:
+def test_connection_detail_exposes_traceability_and_placeholder_summaries(
+    tmp_path,
+) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -194,7 +221,8 @@ def test_connection_detail_exposes_traceability_and_placeholder_summaries(tmp_pa
 
     assert detail_response.status_code == 200
     detail = detail_response.json()
-    assert detail["traceability"]["planningInputReference"]["id"] == str(reference.id)
+    assert detail["traceability"]["planningInputReference"] is None
+    assert detail["origin"]["kind"] == "workspace_repository"
     assert detail["traceability"]["latestSnapshotId"] is None
     assert detail["lastSuccessfulSnapshotAt"] is None
     assert detail["lastFailedSyncAt"] is None
@@ -207,11 +235,11 @@ def test_default_ref_change_updates_future_target_without_erasing_existing_state
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -228,14 +256,16 @@ def test_default_ref_change_updates_future_target_without_erasing_existing_state
     assert detail_response.json()["traceability"]["latestSnapshotId"] is None
 
 
-def test_default_ref_change_reuses_stored_credential_for_ref_validation(tmp_path) -> None:
+def test_default_ref_change_reuses_stored_credential_for_ref_validation(
+    tmp_path,
+) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     store.resolver_requires_bound_credential = True
@@ -250,16 +280,127 @@ def test_default_ref_change_reuses_stored_credential_for_ref_validation(tmp_path
     assert store.last_resolved_remote_url == "https://github.com/acme/sample-repo.git"
 
 
+def test_candidate_selected_connection_reuses_manual_duplicate_precheck(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    manual_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    assert manual_response.status_code == 201
+    store.last_resolved_remote_url = None
+    app = client.app
+    assert isinstance(app, FastAPI)
+    object.__setattr__(
+        app.state.dependencies,
+        "repository_candidate_source",
+        StaticCandidateSource(
+            (
+                RepositoryCandidateProjection(
+                    id="github:acme/sample-repo",
+                    workspace_id=workspace_id,
+                    provider=RepositoryProvider.GITHUB_CLOUD,
+                    provider_scope="github:acme",
+                    remote_url="https://github.com/acme/sample-repo.git",
+                    repository_owner="acme",
+                    repository_name="sample-repo",
+                    provider_project_path="acme/sample-repo",
+                    access_status="available",
+                ),
+            )
+        ),
+    )
+
+    candidate_payload = create_connection_payload()
+    candidate_payload["candidateId"] = "github:acme/sample-repo"
+    duplicate_response = client.post(
+        "/api/repository-connections",
+        json=candidate_payload,
+    )
+
+    assert duplicate_response.status_code == 400
+    assert duplicate_response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "Repository connection already exists for this workspace.",
+    }
+    assert store.last_resolved_remote_url is None
+
+
+def test_github_duplicate_precheck_normalizes_repository_path_case(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    mixed_case_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            remote_url="https://github.com/Acme/Sample-Repo.git",
+        ),
+    )
+    assert mixed_case_response.status_code == 201
+    store.last_resolved_remote_url = None
+
+    duplicate_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            remote_url="https://github.com/acme/sample-repo.git",
+        ),
+    )
+
+    assert duplicate_response.status_code == 400
+    assert duplicate_response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "Repository connection already exists for this workspace.",
+    }
+    assert store.last_resolved_remote_url is None
+
+
+def test_gitlab_duplicate_precheck_normalizes_default_https_port(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    default_port_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com:443/group/sample-repo.git",
+        ),
+    )
+    assert default_port_response.status_code == 201
+    store.last_resolved_remote_url = None
+
+    duplicate_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com/group/sample-repo.git",
+        ),
+    )
+
+    assert duplicate_response.status_code == 400
+    assert duplicate_response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "Repository connection already exists for this workspace.",
+    }
+    assert store.last_resolved_remote_url is None
+
+
 def test_verify_endpoint_accepts_known_connection_for_followup_worker_execution(
     tmp_path,
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -271,7 +412,9 @@ def test_verify_endpoint_accepts_known_connection_for_followup_worker_execution(
     }
 
 
-def test_create_connection_rejects_planning_input_from_other_workspace(tmp_path) -> None:
+def test_create_connection_rejects_planning_input_from_other_workspace(
+    tmp_path,
+) -> None:
     workspace_id = uuid.uuid4()
     other_workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
@@ -279,14 +422,40 @@ def test_create_connection_rejects_planning_input_from_other_workspace(tmp_path)
 
     response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_obsolete_planning_connection_payload(
+            planning_input_reference_id=reference.id,
+        ),
     )
 
     assert response.status_code == 400
     assert response.json() == {
         "code": "INVALID_INPUT",
-        "message": "planningInputReferenceId가 유효하지 않습니다.",
+        "message": "새 저장소 연결 생성 요청은 planning/spec/plan 참조 필드를 받을 수 없습니다.",
     }
+
+
+def test_create_connection_validation_error_does_not_echo_secret(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, _store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    response = client.post(
+        "/api/repository-connections",
+        json={
+            "provider": "github_cloud",
+            "remoteUrl": "https://github.com/acme/sample-repo.git",
+            "transport": "https",
+            "defaultRefType": "branch",
+            "defaultRefName": "main",
+            "credential": {
+                "type": "https_pat",
+                "secret": "",
+                "fingerprint": "top-secret-fingerprint",
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert "top-secret-fingerprint" not in response.text
 
 
 def test_connection_detail_reflects_latest_snapshot_after_manual_initial_snapshot(
@@ -303,11 +472,11 @@ def test_connection_detail_reflects_latest_snapshot_after_manual_initial_snapsho
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     sync_run = create_initial_snapshot(
@@ -382,12 +551,11 @@ def test_connection_detail_reflects_latest_snapshot_after_manual_initial_snapsho
             "includedBy": "default_policy",
         }
     ]
-    assert snapshot_payload["traceability"]["planningInputReference"]["id"] == str(
-        reference.id
+    assert snapshot_payload["traceability"]["planningInputReference"] is None
+    assert (
+        snapshot_payload["scopeRuleVersionId"]
+        == detail["traceability"]["activeScopeRuleVersionId"]
     )
-    assert snapshot_payload["scopeRuleVersionId"] == detail["traceability"][
-        "activeScopeRuleVersionId"
-    ]
 
 
 def test_snapshot_build_uses_requested_ref_captured_when_sync_run_was_created(
@@ -408,11 +576,11 @@ def test_snapshot_build_uses_requested_ref_captured_when_sync_run_was_created(
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     sync_run = create_initial_snapshot(
@@ -458,7 +626,7 @@ def test_snapshot_build_with_real_git_ref_resolver_treats_sync_run_branch_as_bra
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     captured_commands: list[Sequence[str]] = []
 
     def runner(command: Sequence[str]) -> GitCommandResult:
@@ -472,7 +640,7 @@ def test_snapshot_build_with_real_git_ref_resolver_treats_sync_run_branch_as_bra
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     sync_run = create_initial_snapshot(
@@ -513,15 +681,17 @@ def test_snapshot_build_cleans_up_archive_when_manifest_write_fails(tmp_path) ->
         CreateInitialSnapshotCommand,
         create_initial_snapshot,
     )
-    from tci.domain.services.repository_connection_support import RepositoryConnectionProblem
+    from tci.domain.services.repository_connection_support import (
+        RepositoryConnectionProblem,
+    )
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     sync_run = create_initial_snapshot(
@@ -574,11 +744,11 @@ def test_snapshot_build_reuses_existing_result_for_succeeded_sync_run(tmp_path) 
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     sync_run = create_initial_snapshot(

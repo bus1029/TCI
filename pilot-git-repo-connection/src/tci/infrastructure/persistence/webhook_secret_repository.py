@@ -72,7 +72,9 @@ class WebhookSecretRepository:
                     & (WebhookSecretRevision.grace_until >= as_of),
                 ),
             )
-            .order_by(WebhookSecretRevision.created_at.desc(), WebhookSecretRevision.id.desc())
+            .order_by(
+                WebhookSecretRevision.created_at.desc(), WebhookSecretRevision.id.desc()
+            )
         )
         return [
             WebhookSecretCandidate(
@@ -91,9 +93,12 @@ class WebhookSecretRepository:
             select(WebhookSecretRevision)
             .where(
                 WebhookSecretRevision.connection_id == connection_id,
-                WebhookSecretRevision.status == WebhookSecretRevisionStatus.PREVIOUS_GRACE,
+                WebhookSecretRevision.status
+                == WebhookSecretRevisionStatus.PREVIOUS_GRACE,
             )
-            .order_by(WebhookSecretRevision.created_at.desc(), WebhookSecretRevision.id.desc())
+            .order_by(
+                WebhookSecretRevision.created_at.desc(), WebhookSecretRevision.id.desc()
+            )
         )
         return self._session.scalar(statement)
 
@@ -123,7 +128,9 @@ class WebhookSecretRepository:
         return revisions
 
     def _require(self, *, revision_id: uuid.UUID) -> WebhookSecretRevision:
-        statement = select(WebhookSecretRevision).where(WebhookSecretRevision.id == revision_id)
+        statement = select(WebhookSecretRevision).where(
+            WebhookSecretRevision.id == revision_id
+        )
         revision = self._session.scalar(statement)
         if revision is None:
             raise LookupError("webhook secret revision을 찾을 수 없습니다.")

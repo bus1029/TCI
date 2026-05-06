@@ -28,12 +28,8 @@ def test_repository_ingestion_tasks_expose_stable_task_names_and_queue_names() -
         VERIFY_REPOSITORY_CONNECTION_TASK_NAME: {
             "queue": REPOSITORY_INGESTION_QUEUE_NAME
         },
-        RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME: {
-            "queue": REPOSITORY_INGESTION_QUEUE_NAME
-        },
-        RUN_WEBHOOK_SYNC_TASK_NAME: {
-            "queue": REPOSITORY_INGESTION_QUEUE_NAME
-        },
+        RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME: {"queue": REPOSITORY_INGESTION_QUEUE_NAME},
+        RUN_WEBHOOK_SYNC_TASK_NAME: {"queue": REPOSITORY_INGESTION_QUEUE_NAME},
     }
 
 
@@ -71,7 +67,11 @@ def test_verify_repository_connection_task_delegates_to_domain_service(
         tasks,
         "_load_verify_service",
         lambda: (
-            type("VerifyCommand", (), {"__init__": lambda self, **kwargs: self.__dict__.update(kwargs)}),
+            type(
+                "VerifyCommand",
+                (),
+                {"__init__": lambda self, **kwargs: self.__dict__.update(kwargs)},
+            ),
             fake_verify,
         ),
     )
@@ -93,7 +93,9 @@ def test_verify_repository_connection_task_delegates_to_domain_service(
     }
 
 
-def test_run_manual_snapshot_sync_task_delegates_to_snapshot_builder(monkeypatch) -> None:
+def test_run_manual_snapshot_sync_task_delegates_to_snapshot_builder(
+    monkeypatch,
+) -> None:
     from tci.infrastructure.queue import repository_ingestion_tasks as tasks
 
     workspace_id = uuid.uuid4()
@@ -204,10 +206,10 @@ def test_run_manual_snapshot_sync_task_marks_sync_run_failed_when_dependency_loa
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     sync_run = create_initial_snapshot(
@@ -264,10 +266,10 @@ def test_run_manual_snapshot_sync_task_marks_sync_run_failed_when_service_loadin
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     sync_run = create_initial_snapshot(
@@ -278,7 +280,9 @@ def test_run_manual_snapshot_sync_task_marks_sync_run_failed_when_service_loadin
         dependencies=client.app.state.dependencies,
     )
 
-    monkeypatch.setattr(tasks, "_build_snapshot_dependencies", lambda: client.app.state.dependencies)
+    monkeypatch.setattr(
+        tasks, "_build_snapshot_dependencies", lambda: client.app.state.dependencies
+    )
     monkeypatch.setattr(
         tasks,
         "_load_build_snapshot_service",
@@ -341,12 +345,16 @@ def test_manual_snapshot_failure_dependencies_builder_only_wires_persistence_pri
         dependencies.repository_connection_repository_factory
         is SentinelConnectionRepository
     )
-    assert dependencies.repository_sync_run_repository_factory is SentinelSyncRunRepository
+    assert (
+        dependencies.repository_sync_run_repository_factory is SentinelSyncRunRepository
+    )
     assert not hasattr(dependencies, "git_ref_resolver")
     assert not hasattr(dependencies, "git_mirror_manager")
 
 
-def test_manual_snapshot_failure_logs_fallback_builder_failure(monkeypatch, caplog) -> None:
+def test_manual_snapshot_failure_logs_fallback_builder_failure(
+    monkeypatch, caplog
+) -> None:
     from tci.infrastructure.queue import repository_ingestion_tasks as tasks
 
     monkeypatch.setattr(

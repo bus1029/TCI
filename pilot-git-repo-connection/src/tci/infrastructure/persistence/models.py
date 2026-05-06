@@ -397,6 +397,12 @@ class RepositoryConnection(Base):
             name="ck_repo_conn_gitlab_project_path_match",
         ),
         CheckConstraint(
+            "provider <> 'github_cloud' "
+            "OR (provider_project_path IS NOT NULL "
+            "AND provider_project_path = repository_owner || '/' || repository_name)",
+            name="ck_repo_conn_github_project_path_present",
+        ),
+        CheckConstraint(
             "mirror_path NOT LIKE '/%' AND mirror_path NOT LIKE '%..%'",
             name="ck_repo_conn_mirror_path_safe",
         ),
@@ -441,6 +447,23 @@ class RepositoryConnection(Base):
             "last_processed_event_id",
         ),
         Index("ix_repo_conn_plan_input_ref_id", "planning_input_reference_id"),
+        Index(
+            "uq_repo_conn_workspace_github_repo",
+            "workspace_id",
+            "provider",
+            "provider_project_path",
+            unique=True,
+            postgresql_where=text("provider = 'github_cloud'"),
+        ),
+        Index(
+            "uq_repo_conn_workspace_gitlab_repo",
+            "workspace_id",
+            "provider",
+            "provider_instance_url",
+            "provider_project_path",
+            unique=True,
+            postgresql_where=text("provider = 'gitlab_self_managed'"),
+        ),
         ForeignKeyConstraint(
             ["workspace_id", "planning_input_reference_id"],
             ["planning_input_references.workspace_id", "planning_input_references.id"],
@@ -450,9 +473,9 @@ class RepositoryConnection(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid(), nullable=False)
-    planning_input_reference_id: Mapped[uuid.UUID] = mapped_column(
+    planning_input_reference_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("planning_input_references.id", name="fk_repo_conn_plan_input_id"),
-        nullable=False,
+        nullable=True,
     )
     provider: Mapped[RepositoryProvider] = mapped_column(
         sql_enum(RepositoryProvider, name="repository_provider"),
@@ -558,7 +581,7 @@ class RepositoryConnection(Base):
         onupdate=func.now(),
     )
 
-    planning_input_reference: Mapped[PlanningInputReference] = relationship(
+    planning_input_reference: Mapped[PlanningInputReference | None] = relationship(
         back_populates="repository_connections",
         foreign_keys=[planning_input_reference_id],
     )
@@ -726,9 +749,9 @@ class CollectionScopeRuleVersion(Base):
         ForeignKey("repository_connections.id", name="fk_scope_rule_conn_id"),
         nullable=False,
     )
-    planning_input_reference_id: Mapped[uuid.UUID] = mapped_column(
+    planning_input_reference_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("planning_input_references.id", name="fk_scope_rule_plan_input_id"),
-        nullable=False,
+        nullable=True,
     )
     include_paths: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
@@ -769,7 +792,7 @@ class CollectionScopeRuleVersion(Base):
         back_populates="scope_rule_versions",
         foreign_keys=[connection_id],
     )
-    planning_input_reference: Mapped[PlanningInputReference] = relationship(
+    planning_input_reference: Mapped[PlanningInputReference | None] = relationship(
         back_populates="scope_rule_versions"
     )
     snapshots: Mapped[list[CodeSnapshot]] = relationship(

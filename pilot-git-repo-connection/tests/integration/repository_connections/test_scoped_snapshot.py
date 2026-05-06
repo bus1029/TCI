@@ -34,7 +34,7 @@ def _dependencies(client) -> Any:
 def test_scoped_snapshot_stores_filtered_files_and_scope_version(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     store.mirror_snapshot_entries = (
         ("src/main.py", b"print('hello')\n"),
         ("src/notes.txt", b"draft\n"),
@@ -44,7 +44,7 @@ def test_scoped_snapshot_stores_filtered_files_and_scope_version(tmp_path) -> No
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
 
@@ -97,12 +97,12 @@ def test_scoped_snapshot_stores_filtered_files_and_scope_version(tmp_path) -> No
 def test_scoped_snapshot_fails_when_scope_rule_excludes_everything(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     store.mirror_snapshot_entries = (("src/main.py", b"print('hello')\n"),)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
 
@@ -150,12 +150,12 @@ def test_scoped_snapshot_reports_saved_default_equivalent_scope_as_scope_rule(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     store.mirror_snapshot_entries = ()
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
 
@@ -200,12 +200,12 @@ def test_first_snapshot_failure_persists_default_scope_rule_for_traceability(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     store.mirror_snapshot_entries = ()
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     assert store.connections[connection_id].active_scope_rule_version_id is None
@@ -244,7 +244,7 @@ def test_first_snapshot_refilters_when_scope_rule_is_saved_during_build(
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
     dependencies = _dependencies(client)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     store.mirror_snapshot_entries = (
         ("src/main.py", b"print('hello')\n"),
         ("docs/guide.md", b"# Guide\n"),
@@ -252,7 +252,7 @@ def test_first_snapshot_refilters_when_scope_rule_is_saved_during_build(
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     seeded_scope = None
@@ -311,12 +311,12 @@ def test_first_snapshot_rereads_binary_entries_when_scope_saved_during_build(
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
     dependencies = _dependencies(client)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     store.mirror_snapshot_entries = (("assets/logo.bin", b"\x00binary"),)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     seeded_scope = None
@@ -374,12 +374,12 @@ def test_first_snapshot_retries_when_scope_changes_before_empty_failure_is_recor
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
     dependencies = _dependencies(client)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     store.mirror_snapshot_entries = (("assets/logo.bin", b"\x00binary"),)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     original_factory = dependencies.repository_connection_repository_factory
@@ -448,7 +448,7 @@ def test_snapshot_retries_when_existing_scope_changes_before_metadata_write(
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
     dependencies = _dependencies(client)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     store.mirror_snapshot_entries = (
         ("src/main.py", b"print('hello')\n"),
         ("docs/guide.md", b"# Guide\n"),
@@ -456,7 +456,7 @@ def test_snapshot_retries_when_existing_scope_changes_before_metadata_write(
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     original_scope = seed_active_scope_rule_version(

@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 from sqlalchemy.exc import OperationalError
 
+from tci.api.problem_details import ProblemCode
+from tci.infrastructure.git.git_readonly_validator import ReadonlyProbeResult
 from tci.infrastructure.persistence.models import (
     RefType,
     RepositoryConnectionStatus,
@@ -28,12 +30,11 @@ from tests.support.repository_connection_testkit import (
 def test_create_connection_rejects_unsupported_provider(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_cloud",
         ),
     )
@@ -48,12 +49,12 @@ def test_create_connection_rejects_unsupported_provider(tmp_path) -> None:
 def test_repository_connection_routes_require_workspace_header(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     client.headers.pop("X-TCI-Workspace-Id")
 
     response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
 
     assert response.status_code == 400
@@ -66,12 +67,12 @@ def test_repository_connection_routes_require_workspace_header(tmp_path) -> None
 def test_repository_management_routes_require_operator_token(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     client.headers.pop("X-TCI-Operator-Token")
 
     response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
 
     assert response.status_code == 401
@@ -81,16 +82,17 @@ def test_repository_management_routes_require_operator_token(tmp_path) -> None:
 def test_repository_management_routes_accept_bearer_operator_token(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     client.headers.pop("X-TCI-Operator-Token")
     client.headers.update({"Authorization": "Bearer test-operator-token"})
 
     response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
 
     assert response.status_code == 201
+    assert response.json()["origin"]["kind"] == "workspace_repository"
 
 
 def test_repository_management_routes_accept_lowercase_bearer_operator_token(
@@ -98,13 +100,13 @@ def test_repository_management_routes_accept_lowercase_bearer_operator_token(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     client.headers.pop("X-TCI-Operator-Token")
     client.headers.update({"Authorization": "bearer test-operator-token"})
 
     response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
 
     assert response.status_code == 201
@@ -115,16 +117,68 @@ def test_repository_management_routes_fail_closed_when_operator_token_unconfigur
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     object.__setattr__(client.app.state.settings, "operator_api_token", None)
 
     response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
 
     assert response.status_code == 503
     assert response.json() == {"detail": "운영 API 토큰이 설정되지 않았습니다."}
+
+
+def test_create_connection_rejects_write_capable_credential_without_row(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    store.readonly_probe_result = ReadonlyProbeResult(
+        is_read_only=False,
+        problem_code=ProblemCode.READ_WRITE_CREDENTIAL_NOT_ALLOWED,
+        detail="쓰기 가능한 자격 증명입니다.",
+    )
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(credential_secret="top-secret-token"),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "READ_WRITE_CREDENTIAL_NOT_ALLOWED",
+        "message": "쓰기 가능한 자격 증명입니다.",
+    }
+    assert store.connections == {}
+    assert store.credentials == {}
+    assert store.repository_events == {}
+    assert store.sync_runs == {}
+    assert "top-secret-token" not in response.text
+
+
+def test_create_connection_rejects_auth_failed_credential_without_row(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    store.auth_failure_ref_names.add("main")
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(credential_secret="top-secret-token"),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "CONNECTION_AUTH_FAILED",
+        "message": "저장소 자격 증명 검증에 실패했습니다.",
+    }
+    assert store.connections == {}
+    assert store.credentials == {}
+    assert store.repository_events == {}
+    assert store.sync_runs == {}
+    assert "top-secret-token" not in response.text
 
 
 def test_create_planning_input_reference_route_requires_workspace_header(
@@ -322,10 +376,10 @@ def test_openapi_documents_workspace_header_for_repository_connection_routes(
 def test_webhook_secret_route_requires_workspace_header(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     client.headers.pop("X-TCI-Workspace-Id")
@@ -415,12 +469,11 @@ def test_create_gitlab_http_connection_requires_explicit_insecure_opt_in(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="http://192.168.10.20/group/sample-repo.git",
             transport="http",
@@ -446,12 +499,11 @@ def test_create_gitlab_http_connection_accepts_pat_when_explicitly_enabled(
         "/api/planning-input-references",
         json=create_planning_input_reference_payload(workspace_id=workspace_id),
     )
-    reference_id = uuid.UUID(reference_response.json()["id"])
+    uuid.UUID(reference_response.json()["id"])
 
     response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference_id,
             provider="gitlab_self_managed",
             remote_url="http://192.168.10.20/group/sample-repo.git",
             transport="http",
@@ -474,12 +526,11 @@ def test_create_gitlab_http_connection_rejects_ssh_private_key_even_when_enabled
     monkeypatch.setenv("TCI_ALLOW_INSECURE_GITLAB_HTTP", "true")
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="http://192.168.10.20/group/sample-repo.git",
             transport="http",
@@ -506,12 +557,11 @@ def test_create_gitlab_http_connection_honors_allowlist_port_when_enabled(
         "/api/planning-input-references",
         json=create_planning_input_reference_payload(workspace_id=workspace_id),
     )
-    reference_id = uuid.UUID(reference_response.json()["id"])
+    uuid.UUID(reference_response.json()["id"])
 
     response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference_id,
             provider="gitlab_self_managed",
             remote_url="http://192.168.10.20:8080/group/sample-repo.git",
             transport="http",
@@ -530,12 +580,11 @@ def test_create_gitlab_http_connection_rejects_unallowlisted_host_when_enabled(
     monkeypatch.setenv("TCI_ALLOW_INSECURE_GITLAB_HTTP", "true")
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="http://192.168.10.21/group/sample-repo.git",
             transport="http",
@@ -553,12 +602,11 @@ def test_create_gitlab_http_connection_rejects_unallowlisted_host_when_enabled(
 def test_create_github_http_connection_is_rejected_at_api_boundary(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="github_cloud",
             remote_url="http://github.com/acme/sample-repo.git",
             transport="http",
@@ -578,11 +626,11 @@ def test_get_connection_detail_returns_null_last_processed_event_and_traceabilit
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -606,16 +654,16 @@ def test_get_connection_detail_returns_null_last_processed_event_and_traceabilit
         "latestSnapshot": None,
         "latestSyncRun": None,
         "traceability": {
-            "planningInputReference": {
-                "id": str(reference.id),
-                "sourceType": "user_request",
-                "sourceReference": "chat://test",
-                "approvedSpecPath": "specs/001-git-repo-connection/spec.md",
-                "approvedPlanPath": "specs/001-git-repo-connection/plan.md",
-            },
+            "planningInputReference": None,
             "activeScopeRuleVersionId": None,
             "latestEventId": None,
             "latestSnapshotId": None,
+        },
+        "origin": {
+            "kind": "workspace_repository",
+            "hasLegacyPlanningTrace": False,
+            "compatibilityState": "normal",
+            "message": "워크스페이스에서 직접 생성된 저장소 연결입니다.",
         },
         "additionalRefGuidance": {
             "message": "이 연결은 기본 ref 1개만 지원합니다.",
@@ -633,17 +681,88 @@ def test_get_connection_detail_returns_null_last_processed_event_and_traceabilit
     }
 
 
+def test_get_legacy_connection_detail_preserves_planning_reference(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    planning_reference = seed_planning_input_reference(
+        store,
+        workspace_id=workspace_id,
+    )
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = create_response.json()["id"]
+    connection = store.connections[uuid.UUID(connection_id)]
+    connection.planning_input_reference_id = planning_reference.id
+    connection.planning_input_reference = planning_reference
+
+    detail_response = client.get(f"/api/repository-connections/{connection_id}")
+
+    assert detail_response.status_code == 200
+    payload = detail_response.json()
+    assert payload["origin"]["kind"] == "legacy_planning"
+    assert payload["traceability"]["planningInputReference"] == {
+        "id": str(planning_reference.id),
+        "sourceType": planning_reference.source_type.value,
+        "sourceReference": planning_reference.source_reference,
+        "approvedSpecPath": planning_reference.approved_spec_path,
+        "approvedPlanPath": planning_reference.approved_plan_path,
+    }
+
+
+def test_create_connection_rejects_obsolete_planning_field_matrix_without_row(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    obsolete_reference_id = uuid.uuid4()
+    obsolete_fields = [
+        ("planningInputReferenceId", str(obsolete_reference_id)),
+        ("planningInputReference", {"id": str(obsolete_reference_id)}),
+        ("planningTrace", {"id": str(obsolete_reference_id)}),
+        (
+            "traceability",
+            {"planningInputReference": {"id": str(obsolete_reference_id)}},
+        ),
+        ("approvedSpecPath", "specs/001-git-repo-connection/spec.md"),
+        ("approvedPlanPath", "specs/001-git-repo-connection/plan.md"),
+        ("specPath", "specs/001-git-repo-connection/spec.md"),
+        ("planPath", "specs/001-git-repo-connection/plan.md"),
+    ]
+
+    for field_name, field_value in obsolete_fields:
+        field_tmp_path = tmp_path / field_name
+        field_tmp_path.mkdir()
+        client, store = create_test_client(
+            tmp_path=field_tmp_path,
+            workspace_id=workspace_id,
+        )
+        payload = create_connection_payload()
+        payload[field_name] = field_value
+
+        response = client.post("/api/repository-connections", json=payload)
+
+        assert response.status_code == 400
+        assert response.json() == {
+            "code": "INVALID_INPUT",
+            "message": (
+                "새 저장소 연결 생성 요청은 planning/spec/plan 참조 필드를 "
+                "받을 수 없습니다."
+            ),
+        }
+        assert store.connections == {}
+
+
 def test_create_connection_accepts_gitlab_provider_and_derives_provider_metadata(
     tmp_path,
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/subgroup/sample-repo.git",
         ),
@@ -677,12 +796,11 @@ def test_create_connection_rejects_unallowlisted_gitlab_host_before_git_access(
         "gitlab_self_managed_allowed_hosts",
         (),
     )
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/subgroup/sample-repo.git",
         ),
@@ -696,6 +814,46 @@ def test_create_connection_rejects_unallowlisted_gitlab_host_before_git_access(
     assert store.last_resolved_remote_url is None
 
 
+def test_create_connection_rejects_duplicate_before_git_access(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    first_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    assert first_response.status_code == 201
+    store.last_resolved_remote_url = None
+
+    duplicate_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+
+    assert duplicate_response.status_code == 400
+    assert duplicate_response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "Repository connection already exists for this workspace.",
+    }
+    assert store.last_resolved_remote_url is None
+
+
+def test_create_connection_serializes_duplicate_identity_before_git_access(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+
+    assert response.status_code == 201
+    assert store.repository_identity_creation_lock_calls == 1
+    assert store.identity_lock_depth_at_ref_resolve == 1
+
+
 def test_create_connection_rejects_unallowlisted_gitlab_https_port_before_git_access(
     tmp_path,
 ) -> None:
@@ -706,12 +864,11 @@ def test_create_connection_rejects_unallowlisted_gitlab_https_port_before_git_ac
         "gitlab_self_managed_allowed_hosts",
         ("gitlab.example.com",),
     )
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com:8443/group/sample-repo.git",
         ),
@@ -735,12 +892,11 @@ def test_create_connection_rejects_unallowlisted_gitlab_ssh_port_before_git_acce
         "gitlab_self_managed_allowed_hosts",
         ("192.168.10.20",),
     )
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="ssh://git@192.168.10.20:2222/group/sample-repo.git",
             transport="ssh",
@@ -758,17 +914,47 @@ def test_create_connection_rejects_unallowlisted_gitlab_ssh_port_before_git_acce
     assert store.last_resolved_remote_url is None
 
 
+def test_create_connection_rejects_gitlab_ssh_443_without_port_allowlist(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    object.__setattr__(
+        client.app.state.settings,
+        "gitlab_self_managed_allowed_hosts",
+        ("gitlab.example.com",),
+    )
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            provider="gitlab_self_managed",
+            remote_url="ssh://git@gitlab.example.com:443/group/sample-repo.git",
+            transport="ssh",
+            credential_type="ssh_private_key",
+            credential_secret=create_test_ssh_private_key(tmp_path),
+            credential_fingerprint="ssh-key-443",
+        ),
+    )
+
+    assert create_response.status_code == 400
+    assert create_response.json() == {
+        "code": "INVALID_INPUT",
+        "message": "GitLab Self-Managed host는 허용 목록에 등록되어야 합니다.",
+    }
+    assert store.last_resolved_remote_url is None
+
+
 def test_create_connection_treats_gitlab_path_prefix_as_project_namespace(
     tmp_path,
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/gitlab/group/subgroup/sample-repo.git",
         ),
@@ -787,12 +973,11 @@ def test_create_connection_treats_gitlab_path_prefix_as_project_namespace_for_ss
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="git@gitlab.example.com:gitlab/group/sample-repo.git",
             transport="ssh",
@@ -815,12 +1000,11 @@ def test_create_connection_treats_gitlab_path_prefix_as_project_namespace_for_ss
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="ssh://git@gitlab.example.com/gitlab/group/sample-repo.git",
             transport="ssh",
@@ -843,12 +1027,11 @@ def test_create_connection_accepts_private_ip_gitlab_ssh_remote_with_custom_port
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="ssh://git@192.168.10.20:2222/group/sample-repo.git",
             transport="ssh",
@@ -871,12 +1054,11 @@ def test_create_connection_accepts_gitlab_https_remote_with_custom_port(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com:8443/group/sample-repo.git",
         ),
@@ -895,12 +1077,11 @@ def test_get_connection_detail_preserves_shared_shape_for_gitlab_connection(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/subgroup/sample-repo.git",
         ),
@@ -916,7 +1097,8 @@ def test_get_connection_detail_preserves_shared_shape_for_gitlab_connection(
     assert payload["providerInstanceUrl"] == "https://gitlab.example.com"
     assert payload["providerProjectPath"] == "group/subgroup/sample-repo"
     assert "webhookAuthMode" not in payload
-    assert payload["traceability"]["planningInputReference"]["id"] == str(reference.id)
+    assert payload["traceability"]["planningInputReference"] is None
+    assert payload["origin"]["kind"] == "workspace_repository"
 
 
 def test_get_connection_detail_exposes_webhook_rotation_projection(
@@ -924,10 +1106,10 @@ def test_get_connection_detail_exposes_webhook_rotation_projection(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     grace_until = datetime.now(tz=UTC) + timedelta(hours=24)
@@ -983,10 +1165,10 @@ def test_issue_webhook_secret_returns_one_time_plaintext_without_leaking_it_in_d
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     monkeypatch.setattr(
@@ -1021,10 +1203,10 @@ def test_issue_webhook_secret_returns_structured_error_when_encryption_is_unavai
 
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     monkeypatch.setattr(
@@ -1062,11 +1244,11 @@ def test_issue_webhook_secret_returns_not_found_before_encryption_failure_for_mi
 def test_patch_connection_updates_default_ref(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -1088,12 +1270,11 @@ def test_patch_connection_rejects_unallowlisted_gitlab_before_git_access(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),
@@ -1127,12 +1308,11 @@ def test_patch_gitlab_connection_response_includes_provider_metadata_without_web
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),
@@ -1160,12 +1340,11 @@ def test_patch_missing_gitlab_ref_persists_ref_missing_and_blocks_later_snapshot
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),
@@ -1201,11 +1380,11 @@ def test_patch_missing_gitlab_ref_persists_ref_missing_and_blocks_later_snapshot
 def test_verify_connection_returns_accepted_response(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -1222,12 +1401,12 @@ def test_verify_connection_enqueues_workspace_scoped_task_when_redis_is_enabled(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     captured: dict[str, object] = {}
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -1256,11 +1435,11 @@ def test_verify_connection_enqueues_workspace_scoped_task_when_redis_is_enabled(
 def test_create_snapshot_requires_queue_configuration(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -1293,12 +1472,12 @@ def test_create_snapshot_enqueues_workspace_scoped_task_when_redis_is_enabled(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     captured: dict[str, object] = {}
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -1331,10 +1510,10 @@ def test_create_snapshot_rejects_duplicate_active_sync_for_same_ref(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     captured: list[dict[str, str]] = []
@@ -1372,10 +1551,10 @@ def test_create_snapshot_rejects_duplicate_running_sync_for_same_ref(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     captured: list[dict[str, str]] = []
@@ -1412,10 +1591,10 @@ def test_create_snapshot_rejects_when_pending_insert_loses_same_ref_race(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     captured: list[dict[str, str]] = []
@@ -1445,10 +1624,10 @@ def test_create_snapshot_rejects_duplicate_pending_sync_across_manual_reasons(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     captured: list[dict[str, str]] = []
@@ -1482,12 +1661,12 @@ def test_create_snapshot_defaults_to_manual_initial_when_body_is_missing(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     captured: dict[str, object] = {}
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -1515,11 +1694,11 @@ def test_create_snapshot_cleans_up_pending_run_when_enqueue_fails(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -1550,11 +1729,11 @@ def test_create_snapshot_rejects_invalid_reason_with_problem_response(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -1573,11 +1752,11 @@ def test_create_snapshot_rejects_invalid_reason_with_problem_response(
 def test_create_snapshot_rejects_empty_reason_with_validation_error(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
@@ -1594,11 +1773,11 @@ def test_create_snapshot_returns_conflict_for_reauth_required_connection(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = uuid.UUID(create_response.json()["id"])
     store.connections[connection_id].status = RepositoryConnectionStatus.REAUTH_REQUIRED
@@ -1620,12 +1799,11 @@ def test_create_snapshot_returns_conflict_for_ref_missing_connection(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
 
     create_response = client.post(
         "/api/repository-connections",
         json=create_connection_payload(
-            planning_input_reference_id=reference.id,
             provider="gitlab_self_managed",
             remote_url="https://gitlab.example.com/group/sample-repo.git",
         ),

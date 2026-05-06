@@ -20,10 +20,10 @@ def test_connection_detail_page_renders_webhook_health_and_event_timeline_link(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     grace_until = datetime.now(tz=UTC) + timedelta(hours=24)
@@ -66,16 +66,21 @@ def test_connection_detail_page_renders_webhook_health_and_event_timeline_link(
     assert "grace 중 이전 secret delivery" in response.text
     assert "1" in response.text
     assert "이벤트 타임라인 보기" in response.text
-    assert f"/connections/{connection_id}/events?workspaceId={workspace_id}" in response.text
+    assert (
+        f"/connections/{connection_id}/events?workspaceId={workspace_id}"
+        in response.text
+    )
 
 
-def test_repository_events_page_renders_event_timeline_items(tmp_path, monkeypatch) -> None:
+def test_repository_events_page_renders_event_timeline_items(
+    tmp_path, monkeypatch
+) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
     grace_until = datetime.now(tz=UTC) + timedelta(hours=24)
@@ -109,7 +114,9 @@ def test_repository_events_page_renders_event_timeline_items(tmp_path, monkeypat
     )
     assert webhook_response.status_code == 202
 
-    response = client.get(f"/connections/{connection_id}/events?workspaceId={workspace_id}")
+    response = client.get(
+        f"/connections/{connection_id}/events?workspaceId={workspace_id}"
+    )
 
     assert response.status_code == 200
     assert "이벤트 타임라인" in response.text
@@ -120,17 +127,21 @@ def test_repository_events_page_renders_event_timeline_items(tmp_path, monkeypat
     assert "previous_grace" in response.text
 
 
-def test_repository_events_page_shows_no_secret_configured_without_webhook_health(tmp_path) -> None:
+def test_repository_events_page_shows_no_secret_configured_without_webhook_health(
+    tmp_path,
+) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
-    reference = seed_planning_input_reference(store, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
     create_response = client.post(
         "/api/repository-connections",
-        json=create_connection_payload(planning_input_reference_id=reference.id),
+        json=create_connection_payload(),
     )
     connection_id = create_response.json()["id"]
 
-    response = client.get(f"/connections/{connection_id}/events?workspaceId={workspace_id}")
+    response = client.get(
+        f"/connections/{connection_id}/events?workspaceId={workspace_id}"
+    )
 
     assert response.status_code == 200
     assert "Webhook 상태: 미설정" in response.text

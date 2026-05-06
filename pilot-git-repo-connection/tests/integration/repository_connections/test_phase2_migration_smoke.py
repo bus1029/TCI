@@ -154,7 +154,9 @@ def _seed_revision_006_event_and_sync_run(
         },
     )
     connection.execute(
-        text("UPDATE repository_events SET sync_run_id = :sync_run_id WHERE id = :event_id"),
+        text(
+            "UPDATE repository_events SET sync_run_id = :sync_run_id WHERE id = :event_id"
+        ),
         {"sync_run_id": sync_run_id, "event_id": event_id},
     )
     return event_id, sync_run_id
@@ -318,12 +320,14 @@ def test_sync_run_active_guard_migrates_seeded_revision_006_rows() -> None:
     try:
         with engine.begin() as connection:
             _seed_revision_006_connection(connection, connection_id=connection_id)
-            default_event_id, _default_sync_run_id = _seed_revision_006_event_and_sync_run(
-                connection,
-                connection_id=connection_id,
-                target_key="default_ref",
-                requested_ref_name="main",
-                status="pending",
+            default_event_id, _default_sync_run_id = (
+                _seed_revision_006_event_and_sync_run(
+                    connection,
+                    connection_id=connection_id,
+                    target_key="default_ref",
+                    requested_ref_name="main",
+                    status="pending",
+                )
             )
             pr_event_id, _pr_sync_run_id = _seed_revision_006_event_and_sync_run(
                 connection,

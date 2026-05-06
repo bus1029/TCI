@@ -6,7 +6,7 @@ import uuid
 
 @dataclass(frozen=True, slots=True)
 class SnapshotTraceabilityReference:
-    planning_input_reference_id: uuid.UUID
+    planning_input_reference_id: uuid.UUID | None
     connection_id: uuid.UUID
     scope_rule_version_id: uuid.UUID
     sync_run_id: uuid.UUID
@@ -15,7 +15,7 @@ class SnapshotTraceabilityReference:
 
 def build_snapshot_traceability_reference(
     *,
-    planning_input_reference_id: uuid.UUID,
+    planning_input_reference_id: uuid.UUID | None,
     connection_id: uuid.UUID,
     scope_rule_version_id: uuid.UUID,
     sync_run_id: uuid.UUID,

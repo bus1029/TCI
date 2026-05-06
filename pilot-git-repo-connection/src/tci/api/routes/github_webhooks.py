@@ -291,8 +291,7 @@ def _allow_github_webhook_request_in_redis(
         f"tci:github-webhook-rate:source-connections:{source_key}"
     )
     connection_key_name = (
-        "tci:github-webhook-rate:connection:"
-        f"{source_key}:{connection_id}"
+        "tci:github-webhook-rate:connection:" f"{source_key}:{connection_id}"
     )
     pipe = redis.pipeline()
     pipe.zremrangebyscore(source_key_name, 0, cutoff_ms)
