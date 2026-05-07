@@ -268,7 +268,7 @@ def test_local_upload_repository_enforces_processing_terminal_transitions() -> N
     assert succeeded.latest_snapshot_id is not None
 
 
-def test_local_upload_repository_allows_terminal_cleanup_when_workspace_deleting() -> (
+def test_local_upload_repository_blocks_terminal_cleanup_when_workspace_deleting() -> (
     None
 ):
     session = _session()
@@ -281,16 +281,17 @@ def test_local_upload_repository_allows_terminal_cleanup_when_workspace_deleting
         status=WorkspaceStatus.DELETING,
     )
 
-    succeeded = repository.mark_succeeded(
-        workspace_id=workspace_id,
-        local_upload_id=upload.id,
-        latest_snapshot_id=uuid.uuid4(),
-        uncompressed_size_bytes=256,
-        file_count=2,
-        directory_count=1,
-    )
+    with pytest.raises(ValueError, match="active"):
+        repository.mark_succeeded(
+            workspace_id=workspace_id,
+            local_upload_id=upload.id,
+            latest_snapshot_id=uuid.uuid4(),
+            uncompressed_size_bytes=256,
+            file_count=2,
+            directory_count=1,
+        )
 
-    assert succeeded.status is LocalUploadStatus.SUCCEEDED
+    assert upload.status is LocalUploadStatus.PROCESSING
 
 
 def test_local_upload_repository_blocks_new_processing_when_workspace_deleting() -> (

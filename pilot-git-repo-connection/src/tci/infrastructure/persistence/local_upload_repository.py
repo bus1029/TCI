@@ -100,7 +100,7 @@ class LocalUploadRepository:
                 "failure_message": None,
                 "completed_at": completed_at or datetime.now(tz=UTC),
             },
-            workspace_statuses=(WorkspaceStatus.ACTIVE, WorkspaceStatus.DELETING),
+            workspace_statuses=(WorkspaceStatus.ACTIVE,),
         )
 
     def mark_failed(
@@ -124,7 +124,7 @@ class LocalUploadRepository:
                 "latest_snapshot_id": None,
                 "completed_at": completed_at or datetime.now(tz=UTC),
             },
-            workspace_statuses=(WorkspaceStatus.ACTIVE, WorkspaceStatus.DELETING),
+            workspace_statuses=(WorkspaceStatus.ACTIVE,),
         )
 
     def get_latest_succeeded_for_workspace(
@@ -151,6 +151,13 @@ class LocalUploadRepository:
             .order_by(LocalUpload.created_at.desc(), LocalUpload.id.desc())
         )
         return list(self._session.scalars(statement))
+
+    def delete_for_workspace(self, *, workspace_id: uuid.UUID) -> int:
+        uploads = self.list_for_workspace(workspace_id=workspace_id)
+        for upload in uploads:
+            self._session.delete(upload)
+        self._session.flush()
+        return len(uploads)
 
     def _require(
         self, *, workspace_id: uuid.UUID, local_upload_id: uuid.UUID

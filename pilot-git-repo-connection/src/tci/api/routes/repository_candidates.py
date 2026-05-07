@@ -12,6 +12,10 @@ from tci.domain.services.repository_connection_support import (
     RepositoryConnectionProblem,
     parse_provider,
 )
+from tci.domain.services.workspace_lifecycle import (
+    WorkspaceLifecycleProblem,
+    ensure_active_workspace,
+)
 
 
 router = APIRouter(
@@ -36,11 +40,35 @@ def list_repository_candidates_route(
         return workspace_id
 
     try:
+        workspace_repository_factory = getattr(
+            request.app.state.dependencies, "workspace_repository_factory", None
+        )
+        if workspace_repository_factory is not None:
+            workspace_lifecycle_error = None
+            with request.app.state.dependencies.session_factory() as session:
+                try:
+                    ensure_active_workspace(
+                        workspace_id=workspace_id,
+                        workspace_repository=workspace_repository_factory(session),
+                    )
+                except WorkspaceLifecycleProblem as error:
+                    workspace_lifecycle_error = error
+            if workspace_lifecycle_error is not None:
+                raise workspace_lifecycle_error
         parsed_provider = None if provider is None else parse_provider(provider)
         return list_repository_candidates(
             workspace_id=workspace_id,
             provider=parsed_provider,
             dependencies=request.app.state.dependencies,
+        )
+    except WorkspaceLifecycleProblem as error:
+        return JSONResponse(
+            status_code=error.status_code,
+            content={
+                "code": error.code,
+                "message": error.message,
+                "remediationAction": error.remediation_action,
+            },
         )
     except RepositoryConnectionProblem as error:
         return JSONResponse(

@@ -295,6 +295,28 @@ def test_create_local_upload_cookie_auth_rejects_cross_origin_post(tmp_path) -> 
     assert store.snapshots == {}
 
 
+def test_create_local_upload_cookie_auth_rejects_missing_origin_post(tmp_path) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    _seed_active_workspace(store, workspace_id=workspace_id)
+    client.headers.pop("X-TCI-Operator-Token")
+    settings = cast(Any, client.app).state.settings
+    client.cookies.set(
+        "tci_operator_token",
+        create_operator_session_cookie(expected_token=settings.operator_api_token),
+    )
+
+    response = client.post(
+        "/api/local-uploads",
+        files={"file": ("project.zip", build_project_zip(), "application/zip")},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "invalid_request"
+    assert store.local_uploads == {}
+    assert store.snapshots == {}
+
+
 def test_local_upload_routes_require_workspace_header(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)

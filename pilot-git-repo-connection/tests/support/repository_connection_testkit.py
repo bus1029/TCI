@@ -73,6 +73,7 @@ from tci.infrastructure.persistence.models import (
     WebhookRejectionReason,
     Workspace,
     WorkspaceDeletionRecord,
+    WorkspaceDeletionPurgeStatus,
     WorkspaceStatus,
 )
 from tci.infrastructure.persistence.local_upload_repository import (
@@ -263,6 +264,16 @@ class FakePlanningInputReferenceRepository:
 
     def get_any(self, *, reference_id: uuid.UUID) -> PlanningInputReference | None:
         return self._store.planning_input_references.get(reference_id)
+
+    def delete_for_workspace(self, *, workspace_id: uuid.UUID) -> int:
+        reference_ids = [
+            reference_id
+            for reference_id, reference in self._store.planning_input_references.items()
+            if reference.workspace_id == workspace_id
+        ]
+        for reference_id in reference_ids:
+            del self._store.planning_input_references[reference_id]
+        return len(reference_ids)
 
 
 class FakeRepositoryConnectionRepository:
@@ -463,6 +474,38 @@ class FakeRepositoryConnectionRepository:
             key=lambda connection: (connection.created_at, connection.id),
             reverse=True,
         )
+
+    def delete_for_workspace(self, *, workspace_id: uuid.UUID) -> int:
+        connection_ids = [
+            connection.id
+            for connection in self._store.connections.values()
+            if connection.workspace_id == workspace_id
+        ]
+        for connection_id in connection_ids:
+            for cursor_key, cursor in list(self._store.event_cursors.items()):
+                if cursor.connection_id == connection_id:
+                    del self._store.event_cursors[cursor_key]
+            for sync_run_id, sync_run in list(self._store.sync_runs.items()):
+                if sync_run.connection_id == connection_id:
+                    del self._store.sync_runs[sync_run_id]
+            for event_id, event in list(self._store.repository_events.items()):
+                if event.connection_id == connection_id:
+                    del self._store.repository_events[event_id]
+            for scope_rule_id, scope_rule in list(
+                self._store.scope_rule_versions.items()
+            ):
+                if scope_rule.connection_id == connection_id:
+                    del self._store.scope_rule_versions[scope_rule_id]
+            for credential_id, credential in list(self._store.credentials.items()):
+                if credential.connection_id == connection_id:
+                    del self._store.credentials[credential_id]
+            for revision_id, revision in list(
+                self._store.webhook_secret_revisions.items()
+            ):
+                if revision.connection_id == connection_id:
+                    del self._store.webhook_secret_revisions[revision_id]
+            del self._store.connections[connection_id]
+        return len(connection_ids)
 
     def update_default_ref(
         self,
@@ -864,6 +907,24 @@ class FakeWorkspaceRepository:
             return None
         return max(records, key=lambda record: (record.requested_at, record.id))
 
+    def update_deletion_record(
+        self,
+        *,
+        record_id: uuid.UUID,
+        purge_status: WorkspaceDeletionPurgeStatus,
+        purged_archive_count: int,
+        completed_at: datetime,
+        failure_message: str | None = None,
+    ) -> WorkspaceDeletionRecord:
+        record = self._store.workspace_deletion_records.get(record_id)
+        if record is None:
+            raise LookupError("워크스페이스 삭제 기록을 찾을 수 없습니다.")
+        record.purge_status = purge_status
+        record.purged_archive_count = purged_archive_count
+        record.completed_at = completed_at
+        record.failure_message = bounded_failure_message(failure_message)
+        return record
+
 
 class FakeLocalUploadRepository:
     def __init__(self, store: InMemoryRepositoryStore) -> None:
@@ -928,7 +989,7 @@ class FakeLocalUploadRepository:
     ) -> LocalUpload:
         self._ensure_workspace_status(
             workspace_id=workspace_id,
-            statuses=(WorkspaceStatus.ACTIVE, WorkspaceStatus.DELETING),
+            statuses=(WorkspaceStatus.ACTIVE,),
         )
         upload = self._require(
             workspace_id=workspace_id, local_upload_id=local_upload_id
@@ -959,7 +1020,7 @@ class FakeLocalUploadRepository:
     ) -> LocalUpload:
         self._ensure_workspace_status(
             workspace_id=workspace_id,
-            statuses=(WorkspaceStatus.ACTIVE, WorkspaceStatus.DELETING),
+            statuses=(WorkspaceStatus.ACTIVE,),
         )
         upload = self._require(
             workspace_id=workspace_id, local_upload_id=local_upload_id
@@ -1002,6 +1063,16 @@ class FakeLocalUploadRepository:
             for upload in self._store.local_uploads.values()
             if upload.workspace_id == workspace_id
         ]
+
+    def delete_for_workspace(self, *, workspace_id: uuid.UUID) -> int:
+        upload_ids = [
+            upload.id
+            for upload in self._store.local_uploads.values()
+            if upload.workspace_id == workspace_id
+        ]
+        for upload_id in upload_ids:
+            del self._store.local_uploads[upload_id]
+        return len(upload_ids)
 
     def _require(
         self, *, workspace_id: uuid.UUID, local_upload_id: uuid.UUID
@@ -2096,6 +2167,16 @@ class FakeCodeSnapshotRepository:
             if snapshot.workspace_id == workspace_id
         ]
 
+    def delete_for_workspace(self, *, workspace_id: uuid.UUID) -> int:
+        snapshot_ids = [
+            snapshot.id
+            for snapshot in self._store.snapshots.values()
+            if snapshot.workspace_id == workspace_id
+        ]
+        for snapshot_id in snapshot_ids:
+            del self._store.snapshots[snapshot_id]
+        return len(snapshot_ids)
+
     def get_by_sync_run_id(self, *, sync_run_id: uuid.UUID) -> CodeSnapshot | None:
         for snapshot in self._store.snapshots.values():
             if snapshot.sync_run_id == sync_run_id:
@@ -2623,6 +2704,8 @@ def _load_test_settings(tmp_path: Path, *, database_url: str | None = None):
     original_database_url = os.environ.get("TCI_DATABASE_URL")
     original_redis_url = os.environ.get("TCI_REDIS_URL")
     original_operator_token = os.environ.get("TCI_OPERATOR_API_TOKEN")
+    original_operator_id = os.environ.get("TCI_OPERATOR_ID")
+    original_operator_role = os.environ.get("TCI_OPERATOR_ROLE")
     original_gitlab_hosts = os.environ.get("TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS")
     original_gitlab_proxy_hosts = os.environ.get(
         "TCI_GITLAB_WEBHOOK_TRUSTED_PROXY_HOSTS"
@@ -2634,6 +2717,8 @@ def _load_test_settings(tmp_path: Path, *, database_url: str | None = None):
     os.environ["TCI_PROJECT_ROOT"] = str(tmp_path)
     os.environ["TCI_CREDENTIAL_ENCRYPTION_KEY"] = Fernet.generate_key().decode("utf-8")
     os.environ["TCI_OPERATOR_API_TOKEN"] = "test-operator-token"
+    os.environ["TCI_OPERATOR_ID"] = "operator"
+    os.environ["TCI_OPERATOR_ROLE"] = "admin"
     os.environ["TCI_TEMPLATE_ROOT"] = str(template_root)
     os.environ["TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS"] = (
         "gitlab.example.com,gitlab.example.com:8443,"
@@ -2673,6 +2758,14 @@ def _load_test_settings(tmp_path: Path, *, database_url: str | None = None):
             os.environ.pop("TCI_OPERATOR_API_TOKEN", None)
         else:
             os.environ["TCI_OPERATOR_API_TOKEN"] = original_operator_token
+        if original_operator_id is None:
+            os.environ.pop("TCI_OPERATOR_ID", None)
+        else:
+            os.environ["TCI_OPERATOR_ID"] = original_operator_id
+        if original_operator_role is None:
+            os.environ.pop("TCI_OPERATOR_ROLE", None)
+        else:
+            os.environ["TCI_OPERATOR_ROLE"] = original_operator_role
         if original_gitlab_hosts is None:
             os.environ.pop("TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS", None)
         else:

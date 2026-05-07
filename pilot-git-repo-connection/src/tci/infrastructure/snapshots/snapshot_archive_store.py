@@ -101,10 +101,60 @@ class SnapshotArchiveStore:
         )
 
     def remove(self, *, snapshot_id: uuid.UUID) -> None:
-        shutil.rmtree(
-            self._settings.code_snapshot_root / str(snapshot_id),
-            ignore_errors=True,
-        )
+        archive_root = self._settings.code_snapshot_root / str(snapshot_id)
+        if not archive_root.exists():
+            return
+        shutil.rmtree(archive_root)
+        if archive_root.exists():
+            raise OSError("스냅샷 아카이브를 제거하지 못했습니다.")
+
+    def purge_workspace_snapshots(self, *, snapshots: tuple[object, ...]) -> int:
+        purged_count = 0
+        for snapshot in snapshots:
+            snapshot_id = getattr(snapshot, "id")
+            archive_root = self._settings.code_snapshot_root / str(snapshot_id)
+            existed_before_remove = archive_root.exists()
+            self.remove(snapshot_id=snapshot_id)
+            if existed_before_remove and not archive_root.exists():
+                purged_count += 1
+        return purged_count
+
+    def purge_local_upload_queue_files(self, *, uploads: tuple[object, ...]) -> int:
+        purged_count = 0
+        queue_root = self._settings.runtime_root / "local-upload-queue"
+        for upload in uploads:
+            upload_id = getattr(upload, "id")
+            queue_path = queue_root / f"{upload_id}.zip"
+            if not queue_path.exists():
+                continue
+            queue_path.unlink()
+            if queue_path.exists():
+                raise OSError("Local Upload 임시 ZIP을 제거하지 못했습니다.")
+            purged_count += 1
+        return purged_count
+
+    def purge_git_mirrors(self, *, connections: tuple[object, ...]) -> int:
+        purged_count = 0
+        git_mirror_root = self._settings.git_mirror_root.resolve()
+        for connection in connections:
+            mirror_path = _validate_relative_path(getattr(connection, "mirror_path"))
+            absolute_path = (self._settings.project_root / mirror_path).resolve()
+            try:
+                absolute_path.relative_to(git_mirror_root)
+            except ValueError as error:
+                raise OSError(
+                    "Git mirror 경로가 mirror root 밖을 가리킵니다."
+                ) from error
+            if not absolute_path.exists():
+                continue
+            if absolute_path.is_dir():
+                shutil.rmtree(absolute_path)
+            else:
+                absolute_path.unlink()
+            if absolute_path.exists():
+                raise OSError("Git mirror 캐시를 제거하지 못했습니다.")
+            purged_count += 1
+        return purged_count
 
 
 def _validate_relative_path(

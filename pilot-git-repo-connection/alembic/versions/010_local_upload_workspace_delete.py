@@ -351,6 +351,8 @@ def upgrade() -> None:
         "code_snapshots",
         ["workspace_id", "id", "latest_snapshot_id"],
         ["workspace_id", "local_upload_id", "id"],
+        deferrable=True,
+        initially="DEFERRED",
     )
     _add_check_constraint_not_valid(
         "ck_code_snapshot_source_owner",

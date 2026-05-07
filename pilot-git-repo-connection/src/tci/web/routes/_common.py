@@ -36,7 +36,9 @@ def enforce_same_origin(request: Request) -> PlainTextResponse | None:
     origin = request.headers.get("origin")
     referer = request.headers.get("referer")
 
-    # 브라우저 관리 화면은 세션 보호가 붙기 전이라도 최소한의 동일 출처 검사로 교차 사이트 제출을 줄인다.
+    # 브라우저 관리 화면의 쿠키 기반 unsafe method는 출처 증거가 없으면 거부한다.
+    if not origin and not referer:
+        return PlainTextResponse("허용되지 않은 요청 출처입니다.", status_code=403)
     if origin and origin.rstrip("/") != base_origin:
         return PlainTextResponse("허용되지 않은 요청 출처입니다.", status_code=403)
     if not origin and referer and not referer.startswith(f"{base_origin}/"):

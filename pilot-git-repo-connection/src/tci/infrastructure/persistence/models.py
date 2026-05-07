@@ -1136,6 +1136,8 @@ class LocalUpload(Base):
             ],
             name="fk_local_upload_latest_snapshot_owner",
             use_alter=True,
+            deferrable=True,
+            initially="DEFERRED",
         ),
         CheckConstraint(
             "compressed_size_bytes >= 0 "

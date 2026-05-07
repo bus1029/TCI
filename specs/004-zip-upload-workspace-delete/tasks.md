@@ -104,26 +104,26 @@
 
 ### Tests for User Story 2
 
-- [ ] T036 [P] [US2] Add contract tests for `GET /api/workspaces/{workspaceId}/deletion-impact` and `DELETE /api/workspaces/{workspaceId}` in `pilot-git-repo-connection/tests/contract/workspaces/test_workspace_delete_contract.py`
-- [ ] T037 [P] [US2] Add unit tests for delete authorization, confirmation, idempotent deleted-state response, purge summary, and audit metadata minimization in `pilot-git-repo-connection/tests/unit/local_uploads/test_delete_workspace.py`
-- [ ] T038 [P] [US2] Add integration tests for owner/admin deletion, non-owner rejection, active-list exclusion, direct deleted-state access with next-action guidance, and content purge in `pilot-git-repo-connection/tests/integration/workspaces/test_workspace_delete_flow.py`
-- [ ] T039 [P] [US2] Add integration tests that deleted or deleting workspaces reject Local Upload, GitHub connection, GitLab connection, snapshot creation, and worker mutations in `pilot-git-repo-connection/tests/integration/workspaces/test_deleted_workspace_guards.py`
+- [x] T036 [P] [US2] Add contract tests for `GET /api/workspaces/{workspaceId}/deletion-impact` and `DELETE /api/workspaces/{workspaceId}` in `pilot-git-repo-connection/tests/contract/workspaces/test_workspace_delete_contract.py`
+- [x] T037 [P] [US2] Add unit tests for delete authorization, confirmation, idempotent deleted-state response, purge summary, and audit metadata minimization in `pilot-git-repo-connection/tests/unit/local_uploads/test_delete_workspace.py`
+- [x] T038 [P] [US2] Add integration tests for owner/admin deletion, non-owner rejection, active-list exclusion, direct deleted-state access with next-action guidance, and content purge in `pilot-git-repo-connection/tests/integration/workspaces/test_workspace_delete_flow.py`
+- [x] T039 [P] [US2] Add integration tests that deleted or deleting workspaces reject Local Upload, GitHub connection, GitLab connection, snapshot creation, and worker mutations in `pilot-git-repo-connection/tests/integration/workspaces/test_deleted_workspace_guards.py`
 
 ### Implementation for User Story 2
 
-- [ ] T040 [US2] Add workspace deletion impact and deletion response schemas in `pilot-git-repo-connection/src/tci/api/schemas/workspace.py`
-- [ ] T041 [US2] Implement deletion impact summary, owner/admin authorization, confirmation validation, soft delete, purge, and audit record creation in `pilot-git-repo-connection/src/tci/domain/services/delete_workspace.py`
-- [ ] T042 [US2] Add archive purge operations for workspace-scoped snapshots in `pilot-git-repo-connection/src/tci/infrastructure/snapshots/snapshot_archive_store.py`
-- [ ] T043 [US2] Implement workspace API routes for deletion impact and delete request handling in `pilot-git-repo-connection/src/tci/api/routes/workspaces.py`
-- [ ] T044 [US2] Register workspace deletion API routes in `pilot-git-repo-connection/src/tci/app.py`
-- [ ] T045 [US2] Apply active-workspace guard to repository connection create, verify, and detail mutation paths in `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
-- [ ] T046 [US2] Apply active-workspace guard to repository snapshot creation and lookup mutation paths in `pilot-git-repo-connection/src/tci/api/routes/repository_snapshots.py`
-- [ ] T047 [US2] Apply active-workspace guard to candidate/manual repository creation services in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py` and `pilot-git-repo-connection/src/tci/domain/services/list_repository_candidates.py`
-- [ ] T048 [US2] Apply active-workspace guard to repository snapshot and webhook-driven worker entry points in `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py`, `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`, and `pilot-git-repo-connection/src/tci/infrastructure/queue/repository_ingestion_tasks.py`
-- [ ] T049 [US2] Exclude deleted workspaces from active connection and snapshot list queries in `pilot-git-repo-connection/src/tci/domain/services/list_repository_connections.py`
-- [ ] T050 [US2] Add operator UI route for workspace deletion impact, confirmation, and deleted-state page in `pilot-git-repo-connection/src/tci/web/routes/workspaces.py`
-- [ ] T051 [US2] Add workspace deletion confirmation and deleted-state templates with available next actions in `pilot-git-repo-connection/src/tci/web/templates/workspaces/delete.html` and `pilot-git-repo-connection/src/tci/web/templates/workspaces/deleted.html`
-- [ ] T052 [US2] Run User Story 2 checks with `rtk pytest -q tests/contract/workspaces/test_workspace_delete_contract.py tests/unit/local_uploads/test_delete_workspace.py tests/integration/workspaces/test_workspace_delete_flow.py tests/integration/workspaces/test_deleted_workspace_guards.py` from `pilot-git-repo-connection/`
+- [x] T040 [US2] Add workspace deletion impact and deletion response schemas in `pilot-git-repo-connection/src/tci/api/schemas/workspace.py`
+- [x] T041 [US2] Implement deletion impact summary, owner/admin authorization, confirmation validation, soft delete, purge, and audit record creation in `pilot-git-repo-connection/src/tci/domain/services/delete_workspace.py`
+- [x] T042 [US2] Add archive purge operations for workspace-scoped snapshots in `pilot-git-repo-connection/src/tci/infrastructure/snapshots/snapshot_archive_store.py`
+- [x] T043 [US2] Implement workspace API routes for deletion impact and delete request handling in `pilot-git-repo-connection/src/tci/api/routes/workspaces.py`
+- [x] T044 [US2] Register workspace deletion API routes in `pilot-git-repo-connection/src/tci/app.py`
+- [x] T045 [US2] Apply active-workspace guard to repository connection create, verify, and detail mutation paths in `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
+- [x] T046 [US2] Apply active-workspace guard to repository snapshot creation and lookup mutation paths in `pilot-git-repo-connection/src/tci/api/routes/repository_snapshots.py`
+- [x] T047 [US2] Apply active-workspace guard to candidate/manual repository creation services in `pilot-git-repo-connection/src/tci/domain/services/create_repository_connection.py` and `pilot-git-repo-connection/src/tci/domain/services/list_repository_candidates.py`
+- [x] T048 [US2] Apply active-workspace guard to repository snapshot and webhook-driven worker entry points in `pilot-git-repo-connection/src/tci/domain/services/create_initial_snapshot.py`, `pilot-git-repo-connection/src/tci/domain/services/build_code_snapshot.py`, and `pilot-git-repo-connection/src/tci/infrastructure/queue/repository_ingestion_tasks.py`
+- [x] T049 [US2] Exclude deleted workspaces from active connection and snapshot list queries in `pilot-git-repo-connection/src/tci/domain/services/list_repository_connections.py`
+- [x] T050 [US2] Add operator UI route for workspace deletion impact, confirmation, and deleted-state page in `pilot-git-repo-connection/src/tci/web/routes/workspaces.py`
+- [x] T051 [US2] Add workspace deletion confirmation and deleted-state templates with available next actions in `pilot-git-repo-connection/src/tci/web/templates/workspaces/delete.html` and `pilot-git-repo-connection/src/tci/web/templates/workspaces/deleted.html`
+- [x] T052 [US2] Run User Story 2 checks with `rtk pytest -q tests/contract/workspaces/test_workspace_delete_contract.py tests/unit/local_uploads/test_delete_workspace.py tests/integration/workspaces/test_workspace_delete_flow.py tests/integration/workspaces/test_deleted_workspace_guards.py` from `pilot-git-repo-connection/`
 
 **Checkpoint**: User Stories 1 and 2 both work independently, and deleted workspaces cannot start new work.
 

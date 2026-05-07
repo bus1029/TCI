@@ -125,6 +125,7 @@ def test_operator_local_upload_form_uploads_zip_and_redirects_to_status(
 
     response = client.post(
         f"/local-uploads?workspaceId={workspace_id}",
+        headers={"Origin": str(client.base_url).rstrip("/")},
         files={"file": ("project.zip", build_project_zip(), "application/zip")},
         follow_redirects=False,
     )
@@ -164,6 +165,7 @@ def test_operator_local_upload_form_queues_when_redis_is_configured(
 
     response = client.post(
         f"/local-uploads?workspaceId={workspace_id}",
+        headers={"Origin": str(client.base_url).rstrip("/")},
         files={"file": ("project.zip", build_project_zip(), "application/zip")},
         follow_redirects=False,
     )
@@ -212,6 +214,7 @@ def test_operator_local_upload_form_marks_failed_when_queue_staging_fails(
 
     response = client.post(
         f"/local-uploads?workspaceId={workspace_id}",
+        headers={"Origin": str(client.base_url).rstrip("/")},
         files={"file": ("project.zip", build_project_zip(), "application/zip")},
         follow_redirects=False,
     )

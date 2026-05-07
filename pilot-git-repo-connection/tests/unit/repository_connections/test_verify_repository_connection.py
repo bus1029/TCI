@@ -11,10 +11,12 @@ from tests.support.repository_connection_testkit import (
 from tci.domain.services.repository_connection_support import (
     RepositoryConnectionProblem,
 )
+from tci.domain.services.workspace_lifecycle import WorkspaceLifecycleProblem
 from tci.domain.services.verify_repository_connection import (
     VerifyRepositoryConnectionCommand,
     verify_repository_connection,
 )
+from tci.infrastructure.persistence.models import WorkspaceStatus
 
 
 def test_verify_repository_connection_keeps_active_status_when_stored_credential_is_valid(
@@ -67,6 +69,41 @@ def test_verify_repository_connection_marks_reauth_required_on_auth_failure(
     )
 
     assert verified.status.value == "reauth_required"
+
+
+def test_verify_repository_connection_rejects_deleting_workspace_before_git_probe(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    previous_last_verified_at = store.connections[connection_id].last_verified_at
+    store.workspaces[workspace_id].status = WorkspaceStatus.DELETING
+    store.last_resolved_remote_url = None
+
+    try:
+        verify_repository_connection(
+            VerifyRepositoryConnectionCommand(
+                workspace_id=workspace_id,
+                connection_id=connection_id,
+            ),
+            dependencies=client.app.state.dependencies,
+        )
+    except WorkspaceLifecycleProblem as error:
+        assert error.code == "workspace_deleting"
+    else:
+        raise AssertionError("deleting workspace should reject verification")
+
+    assert store.last_resolved_remote_url is None
+    assert (
+        store.connections[connection_id].last_verified_at == previous_last_verified_at
+    )
 
 
 def test_verify_repository_connection_rejects_unallowlisted_gitlab_before_git_access(

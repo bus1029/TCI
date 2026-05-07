@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <title>워크스페이스 삭제</title>
+  </head>
+  <body>
+    <main>
+      <h1>워크스페이스 삭제</h1>
+      <p>대상 워크스페이스: {{ workspace_id }}</p>
+      <dl>
+        <dt>저장소 연결</dt>
+        <dd>{{ impact.repository_connection_count }}</dd>
+        <dt>Local Upload</dt>
+        <dd>{{ impact.local_upload_count }}</dd>
+        <dt>스냅샷</dt>
+        <dd>{{ impact.snapshot_count }}</dd>
+      </dl>
+      <form method="post" action="/workspaces/{{ workspace_id }}/delete">
+        <label>
+          확인 문구
+          <input name="confirmation" value="" required>
+        </label>
+        <label>
+          사유
+          <input name="reason" value="">
+        </label>
+        <button type="submit">삭제</button>
+      </form>
+      <p>{{ impact.confirmation }}</p>
+    </main>
+  </body>
+</html>

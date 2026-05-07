@@ -283,6 +283,13 @@ class CodeSnapshotRepository:
         )
         return list(self._session.scalars(statement))
 
+    def delete_for_workspace(self, *, workspace_id: uuid.UUID) -> int:
+        snapshots = self.list_for_workspace(workspace_id=workspace_id)
+        for snapshot in snapshots:
+            self._session.delete(snapshot)
+        self._session.flush()
+        return len(snapshots)
+
     def get_by_sync_run_id(self, *, sync_run_id: uuid.UUID) -> CodeSnapshot | None:
         statement = select(CodeSnapshot).where(CodeSnapshot.sync_run_id == sync_run_id)
         return self._session.scalar(statement)

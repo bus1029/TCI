@@ -34,6 +34,8 @@ def _settings(tmp_path: Path, **overrides: int) -> Settings:
         redis_url=None,
         credential_encryption_key=None,
         operator_api_token="test-operator-token",
+        operator_id="operator",
+        operator_role="admin",
         gitlab_self_managed_allowed_hosts=(),
         gitlab_webhook_trusted_proxy_hosts=(),
         allow_insecure_gitlab_http=False,

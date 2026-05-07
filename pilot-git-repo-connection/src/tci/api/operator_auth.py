@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from collections import OrderedDict, deque
+from dataclasses import dataclass
 import hashlib
 import hmac
 import secrets
@@ -20,6 +21,12 @@ OPERATOR_AUTH_RATE_LIMIT_MAX_BUCKETS = 4_096
 _OPERATOR_SESSION_COOKIE_VERSION = "v1"
 _operator_auth_failure_times: OrderedDict[str, deque[float]] = OrderedDict()
 _operator_auth_rate_limit_lock = Lock()
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorPrincipal:
+    operator_id: str
+    role: str
 
 
 def require_operator_auth(request: Request) -> None:
@@ -42,6 +49,14 @@ def require_operator_auth(request: Request) -> None:
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="운영 API 토큰이 필요합니다.",
         headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def operator_principal_from_request(request: Request) -> OperatorPrincipal:
+    settings = request.app.state.settings
+    return OperatorPrincipal(
+        operator_id=getattr(settings, "operator_id", "operator"),
+        role=getattr(settings, "operator_role", "viewer"),
     )
 
 

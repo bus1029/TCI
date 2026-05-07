@@ -77,6 +77,8 @@ class Settings:
     redis_url: str | None
     credential_encryption_key: str | None
     operator_api_token: str | None
+    operator_id: str
+    operator_role: str
     gitlab_self_managed_allowed_hosts: tuple[str, ...]
     gitlab_webhook_trusted_proxy_hosts: tuple[str, ...]
     allow_insecure_gitlab_http: bool
@@ -149,6 +151,12 @@ def load_settings() -> Settings:
             os.getenv("TCI_OPERATOR_API_TOKEN"),
             environment=environment,
         ),
+        operator_id=_validate_operator_identity(
+            os.getenv("TCI_OPERATOR_ID"),
+            default="operator",
+            label="TCI_OPERATOR_ID",
+        ),
+        operator_role=_validate_operator_role(os.getenv("TCI_OPERATOR_ROLE")),
         gitlab_self_managed_allowed_hosts=_parse_allowed_hosts(
             os.getenv("TCI_GITLAB_SELF_MANAGED_ALLOWED_HOSTS")
         ),
@@ -233,6 +241,26 @@ def _validate_operator_api_token(
                 "base64url 인코딩 값이어야 합니다."
             )
     return token
+
+
+def _validate_operator_identity(
+    raw_value: str | None, *, default: str, label: str
+) -> str:
+    value = default if raw_value is None else raw_value.strip()
+    if not value:
+        raise RuntimeError(f"{label}는 비워둘 수 없습니다.")
+    if any(character.isspace() or ord(character) < 32 for character in value):
+        raise RuntimeError(f"{label}에는 공백 또는 제어 문자를 사용할 수 없습니다.")
+    return value
+
+
+def _validate_operator_role(raw_value: str | None) -> str:
+    value = "viewer" if raw_value is None else raw_value.strip().lower()
+    if value not in {"viewer", "owner", "admin"}:
+        raise RuntimeError(
+            "TCI_OPERATOR_ROLE은 viewer, owner, admin 중 하나여야 합니다."
+        )
+    return value
 
 
 def _parse_allowed_hosts(

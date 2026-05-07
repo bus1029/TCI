@@ -12,6 +12,8 @@ from tci.domain.services.repository_connection_support import (
     ensure_gitlab_self_managed_host_allowed,
     require_active_operation_credential,
 )
+from tci.domain.services.workspace_lifecycle import ensure_active_workspace
+from tci.domain.services.workspace_lifecycle import WorkspaceLifecycleProblem
 from tci.infrastructure.persistence.models import (
     RepositoryConnectionStatus,
     RepositoryProvider,
@@ -45,6 +47,8 @@ def verify_repository_connection(command, *, dependencies):
         connection_id=command.connection_id,
         dependencies=dependencies,
     )
+    if isinstance(verification_context, WorkspaceLifecycleProblem):
+        raise verification_context
     if (
         verification_context.credential_type is None
         or verification_context.encrypted_secret is None
@@ -121,7 +125,17 @@ def _map_verification_failure_to_status(
 def _load_verification_context(
     *, workspace_id: uuid.UUID, connection_id: uuid.UUID, dependencies
 ):
+    lifecycle_problem = None
     with dependencies.session_factory() as session:
+        workspace_repository = dependencies.workspace_repository_factory(session)
+        try:
+            ensure_active_workspace(
+                workspace_id=workspace_id,
+                workspace_repository=workspace_repository,
+                lock_for_update=True,
+            )
+        except WorkspaceLifecycleProblem as error:
+            lifecycle_problem = error
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )
@@ -132,8 +146,10 @@ def _load_verification_context(
             workspace_id=workspace_id,
             connection_id=connection_id,
         )
-        if connection is None:
+        if lifecycle_problem is None and connection is None:
             raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        if lifecycle_problem is not None:
+            return lifecycle_problem
 
         credential_revision = credential_repository.get_active_for_connection(
             connection_id=connection.id
@@ -144,7 +160,7 @@ def _load_verification_context(
             )
         except RepositoryConnectionProblem:
             operation_credential = None
-        return VerificationContext(
+        verification_context = VerificationContext(
             provider=connection.provider,
             provider_instance_url=connection.provider_instance_url,
             remote_url=connection.remote_url,
@@ -162,6 +178,7 @@ def _load_verification_context(
                 else operation_credential.encrypted_secret
             ),
         )
+    return verification_context
 
 
 def _update_verification_status(
@@ -171,13 +188,29 @@ def _update_verification_status(
     status: RepositoryConnectionStatus,
     dependencies,
 ):
+    lifecycle_problem = None
     with dependencies.session_factory() as session:
+        workspace_repository = dependencies.workspace_repository_factory(session)
+        try:
+            ensure_active_workspace(
+                workspace_id=workspace_id,
+                workspace_repository=workspace_repository,
+                lock_for_update=True,
+            )
+        except WorkspaceLifecycleProblem as error:
+            lifecycle_problem = error
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )
-        return connection_repository.update_verification(
-            workspace_id=workspace_id,
-            connection_id=connection_id,
-            status=status,
-            last_verified_at=datetime.now(tz=UTC),
-        )
+        if lifecycle_problem is None:
+            updated_connection = connection_repository.update_verification(
+                workspace_id=workspace_id,
+                connection_id=connection_id,
+                status=status,
+                last_verified_at=datetime.now(tz=UTC),
+            )
+        else:
+            updated_connection = None
+    if lifecycle_problem is not None:
+        raise lifecycle_problem
+    return updated_connection

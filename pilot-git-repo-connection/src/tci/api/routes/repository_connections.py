@@ -27,6 +27,7 @@ from tci.domain.services.create_repository_connection import (
 from tci.domain.services.get_repository_connection_detail import (
     get_repository_connection_detail,
 )
+from tci.domain.services.list_repository_connections import list_repository_connections
 from tci.domain.services.repository_connection_support import (
     RepositoryConnectionProblem,
 )
@@ -87,6 +88,29 @@ def create_repository_connection_route(
     return JSONResponse(
         status_code=201, content=serialize_repository_connection(connection)
     )
+
+
+@router.get("")
+def list_repository_connections_route(
+    request: Request,
+    workspace_header: str | None = Header(
+        default=None,
+        alias="X-TCI-Workspace-Id",
+        description="워크스페이스 UUID",
+    ),
+):
+    workspace_id = _extract_workspace_id(workspace_header)
+    if isinstance(workspace_id, JSONResponse):
+        return workspace_id
+    connections = list_repository_connections(
+        workspace_id=workspace_id,
+        dependencies=request.app.state.dependencies,
+    )
+    return {
+        "items": [
+            serialize_repository_connection(connection) for connection in connections
+        ]
+    }
 
 
 @router.get(

@@ -346,6 +346,13 @@ def _reject_cookie_cross_origin(request: Request) -> JSONResponse | None:
     base_origin = str(request.base_url).rstrip("/")
     origin = request.headers.get("origin")
     referer = request.headers.get("referer")
+    if not origin and not referer:
+        return _local_upload_problem(
+            status_code=403,
+            code="invalid_request",
+            message="허용되지 않은 요청 출처입니다.",
+            remediation_action="none",
+        )
     if origin and origin.rstrip("/") != base_origin:
         return _local_upload_problem(
             status_code=403,

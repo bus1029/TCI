@@ -153,3 +153,23 @@ class WorkspaceRepository:
             .limit(1)
         )
         return self._session.scalar(statement)
+
+    def update_deletion_record(
+        self,
+        *,
+        record_id: uuid.UUID,
+        purge_status: WorkspaceDeletionPurgeStatus,
+        purged_archive_count: int,
+        completed_at: datetime,
+        failure_message: str | None = None,
+    ) -> WorkspaceDeletionRecord:
+        record = self._session.get(WorkspaceDeletionRecord, record_id)
+        if record is None:
+            raise LookupError("워크스페이스 삭제 기록을 찾을 수 없습니다.")
+        record.purge_status = purge_status
+        record.purged_archive_count = purged_archive_count
+        record.completed_at = completed_at
+        record.failure_message = bounded_failure_message(failure_message)
+        self._session.flush()
+        self._session.refresh(record)
+        return record

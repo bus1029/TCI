@@ -189,6 +189,20 @@ def test_local_upload_success_and_failure_constraints_are_recorded() -> None:
     )
 
 
+def test_local_upload_latest_snapshot_foreign_key_is_deferred_for_workspace_delete() -> (
+    None
+):
+    table = Base.metadata.tables["local_uploads"]
+    constraint = next(
+        constraint
+        for constraint in table.foreign_key_constraints
+        if constraint.name == "fk_local_upload_latest_snapshot_owner"
+    )
+
+    assert constraint.deferrable is True
+    assert constraint.initially == "DEFERRED"
+
+
 def test_encrypted_zip_fixture_marks_entry_as_encrypted() -> None:
     from io import BytesIO
 

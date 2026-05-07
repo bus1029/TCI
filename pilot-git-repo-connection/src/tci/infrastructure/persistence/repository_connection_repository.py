@@ -19,10 +19,13 @@ from sqlalchemy.orm import Session, joinedload
 from tci.infrastructure.persistence.models import (
     CollectionScopeRuleVersion,
     DefaultRefType,
+    RepositoryEvent,
+    RepositoryEventCursor,
     RepositoryConnection,
     RepositoryConnectionStatus,
     RepositoryProvider,
     RepositoryTransport,
+    RepositorySyncRun,
     ScopeRuleWarningState,
     Workspace,
     WorkspaceStatus,
@@ -554,6 +557,52 @@ class RepositoryConnectionRepository:
             )
         )
         return list(self._session.scalars(statement).unique())
+
+    def delete_for_workspace(self, *, workspace_id: uuid.UUID) -> int:
+        connections = self.list_for_workspace(workspace_id=workspace_id)
+        connection_ids = [connection.id for connection in connections]
+        if not connection_ids:
+            return 0
+        self._clear_delete_blocking_references(connection_ids=connection_ids)
+        for connection in connections:
+            self._session.delete(connection)
+        self._session.flush()
+        return len(connections)
+
+    def _clear_delete_blocking_references(
+        self, *, connection_ids: list[uuid.UUID]
+    ) -> None:
+        self._session.execute(
+            sa.update(RepositoryConnection)
+            .where(RepositoryConnection.id.in_(connection_ids))
+            .values(
+                active_scope_rule_version_id=None,
+                active_credential_revision_id=None,
+                active_webhook_secret_revision_id=None,
+                last_processed_event_id=None,
+            )
+        )
+        self._session.execute(
+            sa.delete(RepositoryEventCursor).where(
+                RepositoryEventCursor.connection_id.in_(connection_ids)
+            )
+        )
+        self._session.execute(
+            sa.update(RepositorySyncRun)
+            .where(RepositorySyncRun.connection_id.in_(connection_ids))
+            .values(trigger_event_id=None)
+        )
+        self._session.execute(
+            sa.update(RepositoryEvent)
+            .where(RepositoryEvent.connection_id.in_(connection_ids))
+            .values(
+                sync_run_id=None,
+                snapshot_id=None,
+                verified_secret_revision_id=None,
+                verified_secret_revision_status=None,
+            )
+        )
+        self._session.flush()
 
     def set_active_credential_revision(
         self,

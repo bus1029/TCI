@@ -78,6 +78,19 @@ class PlanningInputReferenceRepository:
     def get_any(self, *, reference_id: uuid.UUID) -> PlanningInputReference | None:
         return self._session.get(PlanningInputReference, reference_id)
 
+    def delete_for_workspace(self, *, workspace_id: uuid.UUID) -> int:
+        references = list(
+            self._session.scalars(
+                select(PlanningInputReference).where(
+                    PlanningInputReference.workspace_id == workspace_id
+                )
+            )
+        )
+        for reference in references:
+            self._session.delete(reference)
+        self._session.flush()
+        return len(references)
+
     @staticmethod
     def _validate_feature_paths(*, spec_path: str, plan_path: str) -> None:
         spec = PurePosixPath(spec_path)
