@@ -8,6 +8,7 @@ import uuid
 from sqlalchemy.exc import IntegrityError
 
 from tci.api.problem_details import ProblemCode
+from tci.domain.services.failure_messages import bounded_failure_message
 from tci.domain.services.repository_connection_support import (
     RepositoryConnectionProblem,
     bind_git_credential,
@@ -579,6 +580,9 @@ def _fail_snapshot_build(
     connection_status: RepositoryConnectionStatus | None,
     dependencies,
 ):
+    safe_failure_message = (
+        bounded_failure_message(failure_message) or "스냅샷 생성에 실패했습니다."
+    )
     problem = RepositoryConnectionProblem(
         (
             ProblemCode.CONNECTION_AUTH_FAILED
@@ -593,7 +597,7 @@ def _fail_snapshot_build(
                 )
             )
         ),
-        failure_message,
+        safe_failure_message,
     )
     now = datetime.now(tz=UTC)
     with dependencies.session_factory() as session:
@@ -607,7 +611,7 @@ def _fail_snapshot_build(
             connection_id=connection_id,
             sync_run_id=sync_run_id,
             failure_code=failure_code,
-            failure_message=failure_message,
+            failure_message=safe_failure_message,
             completed_at=now,
         )
         connection_repository.record_sync_failure(

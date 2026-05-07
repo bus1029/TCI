@@ -46,17 +46,17 @@
 **Critical**: No user story implementation should begin until this phase is complete.
 
 - [x] T006 [P] Add failing model tests for `Workspace`, `LocalUpload`, `WorkspaceDeletionRecord`, and source-aware `CodeSnapshot` constraints in `pilot-git-repo-connection/tests/unit/local_uploads/test_workspace_lifecycle_models.py`
-- [ ] T007 [P] Add failing repository tests for source-aware snapshot create, lookup, and latest Local Upload selection in `pilot-git-repo-connection/tests/unit/local_uploads/test_source_aware_snapshot_repository.py`
-- [ ] T008 [P] Add failing workspace guard tests for active, deleting, and deleted states in `pilot-git-repo-connection/tests/unit/local_uploads/test_workspace_lifecycle_guard.py`
+- [x] T007 [P] Add failing repository tests for source-aware snapshot create, lookup, and latest Local Upload selection in `pilot-git-repo-connection/tests/unit/local_uploads/test_source_aware_snapshot_repository.py`
+- [x] T008 [P] Add failing workspace guard tests for active, deleting, and deleted states in `pilot-git-repo-connection/tests/unit/local_uploads/test_workspace_lifecycle_guard.py`
 - [x] T009 Add Alembic migration for `workspaces`, `local_uploads`, `workspace_deletion_records`, and source-aware `code_snapshots` fields in `pilot-git-repo-connection/alembic/versions/010_local_upload_workspace_delete.py`
 - [x] T010 Update SQLAlchemy models for workspace lifecycle, Local Upload metadata, deletion audit records, and source-aware snapshots in `pilot-git-repo-connection/src/tci/infrastructure/persistence/models.py`
-- [ ] T011 Implement workspace persistence methods for create, get, status transition, active list, and deletion audit lookup in `pilot-git-repo-connection/src/tci/infrastructure/persistence/workspace_repository.py`
-- [ ] T012 Implement Local Upload persistence methods for create, mark processing, mark succeeded, mark failed, and latest snapshot linkage in `pilot-git-repo-connection/src/tci/infrastructure/persistence/local_upload_repository.py`
-- [ ] T013 Extend snapshot persistence for Local Upload drafts, source owner validation, workspace snapshot listing, and latest Local Upload lookup in `pilot-git-repo-connection/src/tci/infrastructure/persistence/code_snapshot_repository.py`
-- [ ] T014 Add shared workspace lifecycle guard and problem codes for non-active workspaces in `pilot-git-repo-connection/src/tci/domain/services/workspace_lifecycle.py`
-- [ ] T015 Wire workspace, Local Upload, and source-aware snapshot repositories into application dependencies in `pilot-git-repo-connection/src/tci/app.py`
-- [ ] T016 Update testkit fakes for workspaces, Local Uploads, deletion records, and source-aware snapshots in `pilot-git-repo-connection/tests/support/repository_connection_testkit.py`
-- [ ] T017 Run foundational database and unit checks with `rtk pytest -q tests/unit/local_uploads/test_workspace_lifecycle_models.py tests/unit/local_uploads/test_source_aware_snapshot_repository.py tests/unit/local_uploads/test_workspace_lifecycle_guard.py` from `pilot-git-repo-connection/`
+- [x] T011 Implement workspace persistence methods for create, get, status transition, active list, and deletion audit lookup in `pilot-git-repo-connection/src/tci/infrastructure/persistence/workspace_repository.py`
+- [x] T012 Implement Local Upload persistence methods for create, mark processing, mark succeeded, mark failed, and latest snapshot linkage in `pilot-git-repo-connection/src/tci/infrastructure/persistence/local_upload_repository.py`
+- [x] T013 Extend snapshot persistence for Local Upload drafts, source owner validation, workspace snapshot listing, and latest Local Upload lookup in `pilot-git-repo-connection/src/tci/infrastructure/persistence/code_snapshot_repository.py`
+- [x] T014 Add shared workspace lifecycle guard and problem codes for non-active workspaces in `pilot-git-repo-connection/src/tci/domain/services/workspace_lifecycle.py`
+- [x] T015 Wire workspace, Local Upload, and source-aware snapshot repositories into application dependencies in `pilot-git-repo-connection/src/tci/app.py`
+- [x] T016 Update testkit fakes for workspaces, Local Uploads, deletion records, and source-aware snapshots in `pilot-git-repo-connection/tests/support/repository_connection_testkit.py`
+- [x] T017 Run foundational database and unit checks with `rtk pytest -q tests/unit/local_uploads/test_workspace_lifecycle_models.py tests/unit/local_uploads/test_source_aware_snapshot_repository.py tests/unit/local_uploads/test_workspace_lifecycle_guard.py` from `pilot-git-repo-connection/`
 
 **Checkpoint**: Workspace lifecycle, source-aware snapshots, and shared guards are ready for user-story implementation.
 

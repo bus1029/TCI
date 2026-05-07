@@ -4,12 +4,15 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 import uuid
 
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from tci.infrastructure.persistence.models import (
     PlanningInputReference,
     PlanningInputSourceType,
     Workspace,
+    WorkspaceStatus,
 )
 
 
@@ -48,9 +51,19 @@ class PlanningInputReferenceRepository:
         return reference
 
     def _ensure_workspace(self, *, workspace_id: uuid.UUID) -> None:
-        if self._session.get(Workspace, workspace_id) is None:
-            self._session.add(Workspace(id=workspace_id))
-            self._session.flush()
+        try:
+            with self._session.begin_nested():
+                self._session.add(Workspace(id=workspace_id))
+                self._session.flush()
+        except IntegrityError:
+            pass
+        workspace = self._session.scalar(
+            select(Workspace).where(Workspace.id == workspace_id).with_for_update()
+        )
+        if not isinstance(workspace, Workspace):
+            return
+        if workspace.status is not WorkspaceStatus.ACTIVE:
+            raise ValueError("Planning input reference requires an active workspace.")
 
     def get(
         self, *, workspace_id: uuid.UUID, reference_id: uuid.UUID

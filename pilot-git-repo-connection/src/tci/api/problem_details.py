@@ -16,6 +16,7 @@ class ProblemCode(StrEnum):
     WEBHOOK_SECRET_MISMATCH = "WEBHOOK_SECRET_MISMATCH"
     STALE_HEAD_SHA_SKIPPED = "STALE_HEAD_SHA_SKIPPED"
     SYNC_ALREADY_ACTIVE = "SYNC_ALREADY_ACTIVE"
+    WORKSPACE_NOT_ACTIVE = "WORKSPACE_NOT_ACTIVE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +81,11 @@ _PROBLEM_DETAILS = {
         code=ProblemCode.SYNC_ALREADY_ACTIVE,
         status_code=409,
         message="같은 ref에 대한 동기화 작업이 이미 진행 중입니다.",
+    ),
+    ProblemCode.WORKSPACE_NOT_ACTIVE: ProblemDetailDefinition(
+        code=ProblemCode.WORKSPACE_NOT_ACTIVE,
+        status_code=409,
+        message="활성 워크스페이스에서만 새 스냅샷 작업을 시작할 수 있습니다.",
     ),
 }
 

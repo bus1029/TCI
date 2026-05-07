@@ -9,6 +9,10 @@ from tci.api.problem_details import ProblemCode
 from tci.domain.services.repository_connection_support import (
     RepositoryConnectionProblem,
 )
+from tci.domain.services.workspace_lifecycle import (
+    ensure_active_workspace,
+    WorkspaceLifecycleProblem,
+)
 from tci.infrastructure.persistence.models import (
     RefType,
     RepositoryConnectionStatus,
@@ -73,6 +77,8 @@ def create_initial_snapshot(command, *, dependencies, prepared_request=None):
             return sync_run_repository.create_pending(draft)
         except IntegrityError as error:
             raise _active_sync_problem() from error
+        except ValueError as error:
+            raise _workspace_not_active_problem() from error
 
 
 def validate_initial_snapshot_request(
@@ -92,6 +98,14 @@ def validate_initial_snapshot_request(
         )
         if connection is None:
             raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        workspace_repository = dependencies.workspace_repository_factory(session)
+        try:
+            ensure_active_workspace(
+                workspace_id=command.workspace_id,
+                workspace_repository=workspace_repository,
+            )
+        except WorkspaceLifecycleProblem as error:
+            raise _workspace_not_active_problem() from error
         if connection.status is RepositoryConnectionStatus.REAUTH_REQUIRED:
             raise RepositoryConnectionProblem(
                 ProblemCode.CONNECTION_AUTH_FAILED,
@@ -141,4 +155,11 @@ def _active_sync_problem() -> RepositoryConnectionProblem:
     return RepositoryConnectionProblem(
         ProblemCode.SYNC_ALREADY_ACTIVE,
         "같은 ref에 대한 스냅샷 작업이 이미 진행 중입니다.",
+    )
+
+
+def _workspace_not_active_problem() -> RepositoryConnectionProblem:
+    return RepositoryConnectionProblem(
+        ProblemCode.WORKSPACE_NOT_ACTIVE,
+        "활성 워크스페이스에서만 새 스냅샷 작업을 시작할 수 있습니다.",
     )

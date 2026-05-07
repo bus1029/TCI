@@ -229,13 +229,12 @@ def issue_repository_webhook_secret_route(
     if isinstance(workspace_id, JSONResponse):
         return workspace_id
 
-    plaintext_secret = generate_webhook_secret()
     try:
         rotation_result = rotate_webhook_secret(
             RotateWebhookSecretCommand(
                 workspace_id=workspace_id,
                 connection_id=connection_id,
-                plaintext_secret=plaintext_secret,
+                secret_factory=generate_webhook_secret,
             ),
             dependencies=request.app.state.dependencies,
         )
@@ -250,7 +249,7 @@ def issue_repository_webhook_secret_route(
         status_code=201,
         content=serialize_webhook_secret_issued(
             connection_id=connection_id,
-            webhook_secret=plaintext_secret,
+            webhook_secret=rotation_result.plaintext_secret,
             webhook_secret_revision_id=rotation_result.webhook_secret_revision_id,
             grace_until=rotation_result.grace_until,
         ),

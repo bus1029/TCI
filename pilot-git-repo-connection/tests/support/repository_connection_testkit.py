@@ -10,7 +10,7 @@ import hmac
 import json
 from pathlib import Path
 import subprocess
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 import uuid
 
 # mypy: ignore-errors
@@ -22,6 +22,10 @@ from tci.domain.services.build_traceability_reference import (
     build_snapshot_traceability_reference,
 )
 from tci.domain.services.default_scope_policy import is_hard_excluded_path
+from tci.domain.services.failure_messages import (
+    bounded_display_filename,
+    bounded_failure_message,
+)
 from tci.infrastructure.git.git_mirror_manager import (
     ManagedGitMirror,
     MaterializedGitSnapshot,
@@ -34,6 +38,7 @@ from tci.infrastructure.git.git_ref_resolver import (
     ResolvedGitRef,
 )
 from tci.infrastructure.persistence.code_snapshot_repository import (
+    CodeSnapshotLocalUploadDraft,
     CodeSnapshotRepository,
 )
 from tci.infrastructure.persistence.credential_revision_repository import (
@@ -47,6 +52,8 @@ from tci.infrastructure.persistence.models import (
     CredentialRevisionStatus,
     CredentialType,
     DefaultRefType,
+    LocalUpload,
+    LocalUploadStatus,
     PlanningInputReference,
     PlanningInputSourceType,
     ProviderReachabilityStatus,
@@ -64,6 +71,13 @@ from tci.infrastructure.persistence.models import (
     WebhookAuthMode,
     WebhookHealthState,
     WebhookRejectionReason,
+    Workspace,
+    WorkspaceDeletionRecord,
+    WorkspaceStatus,
+)
+from tci.infrastructure.persistence.local_upload_repository import (
+    LocalUploadDraft,
+    LocalUploadRepository,
 )
 from tci.infrastructure.persistence.repository_connection_repository import (
     RepositoryConnectionDraft,
@@ -83,6 +97,11 @@ from tci.infrastructure.persistence.repository_sync_run_repository import (
 )
 from tci.infrastructure.persistence.scope_rule_repository import ScopeRuleRepository
 from tci.infrastructure.persistence.session import build_session_factory
+from tci.infrastructure.persistence.workspace_repository import (
+    WorkspaceDeletionRecordDraft,
+    WorkspaceDraft,
+    WorkspaceRepository,
+)
 from tci.infrastructure.persistence.webhook_secret_repository import (
     WebhookSecretRepository,
 )
@@ -148,6 +167,11 @@ class TestRepositoryEvent:
 
 @dataclass(slots=True)
 class InMemoryRepositoryStore:
+    workspaces: dict[uuid.UUID, Workspace] = field(default_factory=dict)
+    local_uploads: dict[uuid.UUID, LocalUpload] = field(default_factory=dict)
+    workspace_deletion_records: dict[uuid.UUID, WorkspaceDeletionRecord] = field(
+        default_factory=dict
+    )
     planning_input_references: dict[uuid.UUID, PlanningInputReference] = field(
         default_factory=dict
     )
@@ -180,6 +204,9 @@ class InMemoryRepositoryStore:
     last_resolved_remote_url: str | None = None
     resolved_ref_commits: dict[str, str] = field(default_factory=dict)
     mirror_sync_error: Exception | None = None
+    after_ref_resolve: Callable[[], None] | None = None
+    after_mirror_sync: Callable[[], None] | None = None
+    before_workspace_lock_read: Callable[[], None] | None = None
     mirror_tree_sha: str = "b" * 40
     mirror_snapshot_entries: tuple[tuple[str, bytes], ...] = field(
         default_factory=lambda: (("src/main.py", b"print('hello')\n"),)
@@ -203,6 +230,16 @@ class FakePlanningInputReferenceRepository:
             spec_path=draft.approved_spec_path,
             plan_path=draft.approved_plan_path,
         )
+        workspace = self._store.workspaces.get(draft.workspace_id)
+        if workspace is None:
+            self._store.workspaces[draft.workspace_id] = Workspace(
+                id=draft.workspace_id,
+                status=WorkspaceStatus.ACTIVE,
+                created_at=now_utc(),
+                updated_at=now_utc(),
+            )
+        elif workspace.status is not WorkspaceStatus.ACTIVE:
+            raise ValueError("Planning input reference requires an active workspace.")
         reference = PlanningInputReference(
             id=uuid.uuid4(),
             workspace_id=draft.workspace_id,
@@ -289,6 +326,7 @@ class FakeRepositoryConnectionRepository:
             if draft.provider is RepositoryProvider.GITLAB_SELF_MANAGED
             else WebhookAuthMode.HMAC_SHA256
         )
+        self.ensure_active_workspace(workspace_id=draft.workspace_id)
         for existing in self._store.connections.values():
             if (
                 existing.workspace_id == draft.workspace_id
@@ -352,10 +390,36 @@ class FakeRepositoryConnectionRepository:
                 )
 
     def ensure_active_workspace(self, *, workspace_id: uuid.UUID) -> None:
-        return
+        workspace = self._store.workspaces.get(workspace_id)
+        if workspace is None:
+            self._store.workspaces[workspace_id] = Workspace(
+                id=workspace_id,
+                status=WorkspaceStatus.ACTIVE,
+                created_at=now_utc(),
+                updated_at=now_utc(),
+            )
+            return
+        if workspace.status is not WorkspaceStatus.ACTIVE:
+            raise ValueError("Repository connection requires an active workspace.")
 
     @contextmanager
     def repository_identity_creation_lock(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        provider: RepositoryProvider,
+        provider_instance_url: str | None,
+        provider_project_path: str,
+    ):
+        self._store.repository_identity_creation_lock_calls += 1
+        self._store.repository_identity_creation_lock_depth += 1
+        try:
+            yield
+        finally:
+            self._store.repository_identity_creation_lock_depth -= 1
+
+    @contextmanager
+    def repository_identity_side_effect_lock(
         self,
         *,
         workspace_id: uuid.UUID,
@@ -703,6 +767,282 @@ class FakeScopeRuleRepository:
         return connection
 
 
+class FakeWorkspaceRepository:
+    def __init__(self, store: InMemoryRepositoryStore) -> None:
+        self._store = store
+
+    def create(self, draft: WorkspaceDraft) -> Workspace:
+        workspace = Workspace(
+            id=draft.id,
+            status=draft.status,
+            created_at=now_utc(),
+            updated_at=now_utc(),
+        )
+        self._store.workspaces[workspace.id] = workspace
+        return workspace
+
+    def get(self, *, workspace_id: uuid.UUID) -> Workspace | None:
+        return self._store.workspaces.get(workspace_id)
+
+    def get_for_update(self, *, workspace_id: uuid.UUID) -> Workspace | None:
+        if self._store.before_workspace_lock_read is not None:
+            self._store.before_workspace_lock_read()
+            self._store.before_workspace_lock_read = None
+        return self.get(workspace_id=workspace_id)
+
+    def list_active(self) -> list[Workspace]:
+        return [
+            workspace
+            for workspace in self._store.workspaces.values()
+            if workspace.status is WorkspaceStatus.ACTIVE
+        ]
+
+    def transition_status(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        status: WorkspaceStatus,
+        deleted_by: str | None = None,
+        delete_reason: str | None = None,
+        transitioned_at: datetime | None = None,
+    ) -> Workspace:
+        workspace = self._store.workspaces.get(workspace_id)
+        if workspace is None:
+            raise LookupError("워크스페이스를 찾을 수 없습니다.")
+        if workspace.status is status:
+            return workspace
+        if status is WorkspaceStatus.DELETED and not deleted_by:
+            raise ValueError("deleted_by is required when deleting a workspace.")
+        if workspace.status is WorkspaceStatus.DELETED:
+            raise ValueError("deleted workspace is terminal.")
+        if (
+            workspace.status is WorkspaceStatus.ACTIVE
+            and status is not WorkspaceStatus.DELETING
+        ) or (
+            workspace.status is WorkspaceStatus.DELETING
+            and status is not WorkspaceStatus.DELETED
+        ):
+            raise ValueError(
+                "Workspace lifecycle must move active -> deleting -> deleted."
+            )
+        workspace.status = status
+        workspace.updated_at = now_utc()
+        if status is WorkspaceStatus.DELETED:
+            workspace.deleted_at = transitioned_at or now_utc()
+            workspace.deleted_by = deleted_by
+            workspace.delete_reason = bounded_failure_message(delete_reason, limit=255)
+        return workspace
+
+    def create_deletion_record(
+        self, draft: WorkspaceDeletionRecordDraft
+    ) -> WorkspaceDeletionRecord:
+        record = WorkspaceDeletionRecord(
+            id=draft.id,
+            workspace_id=draft.workspace_id,
+            deleted_by=draft.deleted_by,
+            requested_at=draft.requested_at or now_utc(),
+            completed_at=draft.completed_at,
+            purge_status=draft.purge_status,
+            repository_connection_count=draft.repository_connection_count,
+            local_upload_count=draft.local_upload_count,
+            snapshot_count=draft.snapshot_count,
+            purged_archive_count=draft.purged_archive_count,
+            failure_message=bounded_failure_message(draft.failure_message),
+        )
+        self._store.workspace_deletion_records[record.id] = record
+        return record
+
+    def get_latest_deletion_record(
+        self, *, workspace_id: uuid.UUID
+    ) -> WorkspaceDeletionRecord | None:
+        records = [
+            record
+            for record in self._store.workspace_deletion_records.values()
+            if record.workspace_id == workspace_id
+        ]
+        if not records:
+            return None
+        return max(records, key=lambda record: (record.requested_at, record.id))
+
+
+class FakeLocalUploadRepository:
+    def __init__(self, store: InMemoryRepositoryStore) -> None:
+        self._store = store
+
+    def create(self, draft: LocalUploadDraft) -> LocalUpload:
+        self._ensure_active_workspace(workspace_id=draft.workspace_id)
+        upload = LocalUpload(
+            id=draft.id,
+            workspace_id=draft.workspace_id,
+            status=LocalUploadStatus.PENDING,
+            original_filename_display=bounded_display_filename(
+                draft.original_filename_display
+            ),
+            upload_sha256=draft.upload_sha256,
+            compressed_size_bytes=draft.compressed_size_bytes,
+            uncompressed_size_bytes=0,
+            file_count=0,
+            directory_count=0,
+            created_by=draft.created_by,
+            created_at=now_utc(),
+        )
+        self._store.local_uploads[upload.id] = upload
+        return upload
+
+    def get(
+        self, *, workspace_id: uuid.UUID, local_upload_id: uuid.UUID
+    ) -> LocalUpload | None:
+        upload = self._store.local_uploads.get(local_upload_id)
+        if upload is None or upload.workspace_id != workspace_id:
+            return None
+        return upload
+
+    def mark_processing(
+        self, *, workspace_id: uuid.UUID, local_upload_id: uuid.UUID
+    ) -> LocalUpload:
+        self._ensure_workspace_status(
+            workspace_id=workspace_id,
+            statuses=(WorkspaceStatus.ACTIVE,),
+        )
+        upload = self._require(
+            workspace_id=workspace_id, local_upload_id=local_upload_id
+        )
+        self._ensure_transition(
+            upload=upload,
+            allowed=(LocalUploadStatus.PENDING,),
+            target=LocalUploadStatus.PROCESSING,
+        )
+        upload.status = LocalUploadStatus.PROCESSING
+        return upload
+
+    def mark_succeeded(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        local_upload_id: uuid.UUID,
+        latest_snapshot_id: uuid.UUID,
+        uncompressed_size_bytes: int,
+        file_count: int,
+        directory_count: int,
+        completed_at: datetime | None = None,
+    ) -> LocalUpload:
+        self._ensure_workspace_status(
+            workspace_id=workspace_id,
+            statuses=(WorkspaceStatus.ACTIVE, WorkspaceStatus.DELETING),
+        )
+        upload = self._require(
+            workspace_id=workspace_id, local_upload_id=local_upload_id
+        )
+        self._ensure_transition(
+            upload=upload,
+            allowed=(LocalUploadStatus.PROCESSING,),
+            target=LocalUploadStatus.SUCCEEDED,
+        )
+        upload.status = LocalUploadStatus.SUCCEEDED
+        upload.latest_snapshot_id = latest_snapshot_id
+        upload.uncompressed_size_bytes = uncompressed_size_bytes
+        upload.file_count = file_count
+        upload.directory_count = directory_count
+        upload.failure_code = None
+        upload.failure_message = None
+        upload.completed_at = completed_at or now_utc()
+        return upload
+
+    def mark_failed(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        local_upload_id: uuid.UUID,
+        failure_code: str,
+        failure_message: str,
+        completed_at: datetime | None = None,
+    ) -> LocalUpload:
+        self._ensure_workspace_status(
+            workspace_id=workspace_id,
+            statuses=(WorkspaceStatus.ACTIVE, WorkspaceStatus.DELETING),
+        )
+        upload = self._require(
+            workspace_id=workspace_id, local_upload_id=local_upload_id
+        )
+        self._ensure_transition(
+            upload=upload,
+            allowed=(LocalUploadStatus.PENDING, LocalUploadStatus.PROCESSING),
+            target=LocalUploadStatus.FAILED,
+        )
+        upload.status = LocalUploadStatus.FAILED
+        upload.failure_code = failure_code[:64]
+        upload.failure_message = bounded_failure_message(failure_message)
+        upload.latest_snapshot_id = None
+        upload.completed_at = completed_at or now_utc()
+        return upload
+
+    def get_latest_succeeded_for_workspace(
+        self, *, workspace_id: uuid.UUID
+    ) -> LocalUpload | None:
+        uploads = [
+            upload
+            for upload in self._store.local_uploads.values()
+            if upload.workspace_id == workspace_id
+            and upload.status is LocalUploadStatus.SUCCEEDED
+            and upload.latest_snapshot_id in self._store.snapshots
+        ]
+        if not uploads:
+            return None
+        return max(
+            uploads,
+            key=lambda upload: (
+                self._store.snapshots[upload.latest_snapshot_id].created_at,
+                self._store.snapshots[upload.latest_snapshot_id].id,
+            ),
+        )
+
+    def list_for_workspace(self, *, workspace_id: uuid.UUID) -> list[LocalUpload]:
+        return [
+            upload
+            for upload in self._store.local_uploads.values()
+            if upload.workspace_id == workspace_id
+        ]
+
+    def _require(
+        self, *, workspace_id: uuid.UUID, local_upload_id: uuid.UUID
+    ) -> LocalUpload:
+        upload = self.get(workspace_id=workspace_id, local_upload_id=local_upload_id)
+        if upload is None:
+            raise LookupError("Local Upload을 찾을 수 없습니다.")
+        return upload
+
+    def _ensure_active_workspace(self, *, workspace_id: uuid.UUID) -> None:
+        self._ensure_workspace_status(
+            workspace_id=workspace_id,
+            statuses=(WorkspaceStatus.ACTIVE,),
+        )
+
+    def _ensure_workspace_status(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        statuses: tuple[WorkspaceStatus, ...],
+    ) -> None:
+        workspace = self._store.workspaces.get(workspace_id)
+        if workspace is None or workspace.status not in statuses:
+            raise ValueError("Local Upload requires an active workspace.")
+
+    @staticmethod
+    def _ensure_transition(
+        *,
+        upload: LocalUpload,
+        allowed: tuple[LocalUploadStatus, ...],
+        target: LocalUploadStatus,
+    ) -> None:
+        if upload.status in (LocalUploadStatus.SUCCEEDED, LocalUploadStatus.FAILED):
+            raise ValueError("Local Upload terminal status cannot transition.")
+        if upload.status not in allowed:
+            allowed_values = ", ".join(status.value for status in allowed)
+            raise ValueError(
+                f"Local Upload status must be one of {allowed_values} before {target.value}."
+            )
+
+
 @dataclass(frozen=True, slots=True)
 class CredentialRevisionDraft:
     connection_id: uuid.UUID
@@ -1018,6 +1358,9 @@ class FakeGitRefResolver:
             and "GIT_ASKPASS" not in current_git_command_environment()
         ):
             raise GitConnectionAuthError()
+        if self._store.after_ref_resolve is not None:
+            self._store.after_ref_resolve()
+            self._store.after_ref_resolve = None
         if ref_name in self._store.auth_failure_ref_names:
             raise GitConnectionAuthError()
         if ref_name in self._store.missing_ref_names:
@@ -1062,6 +1405,8 @@ class FakeGitMirrorManager:
         absolute_path = self._project_root / relative_path
         absolute_path.parent.mkdir(parents=True, exist_ok=True)
         absolute_path.mkdir(parents=True, exist_ok=True)
+        if getattr(self, "_store", None) is not None and self._store.after_mirror_sync:
+            self._store.after_mirror_sync()
         return ManagedGitMirror(
             connection_id=connection_id,
             mirror_path=relative_path.as_posix(),
@@ -1135,6 +1480,7 @@ class FakeRepositorySyncRunRepository:
     def _create(
         self, *, draft: RepositorySyncRunDraft, status: SyncRunStatus
     ) -> RepositorySyncRun:
+        self._ensure_active_connection_workspace(connection_id=draft.connection_id)
         conflict_key = (
             draft.connection_id,
             draft.requested_ref_type,
@@ -1315,6 +1661,7 @@ class FakeRepositorySyncRunRepository:
         sync_run_id: uuid.UUID,
         released_at: datetime,
     ) -> RepositorySyncRun:
+        self._ensure_active_connection_workspace(connection_id=connection_id)
         sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
         if sync_run.status is not SyncRunStatus.BLOCKED:
             raise ValueError("차단된 스냅샷 실행만 대기 상태로 전환할 수 있습니다.")
@@ -1333,6 +1680,7 @@ class FakeRepositorySyncRunRepository:
         sync_run_id: uuid.UUID,
         released_at: datetime,
     ) -> RepositorySyncRun | None:
+        self._ensure_active_connection_workspace(connection_id=connection_id)
         sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
         if sync_run.status is not SyncRunStatus.BLOCKED:
             raise ValueError("차단된 스냅샷 실행만 대기 상태로 전환할 수 있습니다.")
@@ -1373,6 +1721,7 @@ class FakeRepositorySyncRunRepository:
         sync_run_id: uuid.UUID,
         enqueued_at: datetime,
     ) -> RepositorySyncRun:
+        self._ensure_active_connection_workspace(connection_id=connection_id)
         sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
         sync_run.dispatch_enqueued_at = enqueued_at
         return sync_run
@@ -1383,6 +1732,10 @@ class FakeRepositorySyncRunRepository:
         connection_id: uuid.UUID,
         sync_run_id: uuid.UUID,
     ) -> RepositorySyncRun:
+        self._ensure_connection_workspace_status(
+            connection_id=connection_id,
+            statuses=(WorkspaceStatus.ACTIVE, WorkspaceStatus.DELETING),
+        )
         sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
         sync_run.dispatch_enqueued_at = None
         return sync_run
@@ -1395,6 +1748,7 @@ class FakeRepositorySyncRunRepository:
         enqueued_at: datetime,
         stale_before: datetime | None = None,
     ) -> bool:
+        self._ensure_active_connection_workspace(connection_id=connection_id)
         sync_run = self.get(connection_id=connection_id, sync_run_id=sync_run_id)
         if (
             sync_run is None
@@ -1418,6 +1772,7 @@ class FakeRepositorySyncRunRepository:
         trigger_event_id: uuid.UUID,
         updated_at: datetime,
     ) -> RepositorySyncRun:
+        self._ensure_active_connection_workspace(connection_id=connection_id)
         sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
         if sync_run.status is not SyncRunStatus.BLOCKED:
             raise ValueError("차단된 스냅샷 실행만 최신 이벤트로 교체할 수 있습니다.")
@@ -1436,6 +1791,7 @@ class FakeRepositorySyncRunRepository:
         sync_run_id: uuid.UUID,
         started_at: datetime,
     ) -> RepositorySyncRun:
+        self._ensure_active_connection_workspace(connection_id=connection_id)
         sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
         if sync_run.status is not SyncRunStatus.PENDING:
             raise ValueError("대기 중인 스냅샷 실행만 시작할 수 있습니다.")
@@ -1454,7 +1810,15 @@ class FakeRepositorySyncRunRepository:
         resolved_commit_sha: str,
         completed_at: datetime,
     ) -> RepositorySyncRun:
+        self._ensure_connection_workspace_status(
+            connection_id=connection_id,
+            statuses=(WorkspaceStatus.ACTIVE, WorkspaceStatus.DELETING),
+        )
         sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
+        if sync_run.status is not SyncRunStatus.RUNNING:
+            raise ValueError(
+                "실행 중인 활성 워크스페이스 스냅샷만 성공 처리할 수 있습니다."
+            )
         sync_run.status = SyncRunStatus.SUCCEEDED
         sync_run.resolved_commit_sha = resolved_commit_sha
         sync_run.completed_at = completed_at
@@ -1471,18 +1835,45 @@ class FakeRepositorySyncRunRepository:
         failure_message: str,
         completed_at: datetime,
     ) -> RepositorySyncRun:
+        self._ensure_connection_workspace_status(
+            connection_id=connection_id,
+            statuses=(WorkspaceStatus.ACTIVE, WorkspaceStatus.DELETING),
+        )
         sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
         if sync_run.status is SyncRunStatus.SUCCEEDED:
             return sync_run
         sync_run.status = SyncRunStatus.FAILED
         sync_run.failure_code = failure_code
-        sync_run.failure_message = failure_message
+        sync_run.failure_message = bounded_failure_message(failure_message)
         sync_run.completed_at = completed_at
         return sync_run
+
+    def _ensure_active_connection_workspace(self, *, connection_id: uuid.UUID) -> None:
+        self._ensure_connection_workspace_status(
+            connection_id=connection_id,
+            statuses=(WorkspaceStatus.ACTIVE,),
+        )
+
+    def _ensure_connection_workspace_status(
+        self,
+        *,
+        connection_id: uuid.UUID,
+        statuses: tuple[WorkspaceStatus, ...],
+    ) -> None:
+        connection = self._store.connections.get(connection_id)
+        if connection is None:
+            raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        workspace = self._store.workspaces.get(connection.workspace_id)
+        if workspace is None or workspace.status not in statuses:
+            raise ValueError("활성 워크스페이스 스냅샷 실행만 처리할 수 있습니다.")
 
     def delete_pending(
         self, *, connection_id: uuid.UUID, sync_run_id: uuid.UUID
     ) -> None:
+        self._ensure_connection_workspace_status(
+            connection_id=connection_id,
+            statuses=(WorkspaceStatus.ACTIVE, WorkspaceStatus.DELETING),
+        )
         sync_run = self._require(connection_id=connection_id, sync_run_id=sync_run_id)
         if sync_run.status is not SyncRunStatus.PENDING:
             raise ValueError("대기 중인 스냅샷 실행만 취소할 수 있습니다.")
@@ -1542,6 +1933,9 @@ class FakeCodeSnapshotRepository:
             raise ValueError(
                 "CodeSnapshotDraft.workspace_id must match the repository connection."
             )
+        workspace = self._store.workspaces.get(connection.workspace_id)
+        if workspace is None or workspace.status is not WorkspaceStatus.ACTIVE:
+            raise ValueError("Repository snapshot requires an active workspace.")
         snapshot = CodeSnapshot(
             id=draft.id,
             workspace_id=draft.workspace_id or connection.workspace_id,
@@ -1557,6 +1951,58 @@ class FakeCodeSnapshotRepository:
             file_count=draft.file_count,
             total_bytes=draft.total_bytes,
             created_at=now_utc(),
+        )
+        snapshot.files = [
+            CodeSnapshotFile(
+                id=uuid.uuid4(),
+                snapshot_id=snapshot.id,
+                path=file.path,
+                extension=file.extension,
+                language_hint=file.language_hint,
+                size_bytes=file.size_bytes,
+                content_sha256=file.content_sha256,
+                archive_blob_path=file.archive_blob_path,
+                included_by=file.included_by,
+            )
+            for file in files
+        ]
+        self._store.snapshots[snapshot.id] = snapshot
+        return snapshot
+
+    def create_for_local_upload(
+        self,
+        *,
+        draft: CodeSnapshotLocalUploadDraft,
+        files: tuple[CodeSnapshotFileDraft, ...],
+    ) -> CodeSnapshot:
+        upload = self._store.local_uploads.get(draft.local_upload_id)
+        if upload is None:
+            raise ValueError("CodeSnapshotLocalUploadDraft.local_upload_id must exist.")
+        if draft.workspace_id != upload.workspace_id:
+            raise ValueError(
+                "CodeSnapshotLocalUploadDraft.workspace_id must match the local upload."
+            )
+        workspace = self._store.workspaces.get(upload.workspace_id)
+        if workspace is None or workspace.status is not WorkspaceStatus.ACTIVE:
+            raise ValueError("Local Upload snapshot requires an active workspace.")
+        if upload.status is not LocalUploadStatus.PROCESSING:
+            raise ValueError("Local Upload snapshot requires a processing upload.")
+        snapshot = CodeSnapshot(
+            id=draft.id,
+            workspace_id=draft.workspace_id,
+            source_kind=CodeSnapshotSourceKind.LOCAL_UPLOAD,
+            connection_id=None,
+            local_upload_id=draft.local_upload_id,
+            sync_run_id=None,
+            scope_rule_version_id=None,
+            requested_ref_type=None,
+            requested_ref_name=None,
+            resolved_commit_sha=None,
+            tree_sha=None,
+            archive_path=draft.archive_path,
+            file_count=draft.file_count,
+            total_bytes=draft.total_bytes,
+            created_at=draft.created_at or now_utc(),
         )
         snapshot.files = [
             CodeSnapshotFile(
@@ -1593,7 +2039,62 @@ class FakeCodeSnapshotRepository:
         ]
         if not snapshots:
             return None
-        return max(snapshots, key=lambda snapshot: (snapshot.created_at, snapshot.id))
+        return max(
+            snapshots,
+            key=lambda snapshot: (snapshot.created_at, snapshot.id),
+        )
+
+    def get_for_local_upload(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        local_upload_id: uuid.UUID,
+        snapshot_id: uuid.UUID,
+    ) -> CodeSnapshot | None:
+        snapshot = self._store.snapshots.get(snapshot_id)
+        if (
+            snapshot is None
+            or snapshot.workspace_id != workspace_id
+            or snapshot.local_upload_id != local_upload_id
+            or snapshot.source_kind is not CodeSnapshotSourceKind.LOCAL_UPLOAD
+        ):
+            return None
+        return snapshot
+
+    def get_latest_local_upload_for_workspace(
+        self, *, workspace_id: uuid.UUID
+    ) -> CodeSnapshot | None:
+        snapshots = [
+            snapshot
+            for snapshot in self._store.snapshots.values()
+            if snapshot.workspace_id == workspace_id
+            and snapshot.source_kind is CodeSnapshotSourceKind.LOCAL_UPLOAD
+            and (
+                self._store.local_uploads.get(snapshot.local_upload_id) is not None
+                and self._store.local_uploads[snapshot.local_upload_id].status
+                is LocalUploadStatus.SUCCEEDED
+                and self._store.local_uploads[
+                    snapshot.local_upload_id
+                ].latest_snapshot_id
+                == snapshot.id
+            )
+        ]
+        if not snapshots:
+            return None
+        return max(
+            snapshots,
+            key=lambda snapshot: (
+                snapshot.created_at,
+                snapshot.id,
+            ),
+        )
+
+    def list_for_workspace(self, *, workspace_id: uuid.UUID) -> list[CodeSnapshot]:
+        return [
+            snapshot
+            for snapshot in self._store.snapshots.values()
+            if snapshot.workspace_id == workspace_id
+        ]
 
     def get_by_sync_run_id(self, *, sync_run_id: uuid.UUID) -> CodeSnapshot | None:
         for snapshot in self._store.snapshots.values():
@@ -1701,6 +2202,8 @@ def create_test_client(
             repository_event_cursor_repository_factory=RepositoryEventCursorRepository,
             repository_sync_run_repository_factory=RepositorySyncRunRepository,
             code_snapshot_repository_factory=CodeSnapshotRepository,
+            workspace_repository_factory=WorkspaceRepository,
+            local_upload_repository_factory=LocalUploadRepository,
         )
     else:
         dependencies = AppDependencies(
@@ -1737,6 +2240,10 @@ def create_test_client(
                 store
             ),
             code_snapshot_repository_factory=lambda session: FakeCodeSnapshotRepository(
+                store
+            ),
+            workspace_repository_factory=lambda session: FakeWorkspaceRepository(store),
+            local_upload_repository_factory=lambda session: FakeLocalUploadRepository(
                 store
             ),
         )

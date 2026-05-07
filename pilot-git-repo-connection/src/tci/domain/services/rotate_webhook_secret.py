@@ -2,9 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Callable
 import uuid
 
+from tci.api.problem_details import ProblemCode
 from tci.domain.services.repository_connection_support import encrypt_secret_for_storage
+from tci.domain.services.repository_connection_support import (
+    RepositoryConnectionProblem,
+)
+from tci.domain.services.workspace_lifecycle import (
+    WorkspaceLifecycleProblem,
+    ensure_active_workspace,
+)
 from tci.infrastructure.persistence.models import WebhookSecretRevisionStatus
 
 
@@ -15,13 +24,15 @@ WEBHOOK_SECRET_GRACE_PERIOD = timedelta(hours=24)
 class RotateWebhookSecretCommand:
     workspace_id: uuid.UUID
     connection_id: uuid.UUID
-    plaintext_secret: str
+    plaintext_secret: str | None = None
+    secret_factory: Callable[[], str] | None = None
     rotated_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class RotateWebhookSecretResult:
     webhook_secret_revision_id: uuid.UUID
+    plaintext_secret: str
     grace_until: datetime | None
 
 
@@ -54,8 +65,24 @@ def rotate_webhook_secret(command: RotateWebhookSecretCommand, *, dependencies):
         )
         if connection is None:
             raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        workspace_repository_factory = getattr(
+            dependencies, "workspace_repository_factory", None
+        )
+        if workspace_repository_factory is not None:
+            try:
+                ensure_active_workspace(
+                    workspace_id=command.workspace_id,
+                    workspace_repository=workspace_repository_factory(session),
+                    lock_for_update=True,
+                )
+            except WorkspaceLifecycleProblem as error:
+                raise RepositoryConnectionProblem(
+                    ProblemCode.WORKSPACE_NOT_ACTIVE,
+                    "활성 워크스페이스에서만 새 스냅샷 작업을 시작할 수 있습니다.",
+                ) from error
+        plaintext_secret = _plaintext_secret_for_rotation(command)
         encrypted_secret = encrypt_secret_for_storage(
-            command.plaintext_secret,
+            plaintext_secret,
             settings=dependencies.settings,
         )
 
@@ -84,8 +111,17 @@ def rotate_webhook_secret(command: RotateWebhookSecretCommand, *, dependencies):
         )
         return RotateWebhookSecretResult(
             webhook_secret_revision_id=rotated_revision.id,
+            plaintext_secret=plaintext_secret,
             grace_until=(None if active_revision is None else grace_until),
         )
+
+
+def _plaintext_secret_for_rotation(command: RotateWebhookSecretCommand) -> str:
+    if command.plaintext_secret is not None:
+        return command.plaintext_secret
+    if command.secret_factory is not None:
+        return command.secret_factory()
+    raise ValueError("webhook secret plaintext or factory is required.")
 
 
 def build_webhook_secret_rotation_projection(

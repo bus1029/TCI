@@ -6,6 +6,7 @@ import sys
 from types import ModuleType
 from collections.abc import Iterable
 from typing import Any, cast
+from uuid import UUID
 
 import pytest
 
@@ -26,6 +27,10 @@ from tci.infrastructure.persistence.models import (
     SyncFailureCode,
     SyncRunStatus,
 )
+from tci.infrastructure.persistence.repository_connection_repository import (
+    RepositoryConnectionRepository,
+)
+import tci.infrastructure.persistence.repository_connection_repository as repository_connection_repository_module
 
 
 def _load_core_revision_module():
@@ -361,6 +366,117 @@ def test_sync_run_active_guard_revision_rejects_duplicate_blocked_rows(
         match="중복 blocked sync run을 정리한 뒤 migration을 실행해야 합니다.",
     ):
         revision_007.upgrade()
+
+
+def test_repository_identity_side_effect_lock_supports_connection_bound_session() -> (
+    None
+):
+    class FakeDialect:
+        name = "postgresql"
+
+    class FakeConnection:
+        dialect = FakeDialect()
+
+        def __init__(self) -> None:
+            self.scalar_statements: list[str] = []
+            self.execute_statements: list[str] = []
+            self.commits = 0
+
+        def scalar(self, statement, params=None) -> bool:
+            self.scalar_statements.append(str(statement))
+            return True
+
+        def execute(self, statement, params=None) -> None:
+            self.execute_statements.append(str(statement))
+
+        def commit(self) -> None:  # pragma: no cover - must remain caller-owned
+            self.commits += 1
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.bind = FakeConnection()
+
+        def get_bind(self) -> FakeConnection:
+            return self.bind
+
+    session = FakeSession()
+    repository = RepositoryConnectionRepository(cast(Any, session))
+
+    with repository.repository_identity_side_effect_lock(
+        workspace_id=UUID("00000000-0000-0000-0000-000000000001"),
+        provider=RepositoryProvider.GITHUB_CLOUD,
+        provider_instance_url=None,
+        provider_project_path="org/repo",
+    ):
+        pass
+
+    assert any(
+        "pg_try_advisory_lock" in item for item in session.bind.scalar_statements
+    )
+    assert any("pg_advisory_unlock" in item for item in session.bind.execute_statements)
+    assert session.bind.commits == 0
+
+
+def test_repository_identity_side_effect_lock_supports_engine_bound_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeDialect:
+        name = "postgresql"
+
+    class FakeCheckedOutConnection:
+        def __init__(self) -> None:
+            self.scalar_statements: list[str] = []
+            self.execute_statements: list[str] = []
+            self.commits = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        def scalar(self, statement, params=None) -> bool:
+            self.scalar_statements.append(str(statement))
+            return True
+
+        def execute(self, statement, params=None) -> None:
+            self.execute_statements.append(str(statement))
+
+        def commit(self) -> None:
+            self.commits += 1
+
+    class FakeEngine:
+        dialect = FakeDialect()
+
+        def __init__(self) -> None:
+            self.connection = FakeCheckedOutConnection()
+
+        def connect(self) -> FakeCheckedOutConnection:
+            return self.connection
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.bind = FakeEngine()
+
+        def get_bind(self) -> FakeEngine:
+            return self.bind
+
+    session = FakeSession()
+    monkeypatch.setattr(repository_connection_repository_module, "Engine", FakeEngine)
+    repository = RepositoryConnectionRepository(cast(Any, session))
+
+    with repository.repository_identity_side_effect_lock(
+        workspace_id=UUID("00000000-0000-0000-0000-000000000001"),
+        provider=RepositoryProvider.GITHUB_CLOUD,
+        provider_instance_url=None,
+        provider_project_path="org/repo",
+    ):
+        pass
+
+    connection = session.bind.connection
+    assert any("pg_try_advisory_lock" in item for item in connection.scalar_statements)
+    assert any("pg_advisory_unlock" in item for item in connection.execute_statements)
+    assert connection.commits == 2
 
 
 def test_sync_run_active_guard_revision_adds_dispatch_column_and_blocked_index(

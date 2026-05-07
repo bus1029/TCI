@@ -264,6 +264,12 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
             )
         )
         if not verification_outcome.is_verified:
+            if not _connection_workspace_is_active(
+                connection=connection,
+                dependencies=dependencies,
+                session=session,
+            ):
+                raise _workspace_not_active_problem()
             _record_rejected_event(
                 session=session,
                 connection_id=command.connection_id,
@@ -307,6 +313,13 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
         is_non_retryable_duplicate = (
             existing_delivery is not None and not retryable_delivery
         )
+        workspace_is_active = _connection_workspace_is_active(
+            connection=connection,
+            dependencies=dependencies,
+            session=session,
+        )
+        if not workspace_is_active:
+            raise _workspace_not_active_problem()
         decision = decide_github_event_processing(
             GitHubDecisionInput(
                 provider_event_type=_effective_provider_event_type(
@@ -325,6 +338,7 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
             is_non_retryable_duplicate
             or decision.processing_decision in {"record_only", "duplicate_head"}
             or connection.status is not RepositoryConnectionStatus.ACTIVE
+            or not workspace_is_active
         ):
             resolved_current_head_sha = None
         else:
@@ -334,11 +348,44 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
                 credential_repository=credential_repository,
                 dependencies=dependencies,
             )
+            resolution_connection = _snapshot_connection_for_git_resolution(connection)
+            operation_credential = _snapshot_credential_for_git_resolution(
+                operation_credential
+            )
+            _commit_before_external_git(session)
             resolved_current_head_sha = _resolve_current_head_sha(
-                connection=connection,
+                connection=resolution_connection,
                 parsed_event=parsed_event,
                 operation_credential=operation_credential,
                 dependencies=dependencies,
+            )
+            _expire_after_external_git(session)
+            latest_cursor = event_cursor_repository.get(
+                connection_id=command.connection_id,
+                target_key=parsed_event.target_key,
+            )
+            existing_delivery = event_repository.get_by_delivery_id_for_update(
+                connection_id=command.connection_id,
+                provider_delivery_id=command.provider_delivery_id,
+                provider_event_idempotency_source=ProviderEventIdempotencySource.DELIVERY_HEADER,
+            )
+            workspace_is_active = _connection_workspace_is_active(
+                connection=connection,
+                dependencies=dependencies,
+                session=session,
+            )
+            if not workspace_is_active:
+                raise _workspace_not_active_problem()
+            retryable_delivery = _is_retryable_delivery(
+                existing_delivery,
+                sync_run_repository=sync_run_repository,
+                connection_id=command.connection_id,
+            )
+            latest_cursor_head_sha = (
+                None if latest_cursor is None else latest_cursor.latest_head_sha
+            )
+            is_non_retryable_duplicate = (
+                existing_delivery is not None and not retryable_delivery
             )
             decision = decide_github_event_processing(
                 GitHubDecisionInput(
@@ -356,8 +403,8 @@ def process_github_event(command: ProcessGitHubEventCommand, *, dependencies):
             )
         if (
             connection.status is not RepositoryConnectionStatus.ACTIVE
-            and not is_non_retryable_duplicate
-        ):
+            or not workspace_is_active
+        ) and not is_non_retryable_duplicate:
             decision = GitHubDecisionOutcome(
                 processing_decision="record_only",
                 should_queue_sync=False,
@@ -690,6 +737,13 @@ def _create_or_replace_blocked_sync_run(
             )
             if blocked_sync_run is None:
                 raise
+        except ValueError as error:
+            if (
+                getattr(session, "begin_nested", None) is None
+                and (rollback := getattr(session, "rollback", None)) is not None
+            ):
+                rollback()
+            raise _workspace_not_active_problem() from error
 
     previous_event_id = getattr(blocked_sync_run, "trigger_event_id", None)
     if previous_event_id is not None and previous_event_id != draft.trigger_event_id:
@@ -783,6 +837,68 @@ def _create_sync_run_or_get_active(
         if active_sync_run is None:
             raise
         return active_sync_run, False
+    except ValueError as error:
+        if (
+            getattr(session, "begin_nested", None) is None
+            and (rollback := getattr(session, "rollback", None)) is not None
+        ):
+            rollback()
+        raise _workspace_not_active_problem() from error
+
+
+def _workspace_not_active_problem() -> RepositoryConnectionProblem:
+    return RepositoryConnectionProblem(
+        ProblemCode.WORKSPACE_NOT_ACTIVE,
+        "활성 워크스페이스에서만 새 스냅샷 작업을 시작할 수 있습니다.",
+    )
+
+
+def _commit_before_external_git(session) -> None:
+    commit = getattr(session, "commit", None)
+    if commit is not None:
+        commit()
+
+
+def _expire_after_external_git(session) -> None:
+    expire_all = getattr(session, "expire_all", None)
+    if expire_all is not None:
+        expire_all()
+
+
+def _snapshot_connection_for_git_resolution(connection):
+    return SimpleNamespace(
+        id=connection.id,
+        workspace_id=connection.workspace_id,
+        remote_url=connection.remote_url,
+        transport=connection.transport,
+    )
+
+
+def _snapshot_credential_for_git_resolution(operation_credential):
+    if operation_credential is None:
+        return None
+    return SimpleNamespace(
+        encrypted_secret=operation_credential.encrypted_secret,
+        credential_type=operation_credential.credential_type,
+    )
+
+
+def _connection_workspace_is_active(*, connection, dependencies, session) -> bool:
+    workspace_repository_factory = getattr(
+        dependencies, "workspace_repository_factory", None
+    )
+    if workspace_repository_factory is None:
+        return True
+    workspace_repository = workspace_repository_factory(session)
+    get_for_update = getattr(workspace_repository, "get_for_update", None)
+    if get_for_update is None:
+        workspace = workspace_repository.get(workspace_id=connection.workspace_id)
+    else:
+        workspace = get_for_update(workspace_id=connection.workspace_id)
+    if workspace is None:
+        return True
+    status = getattr(getattr(workspace, "status", None), "value", workspace.status)
+    return status == "active"
 
 
 def _is_retryable_delivery(

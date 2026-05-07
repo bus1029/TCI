@@ -234,6 +234,12 @@ class Workspace(Base):
             "status != 'deleted' OR (deleted_at IS NOT NULL AND deleted_by IS NOT NULL)",
             name="ck_workspace_deleted_requires_audit",
         ),
+        Index(
+            "ix_workspace_active_created_id",
+            text("created_at DESC"),
+            text("id DESC"),
+            postgresql_where=text("status = 'active'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
@@ -529,7 +535,12 @@ class RepositoryConnection(Base):
             "last_processed_event_id",
         ),
         Index("ix_repo_conn_plan_input_ref_id", "planning_input_reference_id"),
-        Index("ix_repo_conn_workspace_created_id", "workspace_id", "created_at", "id"),
+        Index(
+            "ix_repo_conn_workspace_created_id",
+            "workspace_id",
+            text("created_at DESC"),
+            text("id DESC"),
+        ),
         Index(
             "uq_repo_conn_workspace_github_repo",
             "workspace_id",
@@ -1040,6 +1051,12 @@ class RepositorySyncRun(Base):
         UniqueConstraint("connection_id", "id", name="uq_sync_run_conn_id_id"),
         Index("ix_sync_run_trigger_event_id", "trigger_event_id"),
         Index(
+            "ix_sync_run_connection_started_id",
+            "connection_id",
+            text("started_at DESC"),
+            text("id DESC"),
+        ),
+        Index(
             "ix_sync_run_one_active_per_requested_ref",
             "connection_id",
             "requested_ref_type",
@@ -1135,7 +1152,17 @@ class LocalUpload(Base):
             "status != 'failed' OR failure_code IS NOT NULL",
             name="ck_local_upload_failure_requires_code",
         ),
+        CheckConstraint(
+            "status NOT IN ('succeeded', 'failed') OR completed_at IS NOT NULL",
+            name="ck_local_upload_terminal_requires_completed_at",
+        ),
         Index("ix_local_upload_workspace_id", "workspace_id"),
+        Index(
+            "ix_local_upload_workspace_created_id",
+            "workspace_id",
+            text("created_at DESC"),
+            text("id DESC"),
+        ),
         Index("ix_local_upload_latest_snapshot_id", "latest_snapshot_id"),
     )
 
@@ -1195,6 +1222,12 @@ class WorkspaceDeletionRecord(Base):
             name="ck_workspace_deletion_counts_non_negative",
         ),
         Index("ix_workspace_deletion_record_workspace_id", "workspace_id"),
+        Index(
+            "ix_workspace_deletion_record_workspace_requested_id",
+            "workspace_id",
+            text("requested_at DESC"),
+            text("id DESC"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
@@ -1298,8 +1331,28 @@ class CodeSnapshot(Base):
             name="fk_code_snapshot_local_upload_workspace_owner",
         ),
         Index("ix_code_snapshot_connection_id", "connection_id"),
+        Index(
+            "ix_code_snapshot_connection_created_id",
+            "connection_id",
+            text("created_at DESC"),
+            text("id DESC"),
+            postgresql_where=text("source_kind = 'repository_connection'"),
+        ),
         Index("ix_code_snapshot_workspace_id", "workspace_id"),
+        Index(
+            "ix_code_snapshot_workspace_created_id",
+            "workspace_id",
+            text("created_at DESC"),
+            text("id DESC"),
+        ),
         Index("ix_code_snapshot_local_upload_id", "local_upload_id"),
+        Index(
+            "ix_code_snapshot_latest_local_upload",
+            "workspace_id",
+            text("created_at DESC"),
+            text("id DESC"),
+            postgresql_where=text("source_kind = 'local_upload'"),
+        ),
         Index("ix_code_snapshot_scope_rule_version_id", "scope_rule_version_id"),
     )
 

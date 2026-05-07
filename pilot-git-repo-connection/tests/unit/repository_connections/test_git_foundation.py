@@ -225,8 +225,8 @@ def test_planning_input_reference_repository_create_persists_reference_and_calls
 
     reference = repository.create(draft)
 
-    session.add.assert_called_once()
-    session.flush.assert_called_once()
+    session.add.assert_any_call(reference)
+    assert session.flush.call_count >= 1
     session.refresh.assert_called_once_with(reference)
     assert reference.workspace_id == draft.workspace_id
     assert reference.approved_spec_path == draft.approved_spec_path

@@ -12,6 +12,12 @@ def list_repository_connections(*, workspace_id: uuid.UUID, dependencies):
         )
 
     with dependencies.session_factory() as session:
+        if not _workspace_is_active(
+            workspace_id=workspace_id,
+            dependencies=dependencies,
+            session=session,
+        ):
+            return []
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )
@@ -21,3 +27,16 @@ def list_repository_connections(*, workspace_id: uuid.UUID, dependencies):
         for connection in connections:
             connection.origin = build_connection_origin(connection)
         return connections
+
+
+def _workspace_is_active(*, workspace_id: uuid.UUID, dependencies, session) -> bool:
+    workspace_repository_factory = getattr(
+        dependencies, "workspace_repository_factory", None
+    )
+    if workspace_repository_factory is None:
+        return True
+    workspace = workspace_repository_factory(session).get(workspace_id=workspace_id)
+    if workspace is None:
+        return True
+    status = getattr(getattr(workspace, "status", None), "value", workspace.status)
+    return status == "active"

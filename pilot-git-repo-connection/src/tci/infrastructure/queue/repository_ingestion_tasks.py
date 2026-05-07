@@ -5,9 +5,9 @@ from datetime import UTC, datetime, timedelta
 import inspect
 import uuid
 
-from celery import Celery
-from celery.utils.log import get_task_logger
-from kombu import Queue
+from celery import Celery  # type: ignore[import-untyped]
+from celery.utils.log import get_task_logger  # type: ignore[import-untyped]
+from kombu import Queue  # type: ignore[import-untyped]
 from sqlalchemy.exc import IntegrityError
 
 from tci.infrastructure.persistence.repository_event_cursor_repository import (
@@ -551,7 +551,7 @@ def _dispatch_next_pending_sync_for_ref(
                     sync_run_id=blocked_sync_run.id,
                     released_at=released_at,
                 )
-            except IntegrityError:
+            except (IntegrityError, ValueError):
                 return
             if pending_sync_run is None:
                 return

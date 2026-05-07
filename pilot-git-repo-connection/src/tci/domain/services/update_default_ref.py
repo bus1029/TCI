@@ -13,6 +13,10 @@ from tci.domain.services.repository_connection_support import (
     parse_default_ref_type,
     require_active_operation_credential,
 )
+from tci.domain.services.workspace_lifecycle import (
+    WorkspaceLifecycleProblem,
+    ensure_active_workspace,
+)
 from tci.infrastructure.persistence.models import (
     RepositoryConnectionStatus,
     RepositoryProvider,
@@ -71,9 +75,8 @@ def update_default_ref(command, *, dependencies):
     except Exception as error:
         status = _map_ref_update_failure_to_status(error)
         if status is not None:
-            _update_connection_status(
-                workspace_id=command.workspace_id,
-                connection_id=command.connection_id,
+            _update_connection_status_if_workspace_active(
+                command=command,
                 status=status,
                 dependencies=dependencies,
             )
@@ -86,6 +89,21 @@ def update_default_ref(command, *, dependencies):
         ) from error
 
     with dependencies.session_factory() as session:
+        workspace_repository_factory = getattr(
+            dependencies, "workspace_repository_factory", None
+        )
+        if workspace_repository_factory is not None:
+            try:
+                ensure_active_workspace(
+                    workspace_id=command.workspace_id,
+                    workspace_repository=workspace_repository_factory(session),
+                    lock_for_update=True,
+                )
+            except WorkspaceLifecycleProblem as error:
+                raise RepositoryConnectionProblem(
+                    ProblemCode.WORKSPACE_NOT_ACTIVE,
+                    "활성 워크스페이스에서만 새 스냅샷 작업을 시작할 수 있습니다.",
+                ) from error
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )
@@ -112,20 +130,31 @@ def _map_ref_update_failure_to_status(
     return None
 
 
-def _update_connection_status(
+def _update_connection_status_if_workspace_active(
     *,
-    workspace_id: uuid.UUID,
-    connection_id: uuid.UUID,
+    command,
     status: RepositoryConnectionStatus,
     dependencies,
 ) -> None:
     with dependencies.session_factory() as session:
+        workspace_repository_factory = getattr(
+            dependencies, "workspace_repository_factory", None
+        )
+        if workspace_repository_factory is not None:
+            try:
+                ensure_active_workspace(
+                    workspace_id=command.workspace_id,
+                    workspace_repository=workspace_repository_factory(session),
+                    lock_for_update=True,
+                )
+            except WorkspaceLifecycleProblem:
+                return
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )
         connection_repository.update_verification(
-            workspace_id=workspace_id,
-            connection_id=connection_id,
+            workspace_id=command.workspace_id,
+            connection_id=command.connection_id,
             status=status,
             last_verified_at=datetime.now(tz=UTC),
         )
@@ -147,6 +176,21 @@ def _load_connection_context(
         )
         if connection is None:
             raise LookupError("저장소 연결을 찾을 수 없습니다.")
+        workspace_repository_factory = getattr(
+            dependencies, "workspace_repository_factory", None
+        )
+        if workspace_repository_factory is not None:
+            try:
+                ensure_active_workspace(
+                    workspace_id=workspace_id,
+                    workspace_repository=workspace_repository_factory(session),
+                    lock_for_update=True,
+                )
+            except WorkspaceLifecycleProblem as error:
+                raise RepositoryConnectionProblem(
+                    ProblemCode.WORKSPACE_NOT_ACTIVE,
+                    "활성 워크스페이스에서만 새 스냅샷 작업을 시작할 수 있습니다.",
+                ) from error
         credential_revision = credential_repository.get_active_for_connection(
             connection_id=connection.id
         )

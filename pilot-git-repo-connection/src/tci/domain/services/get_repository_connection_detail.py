@@ -15,6 +15,12 @@ def get_repository_connection_detail(
         raise RuntimeError("저장소 연결을 조회하려면 데이터베이스 세션이 필요합니다.")
 
     with dependencies.session_factory() as session:
+        if not _workspace_is_active(
+            workspace_id=workspace_id,
+            dependencies=dependencies,
+            session=session,
+        ):
+            raise LookupError("저장소 연결을 찾을 수 없습니다.")
         connection_repository = dependencies.repository_connection_repository_factory(
             session
         )
@@ -58,3 +64,16 @@ def get_repository_connection_detail(
         connection.webhook_secret_grace_until = rotation_projection.grace_until
         connection.origin = build_connection_origin(connection)
         return connection
+
+
+def _workspace_is_active(*, workspace_id: uuid.UUID, dependencies, session) -> bool:
+    workspace_repository_factory = getattr(
+        dependencies, "workspace_repository_factory", None
+    )
+    if workspace_repository_factory is None:
+        return True
+    workspace = workspace_repository_factory(session).get(workspace_id=workspace_id)
+    if workspace is None:
+        return True
+    status = getattr(getattr(workspace, "status", None), "value", workspace.status)
+    return status == "active"

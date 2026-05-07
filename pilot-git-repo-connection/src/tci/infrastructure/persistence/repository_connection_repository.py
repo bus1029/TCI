@@ -6,11 +6,14 @@ from datetime import datetime
 import hashlib
 from ipaddress import ip_address
 import re
+import time
 import uuid
 from urllib.parse import urlparse
 
 import sqlalchemy as sa
+from sqlalchemy.engine import Engine
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from tci.infrastructure.persistence.models import (
@@ -33,6 +36,8 @@ from tci.infrastructure.persistence.models import (
 _HOSTNAME_PATTERN = re.compile(
     r"^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$"
 )
+_SIDE_EFFECT_LOCK_TIMEOUT_SECONDS = 30.0
+_SIDE_EFFECT_LOCK_RETRY_SECONDS = 0.1
 
 
 def _has_whitespace_or_control(value: str) -> bool:
@@ -142,11 +147,15 @@ class RepositoryConnectionRepository:
         return connection
 
     def ensure_active_workspace(self, *, workspace_id: uuid.UUID) -> None:
-        workspace = self._session.get(Workspace, workspace_id)
-        if workspace is None:
-            self._session.add(Workspace(id=workspace_id))
-            self._session.flush()
-            return
+        try:
+            with self._session.begin_nested():
+                self._session.add(Workspace(id=workspace_id))
+                self._session.flush()
+        except IntegrityError:
+            pass
+        workspace = self._session.scalar(
+            select(Workspace).where(Workspace.id == workspace_id).with_for_update()
+        )
         if not isinstance(workspace, Workspace):
             return
         if workspace.status is not WorkspaceStatus.ACTIVE:
@@ -211,6 +220,67 @@ class RepositoryConnectionRepository:
             {"lock_key": lock_key},
         )
         yield
+
+    @contextmanager
+    def repository_identity_side_effect_lock(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        provider: RepositoryProvider,
+        provider_instance_url: str | None,
+        provider_project_path: str,
+    ):
+        bind = self._session.get_bind()
+        if bind.dialect.name != "postgresql":
+            yield
+            return
+        lock_key = _repository_identity_lock_key(
+            workspace_id=workspace_id,
+            provider=provider,
+            provider_instance_url=provider_instance_url,
+            provider_project_path=provider_project_path,
+        )
+        # Session-level advisory locks must keep the PostgreSQL backend checked out
+        # while Git side effects run. Use try-lock polling so same-identity creates
+        # fail boundedly instead of blocking a pooled connection forever.
+        deadline = time.monotonic() + _SIDE_EFFECT_LOCK_TIMEOUT_SECONDS
+        while True:
+            if isinstance(bind, Engine):
+                with bind.connect() as connection:
+                    acquired = connection.scalar(
+                        sa.text("SELECT pg_try_advisory_lock(:lock_key)"),
+                        {"lock_key": lock_key},
+                    )
+                    connection.commit()
+                    if acquired:
+                        try:
+                            yield
+                        finally:
+                            connection.execute(
+                                sa.text("SELECT pg_advisory_unlock(:lock_key)"),
+                                {"lock_key": lock_key},
+                            )
+                            connection.commit()
+                        return
+            else:
+                acquired = bind.scalar(
+                    sa.text("SELECT pg_try_advisory_lock(:lock_key)"),
+                    {"lock_key": lock_key},
+                )
+                if acquired:
+                    try:
+                        yield
+                    finally:
+                        bind.execute(
+                            sa.text("SELECT pg_advisory_unlock(:lock_key)"),
+                            {"lock_key": lock_key},
+                        )
+                    return
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    "Repository connection identity lock is busy. Retry later."
+                )
+            time.sleep(_SIDE_EFFECT_LOCK_RETRY_SECONDS)
 
     @staticmethod
     def _validate_transport_matches_remote_url(
@@ -591,6 +661,7 @@ class RepositoryConnectionRepository:
         connection_id: uuid.UUID,
         created_by: uuid.UUID,
     ) -> CollectionScopeRuleVersion:
+        self._lock_active_workspace(workspace_id=workspace_id)
         connection = self.get_for_update(
             workspace_id=workspace_id,
             connection_id=connection_id,
@@ -627,6 +698,13 @@ class RepositoryConnectionRepository:
         self._session.refresh(scope_rule)
         self._session.refresh(connection)
         return scope_rule
+
+    def _lock_active_workspace(self, *, workspace_id: uuid.UUID) -> None:
+        workspace = self._session.scalar(
+            select(Workspace).where(Workspace.id == workspace_id).with_for_update()
+        )
+        if workspace is None or workspace.status is not WorkspaceStatus.ACTIVE:
+            raise ValueError("저장소 연결 작업에는 활성 워크스페이스가 필요합니다.")
 
     def record_sync_failure(
         self,

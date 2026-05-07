@@ -13,17 +13,23 @@ from tci.infrastructure.persistence.models import (
     RefType,
     RepositoryConnectionStatus,
     SyncRunStatus,
+    Workspace,
+    WorkspaceStatus,
 )
 from tests.support.repository_connection_testkit import (
     build_github_push_payload,
     build_github_webhook_headers,
+    build_gitlab_push_payload,
+    build_gitlab_webhook_headers,
     create_connection_payload,
     create_planning_input_reference_payload,
     create_test_client,
     create_test_ssh_private_key,
+    seed_active_webhook_secret,
     seed_rotated_webhook_secret_with_grace,
     seed_planning_input_reference,
     serialize_github_webhook_payload,
+    serialize_gitlab_webhook_payload,
 )
 
 
@@ -854,6 +860,36 @@ def test_create_connection_serializes_duplicate_identity_before_git_access(
     assert store.identity_lock_depth_at_ref_resolve == 1
 
 
+def test_create_connection_cleans_mirror_when_workspace_deletes_after_git_sync(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+    store.workspaces[workspace_id] = Workspace(
+        id=workspace_id,
+        status=WorkspaceStatus.ACTIVE,
+        created_at=datetime.now(tz=UTC),
+        updated_at=datetime.now(tz=UTC),
+    )
+
+    def delete_workspace_before_mirror_create() -> None:
+        workspace = store.workspaces[workspace_id]
+        workspace.status = WorkspaceStatus.DELETING
+
+    store.after_mirror_sync = delete_workspace_before_mirror_create
+
+    response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "WORKSPACE_NOT_ACTIVE"
+    mirror_root = tmp_path / ".runtime" / "git-mirrors"
+    assert not list(mirror_root.glob("*.git"))
+
+
 def test_create_connection_rejects_unallowlisted_gitlab_https_port_before_git_access(
     tmp_path,
 ) -> None:
@@ -1158,6 +1194,145 @@ def test_get_connection_detail_exposes_webhook_rotation_projection(
     }
 
 
+def test_github_webhook_for_deleting_workspace_does_not_resolve_git(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = create_response.json()["id"]
+    seed_rotated_webhook_secret_with_grace(
+        store,
+        connection_id=uuid.UUID(connection_id),
+        active_secret="current-secret",
+        previous_secret="previous-secret",
+        grace_until=datetime.now(tz=UTC) + timedelta(hours=24),
+    )
+    payload = build_github_push_payload(after_sha="a" * 40)
+    headers = build_github_webhook_headers(
+        secret="current-secret",
+        payload=payload,
+        delivery_id="delivery-deleting-workspace-001",
+        event_name="push",
+    )
+    headers["content-type"] = "application/json"
+    store.workspaces[workspace_id].status = WorkspaceStatus.DELETING
+    store.last_resolved_remote_url = None
+
+    webhook_response = client.post(
+        f"/api/webhooks/github/{connection_id}",
+        content=serialize_github_webhook_payload(payload),
+        headers=headers,
+    )
+
+    assert webhook_response.status_code == 409
+    assert webhook_response.json()["code"] == "WORKSPACE_NOT_ACTIVE"
+    assert store.last_resolved_remote_url is None
+    assert store.repository_events == {}
+    assert store.connections[uuid.UUID(connection_id)].last_processed_event_id is None
+
+
+def test_gitlab_webhook_for_deleting_workspace_does_not_mutate_event_or_health(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+    object.__setattr__(
+        client.app.state.settings,
+        "gitlab_self_managed_allowed_hosts",
+        ("gitlab.example.com",),
+    )
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com/group/sample-repo.git",
+        ),
+    )
+    connection_id = create_response.json()["id"]
+    connection_uuid = uuid.UUID(connection_id)
+    seed_active_webhook_secret(
+        store,
+        connection_id=connection_uuid,
+        secret="gitlab-webhook-secret",
+    )
+    payload = build_gitlab_push_payload(after_sha="a" * 40)
+    headers = build_gitlab_webhook_headers(
+        token="gitlab-webhook-secret",
+        event_name="Push Hook",
+        idempotency_key="gitlab-deleting-workspace-001",
+    )
+    headers["content-type"] = "application/json"
+    store.workspaces[workspace_id].status = WorkspaceStatus.DELETING
+    store.last_resolved_remote_url = None
+
+    webhook_response = client.post(
+        f"/api/webhooks/gitlab/{connection_id}",
+        content=serialize_gitlab_webhook_payload(payload),
+        headers=headers,
+    )
+
+    assert webhook_response.status_code == 409
+    assert webhook_response.json()["code"] == "WORKSPACE_NOT_ACTIVE"
+    assert store.last_resolved_remote_url is None
+    assert store.repository_events == {}
+    assert store.connections[connection_uuid].last_processed_event_id is None
+
+
+def test_gitlab_repository_mismatch_for_deleting_workspace_does_not_record_rejection(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+    object.__setattr__(
+        client.app.state.settings,
+        "gitlab_self_managed_allowed_hosts",
+        ("gitlab.example.com",),
+    )
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com/group/sample-repo.git",
+        ),
+    )
+    connection_id = create_response.json()["id"]
+    connection_uuid = uuid.UUID(connection_id)
+    seed_active_webhook_secret(
+        store,
+        connection_id=connection_uuid,
+        secret="gitlab-webhook-secret",
+    )
+    payload = build_gitlab_push_payload(
+        after_sha="a" * 40,
+        project_path="other-group/other-repo",
+    )
+    headers = build_gitlab_webhook_headers(
+        token="gitlab-webhook-secret",
+        event_name="Push Hook",
+        idempotency_key="gitlab-mismatch-deleting-workspace-001",
+    )
+    headers["content-type"] = "application/json"
+    store.workspaces[workspace_id].status = WorkspaceStatus.DELETING
+
+    webhook_response = client.post(
+        f"/api/webhooks/gitlab/{connection_id}",
+        content=serialize_gitlab_webhook_payload(payload),
+        headers=headers,
+    )
+
+    assert webhook_response.status_code == 409
+    assert webhook_response.json()["code"] == "WORKSPACE_NOT_ACTIVE"
+    assert store.repository_events == {}
+    assert store.connections[connection_uuid].last_processed_event_id is None
+
+
 def test_issue_webhook_secret_returns_one_time_plaintext_without_leaking_it_in_detail(
     tmp_path, monkeypatch
 ) -> None:
@@ -1227,13 +1402,84 @@ def test_issue_webhook_secret_returns_structured_error_when_encryption_is_unavai
     }
 
 
-def test_issue_webhook_secret_returns_not_found_before_encryption_failure_for_missing_connection(
-    tmp_path,
+def test_issue_webhook_secret_rejects_deleting_workspace_before_secret_write(
+    tmp_path, monkeypatch
 ) -> None:
+    import tci.api.routes.repository_connections as repository_connections_routes
+
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = create_response.json()["id"]
+    monkeypatch.setattr(
+        repository_connections_routes,
+        "generate_webhook_secret",
+        lambda: "secret-that-must-not-persist",
+    )
+    store.workspaces[workspace_id].status = WorkspaceStatus.DELETING
+    revision_count = len(store.webhook_secret_revisions)
+
+    response = client.post(
+        f"/api/repository-connections/{connection_id}/webhook-secret"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "WORKSPACE_NOT_ACTIVE"
+    assert len(store.webhook_secret_revisions) == revision_count
+
+
+def test_issue_webhook_secret_rejects_workspace_delete_race_before_secret_write(
+    tmp_path, monkeypatch
+) -> None:
+    import tci.api.routes.repository_connections as repository_connections_routes
+
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = create_response.json()["id"]
+    monkeypatch.setattr(
+        repository_connections_routes,
+        "generate_webhook_secret",
+        lambda: "secret-that-race-must-not-persist",
+    )
+    revision_count = len(store.webhook_secret_revisions)
+
+    def delete_workspace_before_locked_secret_write() -> None:
+        store.workspaces[workspace_id].status = WorkspaceStatus.DELETING
+
+    store.before_workspace_lock_read = delete_workspace_before_locked_secret_write
+
+    response = client.post(
+        f"/api/repository-connections/{connection_id}/webhook-secret"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "WORKSPACE_NOT_ACTIVE"
+    assert len(store.webhook_secret_revisions) == revision_count
+
+
+def test_issue_webhook_secret_returns_not_found_before_encryption_failure_for_missing_connection(
+    tmp_path, monkeypatch
+) -> None:
+    import tci.api.routes.repository_connections as repository_connections_routes
+
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
     seed_planning_input_reference(store, workspace_id=workspace_id)
     object.__setattr__(client.app.state.settings, "credential_encryption_key", None)
+    monkeypatch.setattr(
+        repository_connections_routes,
+        "generate_webhook_secret",
+        lambda: (_ for _ in ()).throw(AssertionError("secret generated too early")),
+    )
 
     response = client.post(f"/api/repository-connections/{uuid.uuid4()}/webhook-secret")
 
@@ -1263,6 +1509,136 @@ def test_patch_connection_updates_default_ref(tmp_path) -> None:
     assert patch_response.status_code == 200
     assert patch_response.json()["defaultRefName"] == "release/2026.04"
     assert patch_response.json()["status"] == "active"
+
+
+def test_patch_connection_rejects_deleting_workspace_before_git_access(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = create_response.json()["id"]
+    store.workspaces[workspace_id].status = WorkspaceStatus.DELETING
+    store.last_resolved_remote_url = None
+
+    patch_response = client.patch(
+        f"/api/repository-connections/{connection_id}",
+        json={
+            "defaultRefType": "branch",
+            "defaultRefName": "release/2026.04",
+        },
+    )
+
+    assert patch_response.status_code == 409
+    assert patch_response.json()["code"] == "WORKSPACE_NOT_ACTIVE"
+    assert store.last_resolved_remote_url is None
+
+
+def test_patch_connection_rejects_workspace_delete_race_after_git_resolution(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = create_response.json()["id"]
+    original_default_ref = store.connections[uuid.UUID(connection_id)].default_ref_name
+
+    def delete_workspace_after_git_resolution() -> None:
+        store.workspaces[workspace_id].status = WorkspaceStatus.DELETING
+
+    store.after_ref_resolve = delete_workspace_after_git_resolution
+
+    patch_response = client.patch(
+        f"/api/repository-connections/{connection_id}",
+        json={
+            "defaultRefType": "branch",
+            "defaultRefName": "release/2026.04",
+        },
+    )
+
+    assert patch_response.status_code == 409
+    assert patch_response.json()["code"] == "WORKSPACE_NOT_ACTIVE"
+    assert store.connections[uuid.UUID(connection_id)].default_ref_name == (
+        original_default_ref
+    )
+
+
+def test_patch_connection_does_not_update_status_when_workspace_deletes_after_git_failure(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = create_response.json()["id"]
+    connection_uuid = uuid.UUID(connection_id)
+    original_status = store.connections[connection_uuid].status
+    store.missing_ref_names.add("release/2026.04")
+
+    def delete_workspace_during_git_failure() -> None:
+        store.workspaces[workspace_id].status = WorkspaceStatus.DELETING
+
+    store.after_ref_resolve = delete_workspace_during_git_failure
+
+    patch_response = client.patch(
+        f"/api/repository-connections/{connection_id}",
+        json={
+            "defaultRefType": "branch",
+            "defaultRefName": "release/2026.04",
+        },
+    )
+
+    assert patch_response.status_code == 400
+    assert patch_response.json()["code"] == "DEFAULT_REF_NOT_FOUND"
+    assert store.connections[connection_uuid].status is original_status
+
+
+def test_patch_connection_rejects_workspace_delete_race_before_missing_credential_status(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = create_response.json()["id"]
+    connection_uuid = uuid.UUID(connection_id)
+    store.connections[connection_uuid].active_credential_revision_id = None
+    original_status = store.connections[connection_uuid].status
+
+    def delete_workspace_before_locked_credential_check() -> None:
+        store.workspaces[workspace_id].status = WorkspaceStatus.DELETING
+
+    store.before_workspace_lock_read = delete_workspace_before_locked_credential_check
+
+    patch_response = client.patch(
+        f"/api/repository-connections/{connection_id}",
+        json={
+            "defaultRefType": "branch",
+            "defaultRefName": "release/2026.04",
+        },
+    )
+
+    assert patch_response.status_code == 409
+    assert patch_response.json()["code"] == "WORKSPACE_NOT_ACTIVE"
+    assert store.connections[connection_uuid].status is original_status
 
 
 def test_patch_connection_rejects_unallowlisted_gitlab_before_git_access(
@@ -1724,6 +2100,41 @@ def test_create_snapshot_cleans_up_pending_run_when_enqueue_fails(
     assert store.sync_runs == {}
 
 
+def test_create_snapshot_cleans_up_pending_run_when_workspace_deletes_before_enqueue_failure(
+    tmp_path, monkeypatch
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = create_response.json()["id"]
+
+    def fail_after_workspace_deleting(name: str, kwargs: dict[str, str]) -> None:
+        store.workspaces[workspace_id].status = WorkspaceStatus.DELETING
+        raise RuntimeError("broker down")
+
+    object.__setattr__(client.app.state.settings, "redis_url", "redis://example")
+    monkeypatch.setattr(
+        "tci.api.routes.repository_snapshots.create_celery_app",
+        lambda settings: SimpleNamespace(send_task=fail_after_workspace_deleting),
+    )
+
+    snapshot_response = client.post(
+        f"/api/repository-connections/{connection_id}/snapshots",
+        json={"reason": "manual_initial"},
+    )
+
+    assert snapshot_response.status_code == 503
+    assert snapshot_response.json() == {
+        "detail": "스냅샷 작업 큐에 연결할 수 없습니다."
+    }
+    assert store.sync_runs == {}
+
+
 def test_create_snapshot_rejects_invalid_reason_with_problem_response(
     tmp_path,
 ) -> None:
@@ -1746,6 +2157,32 @@ def test_create_snapshot_rejects_invalid_reason_with_problem_response(
     assert snapshot_response.json() == {
         "code": "INVALID_INPUT",
         "message": "reason은 manual_initial 또는 manual_refresh여야 합니다.",
+    }
+
+
+def test_create_snapshot_rejects_deleting_workspace_with_problem_response(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = create_response.json()["id"]
+    store.workspaces[workspace_id].status = WorkspaceStatus.DELETING
+
+    snapshot_response = client.post(
+        f"/api/repository-connections/{connection_id}/snapshots",
+        json={"reason": "manual_initial"},
+    )
+
+    assert snapshot_response.status_code == 409
+    assert snapshot_response.json() == {
+        "code": "WORKSPACE_NOT_ACTIVE",
+        "message": "활성 워크스페이스에서만 새 스냅샷 작업을 시작할 수 있습니다.",
     }
 
 

@@ -30,6 +30,10 @@ from tci.domain.services.list_repository_candidates import RepositoryCandidateSo
 from tci.infrastructure.persistence.code_snapshot_repository import (
     CodeSnapshotRepository,
 )
+from tci.infrastructure.persistence.local_upload_repository import (
+    LocalUploadRepository,
+)
+from tci.infrastructure.persistence.workspace_repository import WorkspaceRepository
 from tci.infrastructure.git.git_mirror_manager import (
     GitMirrorManager,
     _subprocess_git_runner,
@@ -107,6 +111,8 @@ class AppDependencies:
         [Session], RepositorySyncRunRepository
     ]
     code_snapshot_repository_factory: Callable[[Session], CodeSnapshotRepository]
+    workspace_repository_factory: Callable[[Session], WorkspaceRepository]
+    local_upload_repository_factory: Callable[[Session], LocalUploadRepository]
     repository_candidate_source: RepositoryCandidateSource | None = None
 
 
@@ -131,6 +137,8 @@ def build_app_dependencies(settings: Settings) -> AppDependencies:
         repository_event_cursor_repository_factory=RepositoryEventCursorRepository,
         repository_sync_run_repository_factory=RepositorySyncRunRepository,
         code_snapshot_repository_factory=CodeSnapshotRepository,
+        workspace_repository_factory=WorkspaceRepository,
+        local_upload_repository_factory=LocalUploadRepository,
         repository_candidate_source=None,
     )
 

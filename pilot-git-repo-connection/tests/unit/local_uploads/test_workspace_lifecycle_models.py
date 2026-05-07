@@ -104,6 +104,9 @@ def test_local_upload_table_contains_processing_and_limit_metadata() -> None:
         "completed_at",
     } <= set(table.c.keys())
     assert cast(Any, table.c["failure_message"].type).length == 512
+    assert "ix_local_upload_workspace_created_id" in {
+        index.name for index in table.indexes
+    }
 
 
 def test_workspace_deletion_record_uses_minimum_audit_metadata() -> None:
@@ -125,6 +128,9 @@ def test_workspace_deletion_record_uses_minimum_audit_metadata() -> None:
     assert "archive_path" not in table.c
     assert "file_paths" not in table.c
     assert cast(Any, table.c["failure_message"].type).length == 512
+    assert "ix_workspace_deletion_record_workspace_requested_id" in {
+        index.name for index in table.indexes
+    }
 
 
 def test_code_snapshot_table_is_source_aware_without_fake_repository_connection() -> (
@@ -149,6 +155,15 @@ def test_code_snapshot_table_is_source_aware_without_fake_repository_connection(
     assert "uq_code_snapshot_workspace_local_upload_id" in {
         constraint.name for constraint in table.constraints
     }
+    assert "ix_code_snapshot_latest_local_upload" in {
+        index.name for index in table.indexes
+    }
+    assert "ix_code_snapshot_connection_created_id" in {
+        index.name for index in table.indexes
+    }
+    assert "ix_code_snapshot_workspace_created_id" in {
+        index.name for index in table.indexes
+    }
 
 
 def test_code_snapshot_constraints_enforce_exactly_one_source_owner() -> None:
@@ -168,6 +183,10 @@ def test_local_upload_success_and_failure_constraints_are_recorded() -> None:
 
     assert "status != 'succeeded' OR latest_snapshot_id IS NOT NULL" in constraint_sql
     assert "status != 'failed' OR failure_code IS NOT NULL" in constraint_sql
+    assert (
+        "status NOT IN ('succeeded', 'failed') OR completed_at IS NOT NULL"
+        in constraint_sql
+    )
 
 
 def test_encrypted_zip_fixture_marks_entry_as_encrypted() -> None:

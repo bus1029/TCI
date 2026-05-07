@@ -83,72 +83,85 @@ def create_repository_connection(command, *, dependencies):
     repository_owner, _, repository_name = (
         repository_identity.provider_project_path.rpartition("/")
     )
-    with dependencies.session_factory() as session:
-        connection_repository = dependencies.repository_connection_repository_factory(
-            session
-        )
-        credential_repository = dependencies.credential_revision_repository_factory(
-            session
-        )
-        try:
-            with connection_repository.repository_identity_creation_lock(
+    _ensure_workspace_preflight(
+        workspace_id=command.workspace_id,
+        dependencies=dependencies,
+    )
+    encrypted_secret = encrypt_secret_for_storage(
+        command.credential_secret,
+        settings=dependencies.settings,
+    )
+    connection_id = uuid.uuid4()
+    mirror = None
+    connection = None
+    try:
+        with dependencies.session_factory() as lock_session:
+            lock_repository = dependencies.repository_connection_repository_factory(
+                lock_session
+            )
+            with _repository_identity_side_effect_lock(
+                lock_repository=lock_repository,
                 workspace_id=command.workspace_id,
                 provider=provider,
                 provider_instance_url=repository_identity.provider_instance_url,
                 provider_project_path=repository_identity.provider_project_path,
             ):
-                connection_repository.ensure_active_workspace(
-                    workspace_id=command.workspace_id
-                )
-                connection_repository.ensure_repository_identity_available(
+                _ensure_repository_identity_available(
+                    connection_repository=lock_repository,
                     workspace_id=command.workspace_id,
                     provider=provider,
                     provider_instance_url=repository_identity.provider_instance_url,
                     provider_project_path=repository_identity.provider_project_path,
                 )
-
-                encrypted_secret = encrypt_secret_for_storage(
-                    command.credential_secret,
-                    settings=dependencies.settings,
-                )
-                connection_id = uuid.uuid4()
-                try:
-                    with bind_git_credential(
-                        remote_url=command.remote_url,
-                        transport=transport,
-                        credential_type=credential_type,
-                        credential_secret=command.credential_secret,
-                    ) as credential_bound_remote_url:
-                        resolved_ref = dependencies.git_ref_resolver.resolve(
-                            remote_url=credential_bound_remote_url,
-                            ref_type=default_ref_type,
-                            ref_name=command.default_ref_name,
+                rollback = getattr(lock_session, "rollback", None)
+                if rollback is not None:
+                    rollback()
+                with bind_git_credential(
+                    remote_url=command.remote_url,
+                    transport=transport,
+                    credential_type=credential_type,
+                    credential_secret=command.credential_secret,
+                ) as credential_bound_remote_url:
+                    resolved_ref = dependencies.git_ref_resolver.resolve(
+                        remote_url=credential_bound_remote_url,
+                        ref_type=default_ref_type,
+                        ref_name=command.default_ref_name,
+                    )
+                    probe_result = dependencies.git_readonly_validator.probe(
+                        remote_url=credential_bound_remote_url
+                    )
+                    if not probe_result.is_read_only:
+                        raise RepositoryConnectionProblem(
+                            probe_result.problem_code
+                            or ProblemCode.READ_WRITE_CREDENTIAL_NOT_ALLOWED,
+                            probe_result.detail,
                         )
-                        probe_result = dependencies.git_readonly_validator.probe(
-                            remote_url=credential_bound_remote_url
-                        )
-                        if not probe_result.is_read_only:
-                            raise RepositoryConnectionProblem(
-                                probe_result.problem_code
-                                or ProblemCode.READ_WRITE_CREDENTIAL_NOT_ALLOWED,
-                                probe_result.detail,
-                            )
 
-                        mirror = dependencies.git_mirror_manager.ensure_synced_mirror(
-                            connection_id=connection_id,
-                            remote_url=credential_bound_remote_url,
-                            restore_remote_url=(
-                                None
-                                if credential_bound_remote_url == command.remote_url
-                                else command.remote_url
-                            ),
-                        )
-                except Exception as error:
-                    if isinstance(error, RepositoryConnectionProblem):
-                        raise
-                    raise _translate_git_failure(error) from error
-
-                try:
+                    mirror = dependencies.git_mirror_manager.ensure_synced_mirror(
+                        connection_id=connection_id,
+                        remote_url=credential_bound_remote_url,
+                        restore_remote_url=(
+                            None
+                            if credential_bound_remote_url == command.remote_url
+                            else command.remote_url
+                        ),
+                    )
+                with dependencies.session_factory() as session:
+                    connection_repository = (
+                        dependencies.repository_connection_repository_factory(session)
+                    )
+                    credential_repository = (
+                        dependencies.credential_revision_repository_factory(session)
+                    )
+                    connection_repository.ensure_active_workspace(
+                        workspace_id=command.workspace_id
+                    )
+                    connection_repository.ensure_repository_identity_available(
+                        workspace_id=command.workspace_id,
+                        provider=provider,
+                        provider_instance_url=repository_identity.provider_instance_url,
+                        provider_project_path=repository_identity.provider_project_path,
+                    )
                     connection = connection_repository.create(
                         RepositoryConnectionDraft(
                             id=connection_id,
@@ -172,41 +185,151 @@ def create_repository_connection(command, *, dependencies):
                             last_verified_at=datetime.now(tz=UTC),
                         )
                     )
-                except (IntegrityError, ValueError) as error:
-                    shutil.rmtree(mirror.absolute_path, ignore_errors=True)
-                    raise RepositoryConnectionProblem(
-                        ProblemCode.INVALID_INPUT,
-                        (
-                            "Repository connection already exists for this workspace."
-                            if isinstance(error, IntegrityError)
-                            else str(error)
-                        ),
-                    ) from error
-                credential_revision = credential_repository.create(
-                    CredentialRevisionDraft(
-                        connection_id=connection.id,
-                        credential_type=credential_type,
-                        encrypted_secret=encrypted_secret,
-                        display_fingerprint=derive_fingerprint(
-                            secret=command.credential_secret,
-                            provided_fingerprint=command.credential_fingerprint,
-                        ),
-                        read_only_validated=True,
-                        status=CredentialRevisionStatus.ACTIVE,
+                    credential_revision = credential_repository.create(
+                        CredentialRevisionDraft(
+                            connection_id=connection.id,
+                            credential_type=credential_type,
+                            encrypted_secret=encrypted_secret,
+                            display_fingerprint=derive_fingerprint(
+                                secret=command.credential_secret,
+                                provided_fingerprint=command.credential_fingerprint,
+                            ),
+                            read_only_validated=True,
+                            status=CredentialRevisionStatus.ACTIVE,
+                        )
                     )
+                    connection = connection_repository.set_active_credential_revision(
+                        workspace_id=command.workspace_id,
+                        connection_id=connection.id,
+                        credential_revision_id=credential_revision.id,
+                    )
+                    connection.planning_input_reference = None
+            return connection
+    except Exception as error:
+        if mirror is not None:
+            shutil.rmtree(mirror.absolute_path, ignore_errors=True)
+        if isinstance(error, RepositoryConnectionProblem):
+            raise
+        if isinstance(error, IntegrityError):
+            raise RepositoryConnectionProblem(
+                ProblemCode.INVALID_INPUT,
+                "Repository connection already exists for this workspace.",
+            ) from error
+        if isinstance(error, ValueError):
+            raise RepositoryConnectionProblem(
+                _problem_code_for_create_value_error(error),
+                str(error),
+            ) from error
+        raise _translate_git_failure(error) from error
+
+
+def _ensure_workspace_preflight(*, workspace_id: uuid.UUID, dependencies) -> None:
+    workspace_repository_factory = getattr(
+        dependencies, "workspace_repository_factory", None
+    )
+    if dependencies.session_factory is None or workspace_repository_factory is None:
+        return
+    with dependencies.session_factory() as session:
+        workspace = workspace_repository_factory(session).get(workspace_id=workspace_id)
+        if workspace is None:
+            return
+        status_value = getattr(
+            getattr(workspace, "status", None), "value", workspace.status
+        )
+        if status_value != "active":
+            raise RepositoryConnectionProblem(
+                ProblemCode.WORKSPACE_NOT_ACTIVE,
+                "Repository connection requires an active workspace.",
+            )
+
+
+def _preflight_repository_identity_available(
+    *,
+    workspace_id: uuid.UUID,
+    provider,
+    provider_instance_url: str | None,
+    provider_project_path: str,
+    dependencies,
+) -> None:
+    if dependencies.session_factory is None:
+        return
+    with dependencies.session_factory() as session:
+        connection_repository = dependencies.repository_connection_repository_factory(
+            session
+        )
+        try:
+            with connection_repository.repository_identity_creation_lock(
+                workspace_id=workspace_id,
+                provider=provider,
+                provider_instance_url=provider_instance_url,
+                provider_project_path=provider_project_path,
+            ):
+                _ensure_repository_identity_available(
+                    connection_repository=connection_repository,
+                    workspace_id=workspace_id,
+                    provider=provider,
+                    provider_instance_url=provider_instance_url,
+                    provider_project_path=provider_project_path,
                 )
-                connection = connection_repository.set_active_credential_revision(
-                    workspace_id=command.workspace_id,
-                    connection_id=connection.id,
-                    credential_revision_id=credential_revision.id,
-                )
-                connection.planning_input_reference = None
-                return connection
         except ValueError as error:
             raise RepositoryConnectionProblem(
                 ProblemCode.INVALID_INPUT,
                 str(error),
             ) from error
+
+
+def _ensure_repository_identity_available(
+    *,
+    connection_repository,
+    workspace_id: uuid.UUID,
+    provider,
+    provider_instance_url: str | None,
+    provider_project_path: str,
+) -> None:
+    try:
+        connection_repository.ensure_repository_identity_available(
+            workspace_id=workspace_id,
+            provider=provider,
+            provider_instance_url=provider_instance_url,
+            provider_project_path=provider_project_path,
+        )
+    except ValueError as error:
+        raise RepositoryConnectionProblem(
+            ProblemCode.INVALID_INPUT,
+            str(error),
+        ) from error
+
+
+def _repository_identity_side_effect_lock(
+    *,
+    lock_repository,
+    workspace_id: uuid.UUID,
+    provider,
+    provider_instance_url: str | None,
+    provider_project_path: str,
+):
+    lock_factory = getattr(
+        lock_repository, "repository_identity_side_effect_lock", None
+    )
+    if lock_factory is not None:
+        return lock_factory(
+            workspace_id=workspace_id,
+            provider=provider,
+            provider_instance_url=provider_instance_url,
+            provider_project_path=provider_project_path,
+        )
+    return lock_repository.repository_identity_creation_lock(
+        workspace_id=workspace_id,
+        provider=provider,
+        provider_instance_url=provider_instance_url,
+        provider_project_path=provider_project_path,
+    )
+
+
+def _problem_code_for_create_value_error(error: Exception) -> ProblemCode:
+    if "active workspace" in str(error):
+        return ProblemCode.WORKSPACE_NOT_ACTIVE
+    return ProblemCode.INVALID_INPUT
 
 
 def _validate_candidate_selection(

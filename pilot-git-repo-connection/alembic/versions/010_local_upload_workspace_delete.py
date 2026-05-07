@@ -33,6 +33,9 @@ WORKSPACE_DELETION_PURGE_STATUS = sa.Enum(
 
 
 def upgrade() -> None:
+    _abort_if_code_snapshots_without_connection_workspace_exist()
+    _abort_if_invalid_code_snapshot_file_counts_exist()
+
     op.create_table(
         "workspaces",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -64,6 +67,12 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_workspaces")),
     )
     _backfill_workspaces()
+    _create_partial_index_concurrently(
+        "ix_workspace_active_created_id",
+        "workspaces",
+        ("created_at DESC", "id DESC"),
+        "status = 'active'",
+    )
     _create_index_concurrently(
         "ix_plan_input_workspace_id",
         "planning_input_references",
@@ -73,6 +82,11 @@ def upgrade() -> None:
         "ix_repo_conn_workspace_created_id",
         "repository_connections",
         ("workspace_id", "created_at DESC", "id DESC"),
+    )
+    _create_index_concurrently(
+        "ix_sync_run_connection_started_id",
+        "repository_sync_runs",
+        ("connection_id", "started_at DESC", "id DESC"),
     )
     _create_unique_index_concurrently(
         "uq_repo_conn_workspace_id_id",
@@ -148,6 +162,10 @@ def upgrade() -> None:
             "status != 'failed' OR failure_code IS NOT NULL",
             name="ck_local_upload_failure_requires_code",
         ),
+        sa.CheckConstraint(
+            "status NOT IN ('succeeded', 'failed') OR completed_at IS NOT NULL",
+            name="ck_local_upload_terminal_requires_completed_at",
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_local_uploads")),
         sa.UniqueConstraint(
             "workspace_id",
@@ -157,9 +175,13 @@ def upgrade() -> None:
     )
     op.create_index("ix_local_upload_workspace_id", "local_uploads", ["workspace_id"])
     op.create_index(
+        "ix_local_upload_workspace_created_id",
+        "local_uploads",
+        ["workspace_id", sa.text("created_at DESC"), sa.text("id DESC")],
+    )
+    op.create_index(
         "ix_local_upload_latest_snapshot_id", "local_uploads", ["latest_snapshot_id"]
     )
-
     op.create_table(
         "workspace_deletion_records",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -219,6 +241,11 @@ def upgrade() -> None:
         "workspace_deletion_records",
         ["workspace_id"],
     )
+    op.create_index(
+        "ix_workspace_deletion_record_workspace_requested_id",
+        "workspace_deletion_records",
+        ["workspace_id", sa.text("requested_at DESC"), sa.text("id DESC")],
+    )
 
     op.add_column("code_snapshots", sa.Column("workspace_id", sa.Uuid(), nullable=True))
     CODE_SNAPSHOT_SOURCE_KIND.create(op.get_bind(), checkfirst=True)
@@ -235,9 +262,15 @@ def upgrade() -> None:
         "code_snapshots", sa.Column("local_upload_id", sa.Uuid(), nullable=True)
     )
     _backfill_code_snapshot_workspaces()
-    _abort_if_unowned_code_snapshots_exist()
-    _abort_if_invalid_code_snapshot_file_counts_exist()
+    _add_check_constraint_not_valid(
+        "ck_code_snapshot_workspace_id_not_null",
+        "code_snapshots",
+        "workspace_id IS NOT NULL",
+    )
     op.alter_column("code_snapshots", "workspace_id", nullable=False)
+    op.drop_constraint(
+        "ck_code_snapshot_workspace_id_not_null", "code_snapshots", type_="check"
+    )
     op.alter_column(
         "code_snapshots", "connection_id", existing_type=sa.Uuid(), nullable=True
     )
@@ -355,13 +388,33 @@ def upgrade() -> None:
         "ix_code_snapshot_workspace_id", "code_snapshots", ("workspace_id",)
     )
     _create_index_concurrently(
+        "ix_code_snapshot_workspace_created_id",
+        "code_snapshots",
+        ("workspace_id", "created_at DESC", "id DESC"),
+    )
+    _create_partial_index_concurrently(
+        "ix_code_snapshot_connection_created_id",
+        "code_snapshots",
+        ("connection_id", "created_at DESC", "id DESC"),
+        "source_kind = 'repository_connection'",
+    )
+    _create_index_concurrently(
         "ix_code_snapshot_local_upload_id", "code_snapshots", ("local_upload_id",)
+    )
+    _create_partial_index_concurrently(
+        "ix_code_snapshot_latest_local_upload",
+        "code_snapshots",
+        ("workspace_id", "created_at DESC", "id DESC"),
+        "source_kind = 'local_upload'",
     )
 
 
 def downgrade() -> None:
     _abort_if_local_upload_data_exists()
+    _drop_index_concurrently("ix_code_snapshot_latest_local_upload")
     _drop_index_concurrently("ix_code_snapshot_local_upload_id")
+    _drop_index_concurrently("ix_code_snapshot_connection_created_id")
+    _drop_index_concurrently("ix_code_snapshot_workspace_created_id")
     _drop_index_concurrently("ix_code_snapshot_workspace_id")
     op.drop_constraint(
         "ck_code_snapshot_file_count_positive", "code_snapshots", type_="check"
@@ -433,8 +486,13 @@ def downgrade() -> None:
         "ix_workspace_deletion_record_workspace_id",
         table_name="workspace_deletion_records",
     )
+    op.drop_index(
+        "ix_workspace_deletion_record_workspace_requested_id",
+        table_name="workspace_deletion_records",
+    )
     op.drop_table("workspace_deletion_records")
     op.drop_index("ix_local_upload_latest_snapshot_id", table_name="local_uploads")
+    op.drop_index("ix_local_upload_workspace_created_id", table_name="local_uploads")
     op.drop_index("ix_local_upload_workspace_id", table_name="local_uploads")
     op.drop_table("local_uploads")
     op.drop_constraint(
@@ -444,8 +502,10 @@ def downgrade() -> None:
         "fk_plan_input_workspace_id", "planning_input_references", type_="foreignkey"
     )
     _drop_index_concurrently("uq_repo_conn_workspace_id_id")
+    _drop_index_concurrently("ix_sync_run_connection_started_id")
     _drop_index_concurrently("ix_repo_conn_workspace_created_id")
     _drop_index_concurrently("ix_plan_input_workspace_id")
+    _drop_index_concurrently("ix_workspace_active_created_id")
     op.drop_table("workspaces")
 
     CODE_SNAPSHOT_SOURCE_KIND.drop(op.get_bind(), checkfirst=True)
@@ -483,14 +543,16 @@ def _backfill_code_snapshot_workspaces() -> None:
     )
 
 
-def _abort_if_unowned_code_snapshots_exist() -> None:
+def _abort_if_code_snapshots_without_connection_workspace_exist() -> None:
     bind = op.get_bind()
     unowned_snapshot = bind.execute(
         sa.text(
             """
             SELECT 1
             FROM code_snapshots
-            WHERE workspace_id IS NULL
+            LEFT JOIN repository_connections
+              ON repository_connections.id = code_snapshots.connection_id
+            WHERE repository_connections.workspace_id IS NULL
             LIMIT 1
             """
         )
@@ -571,8 +633,27 @@ def _create_index_concurrently(
     with op.get_context().autocommit_block():
         op.execute(
             sa.text(
-                f"CREATE INDEX CONCURRENTLY {index_name} "
+                "CREATE INDEX CONCURRENTLY IF NOT EXISTS "
+                f"{index_name} "
                 f"ON {table_name} ({column_list})"
+            )
+        )
+
+
+def _create_partial_index_concurrently(
+    index_name: str,
+    table_name: str,
+    columns: tuple[str, ...],
+    predicate: str,
+) -> None:
+    column_list = ", ".join(columns)
+    with op.get_context().autocommit_block():
+        op.execute(
+            sa.text(
+                "CREATE INDEX CONCURRENTLY IF NOT EXISTS "
+                f"{index_name} "
+                f"ON {table_name} ({column_list}) "
+                f"WHERE {predicate}"
             )
         )
 
@@ -584,7 +665,8 @@ def _create_unique_index_concurrently(
     with op.get_context().autocommit_block():
         op.execute(
             sa.text(
-                f"CREATE UNIQUE INDEX CONCURRENTLY {index_name} "
+                "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "
+                f"{index_name} "
                 f"ON {table_name} ({column_list})"
             )
         )
