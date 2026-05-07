@@ -13,19 +13,24 @@ Do not record credentials, tokens, raw ZIP contents, private file paths, raw rem
 Run from `pilot-git-repo-connection/` unless a task states otherwise.
 
 ```bash
-rtk pytest tests/unit/local_uploads -q
-rtk pytest tests/contract/local_uploads tests/contract/workspaces -q
-rtk pytest tests/integration/local_uploads tests/integration/workspaces -q
-rtk pytest tests/integration/repository_connections/test_github_gitlab_compatibility.py -q
-rtk pytest tests/integration/repository_connections/test_mixed_provider_workspace.py -q
-rtk ruff check
-rtk black --check .
-rtk mypy src/tci/domain/services src/tci/api/schemas src/tci/infrastructure/persistence
+rtk pytest -q tests/unit/local_uploads
+rtk pytest -q tests/contract/local_uploads tests/contract/workspaces
+rtk pytest -q tests/integration/local_uploads tests/integration/workspaces
+rtk pytest -q tests/integration/repository_connections/test_github_gitlab_compatibility.py
+rtk pytest -q tests/integration/repository_connections/test_github_gitlab_local_upload_compatibility.py
+rtk pytest -q tests/integration/repository_connections/test_operator_local_upload_source_identification.py
+rtk pytest -q tests/integration/repository_connections/test_mixed_provider_workspace.py
+rtk pytest -q tests/unit/local_uploads/test_local_zip_extractor.py tests/integration/local_uploads/test_local_upload_failure_flow.py tests/integration/workspaces/test_workspace_delete_flow.py
+rtk pytest -q tests/unit tests/contract tests/integration
+rtk mypy src/tci/domain/services src/tci/api/schemas src/tci/infrastructure/persistence src/tci/api/routes src/tci/web/routes
+rtk black --check src tests
+rtk ruff check src tests
 rtk alembic heads
 rtk git diff --check
 ```
 
 If a focused test path does not exist yet, create it in the implementation tasks before claiming the check.
+Do not mark `SC-001`, `SC-004`, or `SC-005` complete from automated tests alone.
 
 ## Local Upload Rehearsal
 

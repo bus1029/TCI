@@ -524,6 +524,11 @@ def test_connection_detail_reflects_latest_snapshot_after_manual_initial_snapsho
         "requestedRefName": "main",
         "resolvedCommitSha": "a" * 40,
         "createdAt": snapshot.created_at.isoformat(),
+        "source": {
+            "kind": "repository_connection",
+            "provider": "github_cloud",
+            "connectionId": str(connection_id),
+        },
     }
     assert detail["latestSyncRun"]["id"] == str(sync_run.id)
     assert detail["latestSyncRun"]["status"] == "succeeded"

@@ -8,7 +8,10 @@ from fastapi import FastAPI
 
 from tci.domain.services.list_repository_candidates import RepositoryCandidateProjection
 from tci.infrastructure.persistence.models import RepositoryProvider
-from tests.support.repository_connection_testkit import create_test_client
+from tests.support.repository_connection_testkit import (
+    create_test_client,
+    seed_active_workspace,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +31,8 @@ class StaticCandidateSource:
 
 def test_list_repository_candidates_returns_manual_url_empty_state(tmp_path) -> None:
     workspace_id = uuid.uuid4()
-    client, _store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_active_workspace(store, workspace_id=workspace_id)
 
     response = client.get("/api/repository-candidates?provider=github_cloud")
 
@@ -46,6 +50,7 @@ def test_list_repository_candidates_returns_configured_provider_scope(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, _store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_active_workspace(_store, workspace_id=workspace_id)
     app = cast(FastAPI, client.app)
     object.__setattr__(
         app.state.dependencies,

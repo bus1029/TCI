@@ -2189,12 +2189,29 @@ def fake_session_factory():
     yield object()
 
 
+def seed_active_workspace(
+    store: InMemoryRepositoryStore,
+    *,
+    workspace_id: uuid.UUID,
+) -> Workspace:
+    workspace = Workspace(
+        id=workspace_id,
+        status=WorkspaceStatus.ACTIVE,
+        created_at=now_utc(),
+        updated_at=now_utc(),
+    )
+    store.workspaces[workspace.id] = workspace
+    return workspace
+
+
 def seed_planning_input_reference(
     store: InMemoryRepositoryStore,
     *,
     workspace_id: uuid.UUID,
     reference_id: uuid.UUID | None = None,
 ) -> PlanningInputReference:
+    if workspace_id not in store.workspaces:
+        seed_active_workspace(store, workspace_id=workspace_id)
     reference = PlanningInputReference(
         id=reference_id or uuid.uuid4(),
         workspace_id=workspace_id,

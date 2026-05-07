@@ -9,6 +9,10 @@ from tests.support.repository_connection_testkit import (
 )
 
 
+def _same_origin_headers(client) -> dict[str, str]:
+    return {"Origin": str(client.base_url).rstrip("/")}
+
+
 def test_scope_page_renders_current_warning_state(tmp_path) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
@@ -93,6 +97,7 @@ def test_scope_page_save_redirects_back_to_scope_view(tmp_path) -> None:
 
     response = client.post(
         f"/connections/{connection_id}/scope?workspaceId={workspace_id}",
+        headers=_same_origin_headers(client),
         data={
             "includePaths": "src/**, docs/**",
             "excludePaths": "docs/private/**",
@@ -134,6 +139,7 @@ def test_scope_page_validation_error_preserves_unchecked_binary_policy(
 
     response = client.post(
         f"/connections/{connection_id}/scope?workspaceId={workspace_id}",
+        headers=_same_origin_headers(client),
         data={
             "includePaths": "src/**",
             "excludePaths": "",
@@ -164,6 +170,7 @@ def test_scope_page_validation_error_defaults_missing_binary_policy_to_checked(
 
     response = client.post(
         f"/connections/{connection_id}/scope?workspaceId={workspace_id}",
+        headers=_same_origin_headers(client),
         data={
             "includePaths": "src/**",
             "excludePaths": "",
@@ -191,6 +198,7 @@ def test_scope_page_rejects_non_positive_max_file_size(tmp_path) -> None:
 
     response = client.post(
         f"/connections/{connection_id}/scope?workspaceId={workspace_id}",
+        headers=_same_origin_headers(client),
         data={
             "includePaths": "src/**",
             "excludePaths": "",

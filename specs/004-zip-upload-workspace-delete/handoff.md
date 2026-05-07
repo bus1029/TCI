@@ -2,63 +2,53 @@
 
 ## 짧은 요약
 
-`004-zip-upload-workspace-delete`는 `tasks.md` 기준 `T001-T063`까지 완료됐다. Phase 2 foundation, US1 Local Upload, US2 workspace deletion, US3 mixed-source compatibility는 자동화 테스트와 reviewer loop 기준으로 닫혔다.
+`004-zip-upload-workspace-delete`는 `tasks.md` 기준 `T001-T065`, `T068-T070`까지 완료됐다. Phase 2 foundation, US1 Local Upload, US2 workspace deletion, US3 mixed-source compatibility, quickstart/evidence polish, security-focused regression, full automated regression, final reviewer loop가 닫혔다.
 
-아직 전체 개발 완료는 아니다. 남은 범위는 `T064-T070` polish, quickstart/evidence 정리, 실제 operator rehearsal, full regression, 최종 diff review다.
+아직 전체 개발 완료는 아니다. 실제 operator rehearsal이 필요한 `T066`, `T067`만 남아 있다. `SC-001`, `SC-004`, `SC-005`는 실제 evidence 전까지 `Pending`으로 유지한다.
 
 ## 현재 상태
 
 - 현재 브랜치: `004-zip-upload-workspace-delete`
-- 원격 대비 상태: `rtk git status -sb` 기준 divergence 표시는 없다.
 - 작업트리: dirty
-- 완료됨: `T001-T063`
-- 아직 미구현: `T064-T070`
-- 실제 operator rehearsal이 필요한 `SC-001`, `SC-004`, `SC-005`는 `Pending`이다.
+- 완료됨: `T001-T065`, `T068-T070`
+- 아직 미구현/미실행: `T066`, `T067`
+- 실제 operator rehearsal이 필요한 `SC-001`, `SC-004`, `SC-005`는 `Pending`
 - 커밋은 아직 만들지 않았다.
 - 관련 없는 untracked path `mvp1-features/개발방법/`가 있다. 이번 feature scope가 아니므로 건드리지 말아야 한다.
 
-현재 dirty 파일:
+현재 feature-scope dirty 파일:
 
-- `pilot-git-repo-connection/src/tci/api/routes/local_uploads.py`
-- `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
-- `pilot-git-repo-connection/src/tci/web/routes/local_uploads.py`
-- `pilot-git-repo-connection/src/tci/web/routes/repository_connection_detail.py`
-- `pilot-git-repo-connection/src/tci/web/routes/repository_connections.py`
-- `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
-- `pilot-git-repo-connection/src/tci/web/templates/connections/index.html`
-- `pilot-git-repo-connection/tests/contract/local_uploads/test_local_upload_contract.py`
-- `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
-- `pilot-git-repo-connection/tests/integration/local_uploads/test_local_upload_snapshot_flow.py`
-- `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
-- `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_local_upload_compatibility.py`
-- `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_local_upload_source_identification.py`
+- `pilot-git-repo-connection/tests/support/repository_connection_testkit.py`
+- `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_candidate_contract.py`
+- `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_connection_pages.py`
+- `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_scope_pages.py`
+- `pilot-git-repo-connection/tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
+- `specs/004-zip-upload-workspace-delete/quickstart.md`
 - `specs/004-zip-upload-workspace-delete/delivery-evidence.md`
-- `specs/004-zip-upload-workspace-delete/handoff.md`
 - `specs/004-zip-upload-workspace-delete/tasks.md`
+- `specs/004-zip-upload-workspace-delete/handoff.md`
 
 ## 이번 세션에서 바뀐 것
 
-- `T053-T063` US3 mixed-source compatibility를 TDD로 구현했다.
-- `RepositoryConnection.latestSnapshot.source`에 repository-backed source 정보를 추가했다.
-  - `source.kind`: `repository_connection`
-  - `source.provider`: GitHub/GitLab provider
-  - `source.connectionId`: connection id
-- `/connections` operator 화면에서 `RepositoryConnection`과 `Local Upload`를 별도 출처 섹션으로 분리했다.
-- connection detail 화면에서도 `Local Upload` 출처를 repository provider처럼 섞지 않고 별도 섹션으로 표시한다.
-- deleted/missing/deleting workspace에서 candidate, selected candidate, retained Local Upload row가 노출되지 않도록 guard를 추가했다.
-- `GET /api/local-uploads/{id}`와 `GET /api/local-uploads/{id}/snapshots/{snapshot_id}`에서도 inactive workspace read guard를 추가했다.
-- Local Upload operator list/status 화면도 inactive workspace에서 retained filename, upload id, snapshot tree를 렌더링하지 않게 했다.
-- `tasks.md`에서 `T053-T063`를 완료 처리했다.
-- `delivery-evidence.md`에 US3 RED/GREEN, compatibility regression, typing/lint/format, reviewer loop evidence를 추가했다.
+- `T064`로 `quickstart.md` developer verification을 최신 구현 기준으로 갱신했다.
+  - Local Upload, workspace deletion, GitHub/GitLab compatibility, mixed-source, operator source-identification, full regression, focused security regression 경로를 명시했다.
+  - `rtk alembic heads`를 다시 포함해 migration head 검증을 유지했다.
+- `T065`로 `delivery-evidence.md`에 Phase 6 RED/GREEN, security-focused regression, full regression, hygiene, reviewer loop evidence를 추가했다.
+- `T068` security-focused ZIP/deletion suite를 실행했다.
+- `T069` full `tests/unit tests/contract tests/integration` regression을 실행했다.
+- Full regression RED에서 드러난 테스트 fixture drift를 수정했다.
+  - repository candidate/operator tests가 active workspace를 명시적으로 seed하도록 보강했다.
+  - operator form POST tests가 same-origin header를 보내도록 보강했다.
+  - repository-backed `latestSnapshot.source` expectation을 최신 계약에 맞췄다.
+- `T070` final review loop를 완료했다.
 
 ## 병렬 작업과 소유권
 
 - sub-agent는 read-only review만 수행했다. 파일 수정은 main 작업자가 통합했다.
 - 최종 review 참여:
-  - `reviewer`: mixed-source behavior, deleted/missing workspace guard, regression coverage 검토
-  - `security-reviewer`: candidate/local-upload metadata leak, deleted workspace exposure, secret echo risk 검토
-  - `python-reviewer`: FastAPI route flow, typing, Jinja context, maintainability 검토
-- 최종 결과는 모두 `No findings`다.
+  - `reviewer`: quickstart migration-head verification 누락을 지적했고, 수정 후 follow-up에서 `No findings`를 반환했다.
+  - `python-reviewer`: active workspace seed, same-origin header, repository snapshot source assertion 변경을 검토했고 `No findings`를 반환했다.
+  - `security-reviewer`: CSRF/same-origin coverage, deleted/missing workspace metadata leak, secret redaction을 검토했고 `No findings`를 반환했다.
 
 ## 다음 에이전트가 먼저 봐야 할 파일
 
@@ -67,17 +57,11 @@
 - `specs/004-zip-upload-workspace-delete/quickstart.md`
 - `specs/004-zip-upload-workspace-delete/spec.md`
 - `specs/004-zip-upload-workspace-delete/plan.md`
-- `pilot-git-repo-connection/src/tci/api/routes/local_uploads.py`
-- `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
-- `pilot-git-repo-connection/src/tci/web/routes/repository_connections.py`
-- `pilot-git-repo-connection/src/tci/web/routes/repository_connection_detail.py`
-- `pilot-git-repo-connection/src/tci/web/routes/local_uploads.py`
-- `pilot-git-repo-connection/src/tci/web/templates/connections/index.html`
-- `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
-- `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_local_upload_compatibility.py`
-- `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_local_upload_source_identification.py`
-- `pilot-git-repo-connection/tests/contract/local_uploads/test_local_upload_contract.py`
-- `pilot-git-repo-connection/tests/integration/local_uploads/test_local_upload_snapshot_flow.py`
+- `pilot-git-repo-connection/tests/support/repository_connection_testkit.py`
+- `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_candidate_contract.py`
+- `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_connection_pages.py`
+- `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_scope_pages.py`
+- `pilot-git-repo-connection/tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
 
 ## 꼭 유지해야 할 기준
 
@@ -102,55 +86,60 @@
 
 ## 이번 세션에서 얻은 중요한 메모
 
-- `/connections`는 inactive workspace check를 candidate enumeration보다 먼저 해야 한다. 그렇지 않으면 private repository metadata가 UI에 새어 나갈 수 있다.
-- POST `/connections`도 selected candidate를 해석하기 전에 workspace active 상태를 확인해야 한다.
-- missing workspace도 deleted workspace와 같은 방식으로 candidate/create path를 막아야 한다.
-- Local Upload read path는 mutation이 아니어도 retained metadata와 file tree를 노출할 수 있으므로 active workspace guard가 필요하다.
-- repo-wide `mypy src tests`는 기존 test typing debt가 있어 이번 scoped mypy 결과와 별도로 봐야 한다.
-- `pip-audit`는 현재 환경에서 사용할 수 없었다. dependency audit residual risk는 남아 있다.
+- Full regression은 focused story suites보다 강한 fixture drift를 드러냈다. `create_test_client()`만 호출한 legacy tests는 active workspace를 암묵적으로 기대하면 안 된다.
+- Candidate enumeration, operator create form, scope form 테스트는 의도한 validation path를 보려면 active workspace와 same-origin evidence를 명시해야 한다.
+- `RepositoryConnection.latestSnapshot.source`는 repository-backed snapshot에도 포함된다. 기존 expectation에서 이 필드를 빠뜨리면 stale 계약이다.
+- Quickstart에서 `rtk alembic heads`를 빼면 migration-owning feature의 final verification이 약해진다.
+- broader mypy on touched operator test files still reports pre-existing Starlette `TestClient.app` attr-defined debt. 이번 세션에서는 focused mypy와 pytest/ruff/black으로 검증했다.
 
 ## 테스트와 검증 상태
 
-- RED: `rtk pytest -q tests/integration/repository_connections/test_github_gitlab_local_upload_compatibility.py tests/integration/repository_connections/test_operator_local_upload_source_identification.py tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_github_gitlab_compatibility.py`
-  - 결과: expected failures 확인. repository-backed `latestSnapshot.source`와 mixed-source operator display가 미구현이었다.
-- GREEN: `rtk pytest -q tests/integration/repository_connections/test_github_gitlab_local_upload_compatibility.py tests/integration/repository_connections/test_operator_local_upload_source_identification.py tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_github_gitlab_compatibility.py`
-  - 결과: `90 passed`
-- GREEN: `rtk pytest -q tests/contract/local_uploads/test_local_upload_contract.py tests/integration/local_uploads/test_local_upload_snapshot_flow.py`
-  - 결과: `21 passed`
-- GREEN: `rtk pytest -q tests/integration/workspaces/test_deleted_workspace_guards.py tests/contract/workspaces/test_workspace_delete_contract.py`
-  - 결과: `10 passed`
-- GREEN: `rtk mypy src/tci/api/routes/local_uploads.py src/tci/web/routes/local_uploads.py src/tci/api/schemas/repository_connection.py src/tci/web/routes/repository_connections.py src/tci/web/routes/repository_connection_detail.py tests/contract/local_uploads/test_local_upload_contract.py tests/integration/local_uploads/test_local_upload_snapshot_flow.py tests/integration/repository_connections/test_github_gitlab_local_upload_compatibility.py tests/integration/repository_connections/test_operator_local_upload_source_identification.py tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+- RED: `rtk rg -q "test_github_gitlab_local_upload_compatibility.py\|test_operator_local_upload_source_identification.py" specs/004-zip-upload-workspace-delete/quickstart.md`
+  - 결과: exit 1. quickstart가 최신 US3 verification 경로를 명시하지 않았다.
+- GREEN: 같은 `rtk rg -q ... quickstart.md`
+  - 결과: exit 0.
+- GREEN: `rtk pytest -q tests/unit/local_uploads/test_local_zip_extractor.py tests/integration/local_uploads/test_local_upload_failure_flow.py tests/integration/workspaces/test_workspace_delete_flow.py`
+  - 결과: `33 passed`
+- RED: `rtk pytest -q tests/unit tests/contract tests/integration`
+  - 결과: `753 passed, 17 failed, 10 skipped`
+  - 원인: legacy tests가 active workspace seed, same-origin form POST, repository-backed `latestSnapshot.source` 최신 계약을 반영하지 않았다.
+- GREEN: `rtk pytest -q tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_operator_scope_pages.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_connection_detail_reflects_latest_snapshot_after_manual_initial_snapshot`
+  - 결과: `45 passed`
+- GREEN: `rtk pytest -q tests/unit/local_uploads/test_local_zip_extractor.py tests/integration/local_uploads/test_local_upload_failure_flow.py tests/integration/workspaces/test_workspace_delete_flow.py tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_operator_scope_pages.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py::test_connection_detail_reflects_latest_snapshot_after_manual_initial_snapshot`
+  - 결과: `78 passed`
+- GREEN: `rtk pytest -q tests/unit tests/contract tests/integration`
+  - 결과: `770 passed`
+- GREEN: `rtk mypy tests/support/repository_connection_testkit.py tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/integration/repository_connections/test_operator_scope_pages.py`
   - 결과: `No issues found`
-- GREEN: `rtk black --check src/tci/api/routes/local_uploads.py src/tci/web/routes/local_uploads.py src/tci/api/schemas/repository_connection.py src/tci/web/routes/repository_connections.py src/tci/web/routes/repository_connection_detail.py tests/contract/local_uploads/test_local_upload_contract.py tests/integration/local_uploads/test_local_upload_snapshot_flow.py tests/integration/repository_connections/test_github_gitlab_local_upload_compatibility.py tests/integration/repository_connections/test_operator_local_upload_source_identification.py tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_github_gitlab_compatibility.py`
-- GREEN: `rtk ruff check src/tci/api/routes/local_uploads.py src/tci/web/routes/local_uploads.py src/tci/api/schemas/repository_connection.py src/tci/web/routes/repository_connections.py src/tci/web/routes/repository_connection_detail.py tests/contract/local_uploads/test_local_upload_contract.py tests/integration/local_uploads/test_local_upload_snapshot_flow.py tests/integration/repository_connections/test_github_gitlab_local_upload_compatibility.py tests/integration/repository_connections/test_operator_local_upload_source_identification.py tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+- GREEN: `rtk black --check tests/support/repository_connection_testkit.py tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_operator_scope_pages.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
+- GREEN: `rtk ruff check tests/support/repository_connection_testkit.py tests/contract/repository_ingestion/test_repository_candidate_contract.py tests/integration/repository_connections/test_operator_connection_pages.py tests/integration/repository_connections/test_operator_scope_pages.py tests/integration/repository_connections/test_connection_and_initial_snapshot.py`
+- GREEN: `rtk alembic heads`
+  - 결과: `010_local_upload_workspace_del (head)`
 - GREEN: `rtk git diff --check`
 - Reviewer loop:
-  - fixed: `/connections` Local Upload retained metadata leak
-  - fixed: deleted workspace candidate metadata leak
-  - fixed: POST selected candidate leak
-  - fixed: missing workspace candidate/create leak
-  - fixed: Local Upload API/web read leak
-  - final: `reviewer`, `security-reviewer`, `python-reviewer` 모두 `No findings`
+  - `reviewer`: quickstart에 `rtk alembic heads` 누락 finding 1건
+  - 수정 후 follow-up `reviewer`: `No findings`
+  - `python-reviewer`: `No findings`
+  - `security-reviewer`: `No findings`
 
 미검증:
 
-- 실제 PostgreSQL DB에 migration upgrade/downgrade 적용은 이번 세션에서 다시 실행하지 않았다.
+- 실제 PostgreSQL DB에 migration upgrade/downgrade 적용은 이번 세션에서 실행하지 않았다.
 - 실제 operator rehearsal은 아직 하지 않았다.
-- full `rtk pytest -q tests/unit tests/contract tests/integration`는 아직 실행하지 않았다.
-- dependency audit은 `pip-audit` unavailable 때문에 실행하지 못했다.
+- dependency audit은 실행하지 않았다.
+- broader mypy on touched operator test files still reports pre-existing Starlette `TestClient.app` attr-defined debt; focused mypy for changed support/contract/scope files is green.
 
 ## 다음 세션의 시작 순서
 
 1. `rtk git status -sb`로 dirty/untracked 상태를 확인한다.
 2. 관련 없는 `mvp1-features/개발방법/` untracked path는 그대로 둔다.
-3. `specs/004-zip-upload-workspace-delete/tasks.md`에서 `T064-T070`을 다시 읽는다.
-4. `T064`로 `quickstart.md`의 Local Upload, workspace deletion, mixed-source verification 절차를 최신 구현 기준으로 정리한다.
-5. `T065`로 `delivery-evidence.md`를 SC 상태 중심으로 정리하되, `SC-001`, `SC-004`, `SC-005`는 실제 evidence 전까지 pending으로 유지한다.
-6. 시간이 충분하면 `T068` 보안 집중 테스트와 `T069` full regression을 실행한다.
-7. 실제 운영자 리허설이 가능할 때만 `T066`과 `T067`을 완료 처리한다.
+3. 실제 operator rehearsal evidence가 준비됐는지 확인한다.
+4. 준비됐으면 `T066` SC-001 세 운영자 ZIP upload-to-snapshot 리허설을 수행하고 redacted timing evidence를 `delivery-evidence.md`에 기록한다.
+5. 준비됐으면 `T067` SC-005 30개 source-identification exercise를 수행하고 redacted result를 `delivery-evidence.md`에 기록한다.
+6. `SC-004`는 실제 GitHub/GitLab baseline validation evidence가 있을 때만 pending에서 변경한다.
 
 ## 마지막 액션과 바로 다음 액션
 
-마지막 액션은 `T053-T063` 구현, reviewer loop closure, `tasks.md`/`delivery-evidence.md`/`handoff.md` 현재화다.
+마지막 액션은 `T064`, `T065`, `T068`, `T069`, `T070` 구현/검증/reviewer loop closure와 `tasks.md`/`delivery-evidence.md`/`handoff.md` 현재화다.
 
-바로 다음 액션은 `rtk git status -sb` 확인 후 `T064` quickstart polish를 시작하는 것이다. 사용자가 먼저 커밋을 요청하면 현재 `T001-T063` 변경 범위만 검토해서 커밋 메시지를 만들거나 커밋한다.
+바로 다음 액션은 실제 operator rehearsal 가능 여부를 확인하는 것이다. 실제 evidence가 없다면 `T066`, `T067`, `SC-001`, `SC-004`, `SC-005`는 그대로 pending이다.

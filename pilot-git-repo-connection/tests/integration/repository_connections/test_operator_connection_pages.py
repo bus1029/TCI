@@ -21,6 +21,7 @@ from tci.infrastructure.persistence.models import RepositoryProvider
 from tests.support.repository_connection_testkit import (
     create_connection_payload,
     create_test_client,
+    seed_active_workspace,
     seed_active_webhook_secret,
     seed_planning_input_reference,
 )
@@ -28,6 +29,10 @@ from tests.support.repository_connection_testkit import (
 
 def _dependencies(client) -> Any:
     return cast(Any, client.app).state.dependencies
+
+
+def _same_origin_headers(client) -> dict[str, str]:
+    return {"Origin": str(client.base_url).rstrip("/")}
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,7 +68,8 @@ def test_connections_page_renders_empty_state_and_create_form(tmp_path) -> None:
 
 def test_connections_page_renders_candidate_list_and_manual_fallback(tmp_path) -> None:
     workspace_id = uuid.uuid4()
-    client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_active_workspace(store, workspace_id=workspace_id)
     app = cast(FastAPI, client.app)
     object.__setattr__(
         app.state.dependencies,
@@ -98,7 +104,8 @@ def test_connections_page_renders_candidate_list_and_manual_fallback(tmp_path) -
 
 def test_connections_page_renders_candidate_empty_state(tmp_path) -> None:
     workspace_id = uuid.uuid4()
-    client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_active_workspace(store, workspace_id=workspace_id)
 
     response = client.get(f"/connections?workspaceId={workspace_id}")
 
@@ -149,7 +156,8 @@ def test_connections_page_marks_already_connected_candidate(tmp_path) -> None:
 
 def test_connections_create_route_rejects_unknown_candidate_selection(tmp_path) -> None:
     workspace_id = uuid.uuid4()
-    client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_active_workspace(store, workspace_id=workspace_id)
     app = cast(FastAPI, client.app)
     object.__setattr__(
         app.state.dependencies,
@@ -173,6 +181,7 @@ def test_connections_create_route_rejects_unknown_candidate_selection(tmp_path) 
 
     response = client.post(
         f"/connections?workspaceId={workspace_id}",
+        headers=_same_origin_headers(client),
         data={
             "candidateId": "github:acme/missing-repo",
             "provider": "github_cloud",
@@ -197,6 +206,7 @@ def test_connections_create_route_uses_selected_gitlab_candidate_defaults(
 ) -> None:
     workspace_id = uuid.uuid4()
     client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_active_workspace(store, workspace_id=workspace_id)
     app = cast(FastAPI, client.app)
     object.__setattr__(
         app.state.dependencies,
@@ -221,6 +231,7 @@ def test_connections_create_route_uses_selected_gitlab_candidate_defaults(
 
     response = client.post(
         f"/connections?workspaceId={workspace_id}",
+        headers=_same_origin_headers(client),
         data={
             "candidateId": "gitlab:group/sample-repo",
             "provider": "github_cloud",
@@ -246,7 +257,8 @@ def test_connections_create_route_uses_selected_gitlab_candidate_defaults(
 
 def test_connections_create_route_rejects_unselectable_candidate(tmp_path) -> None:
     workspace_id = uuid.uuid4()
-    client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_active_workspace(store, workspace_id=workspace_id)
     app = cast(FastAPI, client.app)
     object.__setattr__(
         app.state.dependencies,
@@ -270,6 +282,7 @@ def test_connections_create_route_rejects_unselectable_candidate(tmp_path) -> No
 
     response = client.post(
         f"/connections?workspaceId={workspace_id}",
+        headers=_same_origin_headers(client),
         data={
             "candidateId": "github:acme/private-repo",
             "provider": "github_cloud",
@@ -290,10 +303,12 @@ def test_connections_create_route_rejects_unselectable_candidate(tmp_path) -> No
 
 def test_connections_create_route_redacts_secret_bearing_remote_url(tmp_path) -> None:
     workspace_id = uuid.uuid4()
-    client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_active_workspace(store, workspace_id=workspace_id)
 
     response = client.post(
         f"/connections?workspaceId={workspace_id}",
+        headers=_same_origin_headers(client),
         data={
             "provider": "github_cloud",
             "remoteUrl": "https://operator:embedded-token@github.com/acme/sample-repo.git",
@@ -766,6 +781,7 @@ def test_connections_create_route_redirects_to_detail_page(tmp_path) -> None:
 
     response = client.post(
         f"/connections?workspaceId={workspace_id}",
+        headers=_same_origin_headers(client),
         data={
             "provider": "github_cloud",
             "remoteUrl": "https://github.com/acme/sample-repo.git",
@@ -792,6 +808,7 @@ def test_connections_create_route_rejects_obsolete_planning_fields(tmp_path) -> 
 
     response = client.post(
         f"/connections?workspaceId={workspace_id}",
+        headers=_same_origin_headers(client),
         data={
             "planningInputReferenceId": str(reference.id),
             "provider": "github_cloud",
@@ -956,6 +973,7 @@ def test_connections_create_route_does_not_echo_secret_after_validation_error(
 
     response = client.post(
         f"/connections?workspaceId={workspace_id}",
+        headers=_same_origin_headers(client),
         data={
             "planningInputReferenceId": str(reference.id),
             "provider": "gitlab",
@@ -1003,18 +1021,25 @@ def test_connections_create_route_rejects_cross_origin_submission(tmp_path) -> N
 
 def test_operator_form_routes_reject_oversized_bodies(tmp_path) -> None:
     workspace_id = uuid.uuid4()
-    client, _ = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_active_workspace(store, workspace_id=workspace_id)
     oversized_body = b"x" * (64 * 1024 + 1)
 
     create_response = client.post(
         f"/connections?workspaceId={workspace_id}",
         content=oversized_body,
-        headers={"content-type": "application/x-www-form-urlencoded"},
+        headers={
+            **_same_origin_headers(client),
+            "content-type": "application/x-www-form-urlencoded",
+        },
     )
     scope_response = client.post(
         f"/connections/{uuid.uuid4()}/scope?workspaceId={workspace_id}",
         content=oversized_body,
-        headers={"content-type": "application/x-www-form-urlencoded"},
+        headers={
+            **_same_origin_headers(client),
+            "content-type": "application/x-www-form-urlencoded",
+        },
     )
 
     assert create_response.status_code == 413

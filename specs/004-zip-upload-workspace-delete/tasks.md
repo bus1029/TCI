@@ -160,13 +160,13 @@
 
 **Purpose**: Final documentation, security, evidence, and regression checks across all stories.
 
-- [ ] T064 [P] Update quickstart verification steps for Local Upload, workspace deletion, and mixed-provider regression in `specs/004-zip-upload-workspace-delete/quickstart.md`
-- [ ] T065 [P] Update operator rehearsal and redacted validation evidence for SC-001 through SC-010 in `specs/004-zip-upload-workspace-delete/delivery-evidence.md`
+- [x] T064 [P] Update quickstart verification steps for Local Upload, workspace deletion, and mixed-provider regression in `specs/004-zip-upload-workspace-delete/quickstart.md`
+- [x] T065 [P] Update operator rehearsal and redacted validation evidence for SC-001 through SC-010 in `specs/004-zip-upload-workspace-delete/delivery-evidence.md`
 - [ ] T066 Execute SC-001 operator rehearsal for three operators uploading ZIP without GitHub/GitLab and record redacted timing evidence in `specs/004-zip-upload-workspace-delete/delivery-evidence.md`
 - [ ] T067 Execute SC-005 mixed-source identification exercise with 30 GitHub, GitLab, and Local Upload source-identification tasks and record redacted results in `specs/004-zip-upload-workspace-delete/delivery-evidence.md`
-- [ ] T068 Run security-focused ZIP and deletion tests with `rtk pytest -q tests/unit/local_uploads/test_local_zip_extractor.py tests/integration/local_uploads/test_local_upload_failure_flow.py tests/integration/workspaces/test_workspace_delete_flow.py` from `pilot-git-repo-connection/`
-- [ ] T069 Run full repository connection and Local Upload regression with `rtk pytest -q tests/unit tests/contract tests/integration` from `pilot-git-repo-connection/`
-- [ ] T070 Review final diff for secret redaction, provider compatibility, deleted-workspace guards, and scoped documentation updates in `specs/004-zip-upload-workspace-delete/delivery-evidence.md`
+- [x] T068 Run security-focused ZIP and deletion tests with `rtk pytest -q tests/unit/local_uploads/test_local_zip_extractor.py tests/integration/local_uploads/test_local_upload_failure_flow.py tests/integration/workspaces/test_workspace_delete_flow.py` from `pilot-git-repo-connection/`
+- [x] T069 Run full repository connection and Local Upload regression with `rtk pytest -q tests/unit tests/contract tests/integration` from `pilot-git-repo-connection/`
+- [x] T070 Review final diff for secret redaction, provider compatibility, deleted-workspace guards, and scoped documentation updates in `specs/004-zip-upload-workspace-delete/delivery-evidence.md`
 
 ---
 
