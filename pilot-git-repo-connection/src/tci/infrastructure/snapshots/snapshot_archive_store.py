@@ -100,6 +100,12 @@ class SnapshotArchiveStore:
             files=tuple(stored_files),
         )
 
+    def remove(self, *, snapshot_id: uuid.UUID) -> None:
+        shutil.rmtree(
+            self._settings.code_snapshot_root / str(snapshot_id),
+            ignore_errors=True,
+        )
+
 
 def _validate_relative_path(
     raw_path: str, *, allow_reserved_root_manifest: bool = False

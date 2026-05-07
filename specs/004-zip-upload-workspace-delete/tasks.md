@@ -70,18 +70,18 @@
 
 ### Tests for User Story 1
 
-- [ ] T018 [P] [US1] Add ZIP validation unit tests for corrupt archives, traversal paths, absolute paths, encrypted entries, duplicate logical paths, reserved `manifest.json`, zero-file archives, and size/count limits in `pilot-git-repo-connection/tests/unit/local_uploads/test_local_zip_extractor.py`
-- [ ] T019 [P] [US1] Add Local Upload snapshot service unit tests for success, repeated uploads, latest snapshot default, failure cleanup, and no active snapshot on failure in `pilot-git-repo-connection/tests/unit/local_uploads/test_create_local_upload_snapshot.py`
+- [x] T018 [P] [US1] Add ZIP validation unit tests for corrupt archives, traversal paths, absolute paths, encrypted entries, duplicate logical paths, reserved `manifest.json`, zero-file archives, and size/count limits in `pilot-git-repo-connection/tests/unit/local_uploads/test_local_zip_extractor.py`
+- [x] T019 [P] [US1] Add Local Upload snapshot service unit tests for success, repeated uploads, latest snapshot default, failure cleanup, and no active snapshot on failure in `pilot-git-repo-connection/tests/unit/local_uploads/test_create_local_upload_snapshot.py`
 - [ ] T020 [P] [US1] Add contract tests for `POST /api/local-uploads`, `GET /api/local-uploads/{uploadId}`, and `GET /api/local-uploads/{uploadId}/snapshots/{snapshotId}`, including Local Upload source, uploaded-by, uploaded-at, sanitized filename, and limit-exceeded problem details in `pilot-git-repo-connection/tests/contract/local_uploads/test_local_upload_contract.py`
 - [ ] T021 [P] [US1] Add integration tests for valid root-folder ZIP, nested ZIP, hidden files, empty directory metadata, and three repeated uploads in `pilot-git-repo-connection/tests/integration/local_uploads/test_local_upload_snapshot_flow.py`
 - [ ] T022 [P] [US1] Add integration tests for corrupt ZIP, unsafe path ZIP, and limit-exceeded ZIP leaving no active snapshot and showing allowed limits plus retry guidance in `pilot-git-repo-connection/tests/integration/local_uploads/test_local_upload_failure_flow.py`
 
 ### Implementation for User Story 1
 
-- [ ] T023 [US1] Implement safe ZIP central-directory validation and entry normalization in `pilot-git-repo-connection/src/tci/infrastructure/snapshots/local_zip_extractor.py`
-- [ ] T024 [US1] Extend snapshot archive storage for Local Upload entry drafts and partial archive cleanup in `pilot-git-repo-connection/src/tci/infrastructure/snapshots/snapshot_archive_store.py`
-- [ ] T025 [US1] Extend snapshot manifest metadata with `source.kind`, Local Upload ID, sanitized original filename, upload hash, file count, and byte totals in `pilot-git-repo-connection/src/tci/infrastructure/snapshots/snapshot_manifest_writer.py`
-- [ ] T026 [US1] Implement Local Upload snapshot creation command with success/failure transitions and latest snapshot selection in `pilot-git-repo-connection/src/tci/domain/services/create_local_upload_snapshot.py`
+- [x] T023 [US1] Implement safe ZIP central-directory validation and entry normalization in `pilot-git-repo-connection/src/tci/infrastructure/snapshots/local_zip_extractor.py`
+- [x] T024 [US1] Extend snapshot archive storage for Local Upload entry drafts and partial archive cleanup in `pilot-git-repo-connection/src/tci/infrastructure/snapshots/snapshot_archive_store.py`
+- [x] T025 [US1] Extend snapshot manifest metadata with `source.kind`, Local Upload ID, sanitized original filename, upload hash, file count, and byte totals in `pilot-git-repo-connection/src/tci/infrastructure/snapshots/snapshot_manifest_writer.py`
+- [x] T026 [US1] Implement Local Upload snapshot creation command with success/failure transitions and latest snapshot selection in `pilot-git-repo-connection/src/tci/domain/services/create_local_upload_snapshot.py`
 - [ ] T027 [US1] Add Local Upload ingestion task entry point and synchronous test/development fallback in `pilot-git-repo-connection/src/tci/infrastructure/queue/repository_ingestion_tasks.py`
 - [ ] T028 [US1] Add Local Upload API request and response schemas with source, uploaded-by, uploaded-at, sanitized original filename, file count, byte totals, latest snapshot, and failure problem fields in `pilot-git-repo-connection/src/tci/api/schemas/local_upload.py`
 - [ ] T029 [US1] Implement Local Upload API routes for upload, status, and snapshot detail in `pilot-git-repo-connection/src/tci/api/routes/local_uploads.py`

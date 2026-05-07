@@ -47,6 +47,14 @@ def build_zip_with_reserved_manifest() -> bytes:
     return build_zip_bytes((ZipFixtureEntry("manifest.json", b"{}"),))
 
 
+def build_empty_zip() -> bytes:
+    return build_zip_bytes(())
+
+
+def build_corrupt_zip() -> bytes:
+    return b"not a zip archive"
+
+
 def build_zip_with_duplicate_logical_paths() -> bytes:
     return build_zip_bytes(
         (

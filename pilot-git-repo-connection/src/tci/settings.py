@@ -16,6 +16,7 @@ DEFAULT_LOCAL_UPLOAD_MAX_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
 DEFAULT_LOCAL_UPLOAD_MAX_FILE_COUNT = 25_000
 DEFAULT_LOCAL_UPLOAD_MAX_FILE_BYTES = 25 * 1024 * 1024
 DEFAULT_LOCAL_UPLOAD_MAX_PATH_SEGMENTS = 50
+DEFAULT_LOCAL_UPLOAD_MAX_IN_MEMORY_BYTES = DEFAULT_LOCAL_UPLOAD_MAX_UNCOMPRESSED_BYTES
 
 
 def _resolve_path(raw_value: str | None, *, default: Path, base_dir: Path) -> Path:
@@ -86,6 +87,7 @@ class Settings:
     local_upload_max_file_count: int = DEFAULT_LOCAL_UPLOAD_MAX_FILE_COUNT
     local_upload_max_file_bytes: int = DEFAULT_LOCAL_UPLOAD_MAX_FILE_BYTES
     local_upload_max_path_segments: int = DEFAULT_LOCAL_UPLOAD_MAX_PATH_SEGMENTS
+    local_upload_max_in_memory_bytes: int = DEFAULT_LOCAL_UPLOAD_MAX_IN_MEMORY_BYTES
 
     def runtime_directories(self) -> tuple[Path, Path, Path]:
         return (
@@ -181,6 +183,11 @@ def load_settings() -> Settings:
             os.getenv("TCI_LOCAL_UPLOAD_MAX_PATH_SEGMENTS"),
             default=DEFAULT_LOCAL_UPLOAD_MAX_PATH_SEGMENTS,
             label="TCI_LOCAL_UPLOAD_MAX_PATH_SEGMENTS",
+        ),
+        local_upload_max_in_memory_bytes=_parse_positive_int(
+            os.getenv("TCI_LOCAL_UPLOAD_MAX_IN_MEMORY_BYTES"),
+            default=DEFAULT_LOCAL_UPLOAD_MAX_IN_MEMORY_BYTES,
+            label="TCI_LOCAL_UPLOAD_MAX_IN_MEMORY_BYTES",
         ),
     )
 
