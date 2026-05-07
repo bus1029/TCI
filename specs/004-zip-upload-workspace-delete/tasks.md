@@ -137,20 +137,20 @@
 
 ### Tests for User Story 3
 
-- [ ] T053 [P] [US3] Add mixed-source integration tests for GitHub, GitLab, and Local Upload list/detail/source labels in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_local_upload_compatibility.py`
-- [ ] T054 [P] [US3] Add operator source-identification regression tests for mixed GitHub, GitLab, and Local Upload screens in `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_local_upload_source_identification.py`
-- [ ] T055 [P] [US3] Extend repository connection contract regression coverage for unchanged GitHub/GitLab response fields and deleted-workspace problem details in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
-- [ ] T056 [P] [US3] Extend existing GitHub/GitLab compatibility regression to include Local Upload coexistence without provider behavior changes in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
+- [x] T053 [P] [US3] Add mixed-source integration tests for GitHub, GitLab, and Local Upload list/detail/source labels in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_local_upload_compatibility.py`
+- [x] T054 [P] [US3] Add operator source-identification regression tests for mixed GitHub, GitLab, and Local Upload screens in `pilot-git-repo-connection/tests/integration/repository_connections/test_operator_local_upload_source_identification.py`
+- [x] T055 [P] [US3] Extend repository connection contract regression coverage for unchanged GitHub/GitLab response fields and deleted-workspace problem details in `pilot-git-repo-connection/tests/contract/repository_ingestion/test_repository_connection_contract.py`
+- [x] T056 [P] [US3] Extend existing GitHub/GitLab compatibility regression to include Local Upload coexistence without provider behavior changes in `pilot-git-repo-connection/tests/integration/repository_connections/test_github_gitlab_compatibility.py`
 
 ### Implementation for User Story 3
 
-- [ ] T057 [US3] Update repository connection serializers to keep provider fields unchanged while exposing source-aware snapshot labels in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
-- [ ] T058 [US3] Update repository connection API routes so GitHub/GitLab routes reject deleted workspaces but never treat Local Upload as a provider in `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
-- [ ] T059 [US3] Update GitHub and GitLab webhook routes to guard deleted workspaces without accepting Local Upload IDs in `pilot-git-repo-connection/src/tci/api/routes/github_webhooks.py` and `pilot-git-repo-connection/src/tci/api/routes/gitlab_webhooks.py`
-- [ ] T060 [US3] Update candidate discovery to remain provider-scoped and independent of Local Upload history in `pilot-git-repo-connection/src/tci/api/routes/repository_candidates.py`
-- [ ] T061 [US3] Update operator connection list/detail templates to display GitHub, GitLab, and Local Upload sources without mixing connection state with upload snapshots in `pilot-git-repo-connection/src/tci/web/templates/connections/index.html` and `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
-- [ ] T062 [US3] Update operator connection routes to provide mixed-source view models without changing existing GitHub/GitLab route semantics in `pilot-git-repo-connection/src/tci/web/routes/repository_connections.py` and `pilot-git-repo-connection/src/tci/web/routes/repository_connection_detail.py`
-- [ ] T063 [US3] Run User Story 3 checks with `rtk pytest -q tests/integration/repository_connections/test_github_gitlab_local_upload_compatibility.py tests/integration/repository_connections/test_operator_local_upload_source_identification.py tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_github_gitlab_compatibility.py` from `pilot-git-repo-connection/`
+- [x] T057 [US3] Update repository connection serializers to keep provider fields unchanged while exposing source-aware snapshot labels in `pilot-git-repo-connection/src/tci/api/schemas/repository_connection.py`
+- [x] T058 [US3] Update repository connection API routes so GitHub/GitLab routes reject deleted workspaces but never treat Local Upload as a provider in `pilot-git-repo-connection/src/tci/api/routes/repository_connections.py`
+- [x] T059 [US3] Update GitHub and GitLab webhook routes to guard deleted workspaces without accepting Local Upload IDs in `pilot-git-repo-connection/src/tci/api/routes/github_webhooks.py` and `pilot-git-repo-connection/src/tci/api/routes/gitlab_webhooks.py`
+- [x] T060 [US3] Update candidate discovery to remain provider-scoped and independent of Local Upload history in `pilot-git-repo-connection/src/tci/api/routes/repository_candidates.py`
+- [x] T061 [US3] Update operator connection list/detail templates to display GitHub, GitLab, and Local Upload sources without mixing connection state with upload snapshots in `pilot-git-repo-connection/src/tci/web/templates/connections/index.html` and `pilot-git-repo-connection/src/tci/web/templates/connections/detail.html`
+- [x] T062 [US3] Update operator connection routes to provide mixed-source view models without changing existing GitHub/GitLab route semantics in `pilot-git-repo-connection/src/tci/web/routes/repository_connections.py` and `pilot-git-repo-connection/src/tci/web/routes/repository_connection_detail.py`
+- [x] T063 [US3] Run User Story 3 checks with `rtk pytest -q tests/integration/repository_connections/test_github_gitlab_local_upload_compatibility.py tests/integration/repository_connections/test_operator_local_upload_source_identification.py tests/contract/repository_ingestion/test_repository_connection_contract.py tests/integration/repository_connections/test_github_gitlab_compatibility.py` from `pilot-git-repo-connection/`
 
 **Checkpoint**: All user stories are independently functional, and existing GitHub/GitLab behavior remains compatible.
 

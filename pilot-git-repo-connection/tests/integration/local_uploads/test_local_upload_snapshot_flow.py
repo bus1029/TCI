@@ -229,6 +229,23 @@ def test_operator_local_upload_form_marks_failed_when_queue_staging_fails(
     assert store.snapshots == {}
 
 
+def test_operator_local_upload_page_hides_uploads_for_deleting_workspace(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    _seed_active_workspace(store, workspace_id=workspace_id)
+    upload = _post_zip(client, filename="project.zip", zip_bytes=build_project_zip())
+    store.workspaces[workspace_id].status = WorkspaceStatus.DELETING
+
+    response = client.get(f"/local-uploads?workspaceId={workspace_id}")
+
+    assert response.status_code == 409
+    assert "활성 워크스페이스에서만 Local Upload를 조회할 수 있습니다." in response.text
+    assert "project.zip" not in response.text
+    assert str(upload["latestSnapshotId"]) not in response.text
+
+
 def _post_zip(client, *, filename: str, zip_bytes: bytes) -> dict[str, object]:
     response = client.post(
         "/api/local-uploads",

@@ -19,6 +19,7 @@ from tests.support.repository_connection_testkit import (
     serialize_github_webhook_payload,
     serialize_gitlab_webhook_payload,
 )
+from tests.support.local_upload_testkit import build_project_zip
 from tci.domain.services.build_code_snapshot import (
     BuildCodeSnapshotCommand,
     build_code_snapshot,
@@ -154,6 +155,51 @@ def test_github_and_gitlab_connection_verify_and_snapshot_flows_coexist(
     assert github_snapshot.sync_run_id == github_sync_run.id
     assert gitlab_snapshot.sync_run_id == gitlab_sync_run.id
     assert len(store.snapshots) == 2
+
+
+def test_local_upload_coexists_without_changing_github_gitlab_provider_details(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+    github_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    gitlab_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(
+            provider="gitlab_self_managed",
+            remote_url="https://gitlab.example.com/group/sample-repo.git",
+        ),
+    )
+    upload_response = client.post(
+        "/api/local-uploads",
+        files={"file": ("local-project.zip", build_project_zip(), "application/zip")},
+    )
+
+    assert upload_response.status_code == 201
+    list_payload = client.get("/api/repository-connections").json()
+    github_detail = client.get(
+        f"/api/repository-connections/{github_response.json()['id']}"
+    ).json()
+    gitlab_detail = client.get(
+        f"/api/repository-connections/{gitlab_response.json()['id']}"
+    ).json()
+
+    assert [item["provider"] for item in list_payload["items"]] == [
+        "gitlab_self_managed",
+        "github_cloud",
+    ]
+    assert github_detail["provider"] == "github_cloud"
+    assert github_detail["origin"]["kind"] == "workspace_repository"
+    assert gitlab_detail["provider"] == "gitlab_self_managed"
+    assert gitlab_detail["providerInstanceUrl"] == "https://gitlab.example.com"
+    assert gitlab_detail["providerProjectPath"] == "group/sample-repo"
+    assert "local_upload" not in {item["provider"] for item in list_payload["items"]}
+    assert len(store.local_uploads) == 1
+    assert len(store.connections) == 2
 
 
 def test_github_and_gitlab_webhook_events_do_not_cross_contaminate(

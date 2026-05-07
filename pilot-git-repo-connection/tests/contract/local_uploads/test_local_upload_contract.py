@@ -196,6 +196,44 @@ def test_get_local_upload_snapshot_returns_tree_and_local_source(tmp_path) -> No
     ]
 
 
+def test_get_local_upload_rejects_deleting_workspace_without_metadata_leak(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    _seed_active_workspace(store, workspace_id=workspace_id)
+    upload_id = _create_upload(client, filename="project.zip")
+    store.workspaces[workspace_id].status = WorkspaceStatus.DELETING
+
+    response = client.get(f"/api/local-uploads/{upload_id}")
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "workspace_deleting"
+    assert "project.zip" not in response.text
+
+
+def test_get_local_upload_snapshot_rejects_deleted_workspace_without_tree_leak(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    _seed_active_workspace(store, workspace_id=workspace_id)
+    upload_id = _create_upload(client, filename="project.zip")
+    upload = store.local_uploads[uuid.UUID(upload_id)]
+    store.workspaces[workspace_id].status = WorkspaceStatus.DELETED
+    store.workspaces[workspace_id].deleted_at = now_utc()
+    store.workspaces[workspace_id].deleted_by = "operator"
+
+    response = client.get(
+        f"/api/local-uploads/{upload_id}/snapshots/{upload.latest_snapshot_id}"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "workspace_deleted"
+    assert "project.zip" not in response.text
+    assert "project/src/main.py" not in response.text
+
+
 def test_create_local_upload_rejects_corrupt_zip_without_active_snapshot(
     tmp_path,
 ) -> None:

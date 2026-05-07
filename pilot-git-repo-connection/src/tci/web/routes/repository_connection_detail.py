@@ -10,6 +10,10 @@ from tci.api.schemas.repository_connection import serialize_repository_connectio
 from tci.domain.services.get_repository_connection_detail import (
     get_repository_connection_detail,
 )
+from tci.domain.services.workspace_lifecycle import (
+    WorkspaceLifecycleProblem,
+    ensure_active_workspace,
+)
 
 from ._common import build_template_context, extract_workspace_id_from_query
 
@@ -36,6 +40,7 @@ def repository_connection_detail_page(connection_id: uuid.UUID, request: Request
     except LookupError:
         return PlainTextResponse("저장소 연결을 찾을 수 없습니다.", status_code=404)
 
+    local_uploads = _list_local_uploads(request=request, workspace_id=workspace_id)
     template = request.app.state.templates
     return template.TemplateResponse(
         request=request,
@@ -44,6 +49,26 @@ def repository_connection_detail_page(connection_id: uuid.UUID, request: Request
             request,
             workspace_id=workspace_id,
             connection=serialize_repository_connection_detail(connection),
+            local_uploads=local_uploads,
         ),
         status_code=200,
     )
+
+
+def _list_local_uploads(*, request: Request, workspace_id: uuid.UUID) -> list[object]:
+    with request.app.state.dependencies.session_factory() as session:
+        workspace_repository_factory = getattr(
+            request.app.state.dependencies, "workspace_repository_factory", None
+        )
+        if workspace_repository_factory is not None:
+            try:
+                ensure_active_workspace(
+                    workspace_id=workspace_id,
+                    workspace_repository=workspace_repository_factory(session),
+                )
+            except WorkspaceLifecycleProblem:
+                return []
+        repository = request.app.state.dependencies.local_upload_repository_factory(
+            session
+        )
+        return repository.list_for_workspace(workspace_id=workspace_id)

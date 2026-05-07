@@ -18,6 +18,10 @@ from tci.domain.services.list_repository_connections import list_repository_conn
 from tci.domain.services.repository_connection_support import (
     RepositoryConnectionProblem,
 )
+from tci.domain.services.workspace_lifecycle import (
+    WorkspaceLifecycleProblem,
+    ensure_active_workspace,
+)
 
 from ._common import (
     FormBodyTooLarge,
@@ -58,6 +62,14 @@ async def create_repository_connection_page(request: Request):
     same_origin_error = enforce_same_origin(request)
     if same_origin_error is not None:
         return same_origin_error
+    if not _workspace_is_active(request=request, workspace_id=workspace_id):
+        return _render_index(
+            request=request,
+            workspace_id=workspace_id,
+            form_data=_default_form_data(),
+            error_message="활성 워크스페이스에서만 저장소 연결을 생성할 수 있습니다.",
+            status_code=409,
+        )
 
     try:
         form_data = await parse_simple_form_body(request)
@@ -204,10 +216,20 @@ def _render_index(
         workspace_id=workspace_id,
         dependencies=request.app.state.dependencies,
     )
-    candidates = list_repository_candidates(
-        workspace_id=workspace_id,
-        provider=None,
-        dependencies=request.app.state.dependencies,
+    workspace_active = _workspace_is_active(request=request, workspace_id=workspace_id)
+    local_uploads = (
+        _list_local_uploads(request=request, workspace_id=workspace_id)
+        if workspace_active
+        else []
+    )
+    candidates = (
+        list_repository_candidates(
+            workspace_id=workspace_id,
+            provider=None,
+            dependencies=request.app.state.dependencies,
+        )
+        if workspace_active
+        else _empty_candidate_response()
     )
     template = request.app.state.templates
     return template.TemplateResponse(
@@ -217,6 +239,7 @@ def _render_index(
             request,
             workspace_id=workspace_id,
             connections=connections,
+            local_uploads=local_uploads,
             candidates=candidates,
             error_message=error_message,
             form_data=form_data,
@@ -253,3 +276,40 @@ def _remote_url_may_contain_secret(remote_url: str) -> bool:
     except ValueError:
         return True
     return bool(parsed.username or parsed.password or parsed.query or parsed.fragment)
+
+
+def _list_local_uploads(*, request: Request, workspace_id) -> list[object]:
+    with request.app.state.dependencies.session_factory() as session:
+        repository = request.app.state.dependencies.local_upload_repository_factory(
+            session
+        )
+        return repository.list_for_workspace(workspace_id=workspace_id)
+
+
+def _workspace_is_active(*, request: Request, workspace_id) -> bool:
+    workspace_repository_factory = getattr(
+        request.app.state.dependencies, "workspace_repository_factory", None
+    )
+    if workspace_repository_factory is None:
+        return True
+    with request.app.state.dependencies.session_factory() as session:
+        workspace = workspace_repository_factory(session).get(workspace_id=workspace_id)
+        if workspace is None:
+            return False
+        try:
+            ensure_active_workspace(
+                workspace_id=workspace_id,
+                workspace_repository=workspace_repository_factory(session),
+            )
+        except WorkspaceLifecycleProblem:
+            return False
+    return True
+
+
+def _empty_candidate_response() -> dict[str, object]:
+    return {
+        "items": [],
+        "manualUrlAllowed": False,
+        "emptyReason": "workspace_not_active",
+        "guidance": "활성 워크스페이스에서만 저장소 후보를 조회할 수 있습니다.",
+    }

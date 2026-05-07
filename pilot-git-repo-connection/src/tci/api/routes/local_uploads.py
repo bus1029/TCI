@@ -24,6 +24,10 @@ from tci.domain.services.failure_messages import bounded_display_filename
 from tci.domain.services.get_code_snapshot_detail import (
     get_local_upload_snapshot_detail,
 )
+from tci.domain.services.workspace_lifecycle import (
+    WorkspaceLifecycleProblem,
+    ensure_active_workspace,
+)
 from tci.infrastructure.persistence.local_upload_repository import LocalUploadDraft
 from tci.infrastructure.queue.repository_ingestion_tasks import (
     RUN_LOCAL_UPLOAD_SNAPSHOT_TASK_NAME,
@@ -176,6 +180,11 @@ def get_local_upload_route(
     workspace_id = _extract_workspace_id(workspace_header)
     if isinstance(workspace_id, JSONResponse):
         return workspace_id
+    lifecycle_error = _ensure_active_workspace_for_read(
+        request=request, workspace_id=workspace_id
+    )
+    if lifecycle_error is not None:
+        return lifecycle_error
     upload = _get_upload(
         request=request, workspace_id=workspace_id, local_upload_id=upload_id
     )
@@ -203,6 +212,11 @@ def get_local_upload_snapshot_route(
     workspace_id = _extract_workspace_id(workspace_header)
     if isinstance(workspace_id, JSONResponse):
         return workspace_id
+    lifecycle_error = _ensure_active_workspace_for_read(
+        request=request, workspace_id=workspace_id
+    )
+    if lifecycle_error is not None:
+        return lifecycle_error
     upload = _get_upload(
         request=request, workspace_id=workspace_id, local_upload_id=upload_id
     )
@@ -253,6 +267,30 @@ def _create_pending_upload(
                 created_by=created_by,
             )
         )
+
+
+def _ensure_active_workspace_for_read(
+    *, request: Request, workspace_id: uuid.UUID
+) -> JSONResponse | None:
+    workspace_repository_factory = getattr(
+        request.app.state.dependencies, "workspace_repository_factory", None
+    )
+    if workspace_repository_factory is None:
+        return None
+    with request.app.state.dependencies.session_factory() as session:
+        try:
+            ensure_active_workspace(
+                workspace_id=workspace_id,
+                workspace_repository=workspace_repository_factory(session),
+            )
+        except WorkspaceLifecycleProblem as error:
+            return _local_upload_problem(
+                status_code=error.status_code,
+                code=error.code,
+                message=error.message,
+                remediation_action=error.remediation_action,
+            )
+    return None
 
 
 async def _read_multipart_zip(request: Request) -> tuple[str, bytes] | JSONResponse:

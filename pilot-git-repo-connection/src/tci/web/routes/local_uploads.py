@@ -19,6 +19,10 @@ from tci.domain.services.create_local_upload_snapshot import (
     CreateLocalUploadSnapshotCommand,
     create_local_upload_snapshot,
 )
+from tci.domain.services.workspace_lifecycle import (
+    WorkspaceLifecycleProblem,
+    ensure_active_workspace,
+)
 from tci.infrastructure.queue.repository_ingestion_tasks import (
     RUN_LOCAL_UPLOAD_SNAPSHOT_TASK_NAME,
 )
@@ -202,6 +206,31 @@ def _render_local_uploads_page(
     status_code: int,
 ):
     with request.app.state.dependencies.session_factory() as session:
+        workspace_repository_factory = getattr(
+            request.app.state.dependencies, "workspace_repository_factory", None
+        )
+        if workspace_repository_factory is not None:
+            try:
+                ensure_active_workspace(
+                    workspace_id=workspace_id,
+                    workspace_repository=workspace_repository_factory(session),
+                )
+            except WorkspaceLifecycleProblem:
+                return request.app.state.templates.TemplateResponse(
+                    request=request,
+                    name="local_uploads/index.html",
+                    context=build_template_context(
+                        request,
+                        workspace_id=workspace_id,
+                        uploads=[],
+                        selected_upload=None,
+                        error_message=(
+                            error_message
+                            or "활성 워크스페이스에서만 Local Upload를 조회할 수 있습니다."
+                        ),
+                    ),
+                    status_code=409,
+                )
         repository = request.app.state.dependencies.local_upload_repository_factory(
             session
         )

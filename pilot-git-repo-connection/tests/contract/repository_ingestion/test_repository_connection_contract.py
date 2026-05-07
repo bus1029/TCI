@@ -4,10 +4,23 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 import uuid
 from types import SimpleNamespace
+from typing import Any, cast
 
 from sqlalchemy.exc import OperationalError
 
 from tci.api.problem_details import ProblemCode
+from tci.domain.services.build_code_snapshot import (
+    BuildCodeSnapshotCommand,
+    build_code_snapshot,
+)
+from tci.domain.services.create_initial_snapshot import (
+    CreateInitialSnapshotCommand,
+    create_initial_snapshot,
+)
+from tci.domain.services.verify_repository_connection import (
+    VerifyRepositoryConnectionCommand,
+    verify_repository_connection,
+)
 from tci.infrastructure.git.git_readonly_validator import ReadonlyProbeResult
 from tci.infrastructure.persistence.models import (
     RefType,
@@ -684,6 +697,57 @@ def test_get_connection_detail_returns_null_last_processed_event_and_traceabilit
                 },
             ],
         },
+    }
+
+
+def test_get_connection_detail_marks_repository_backed_latest_snapshot_source(
+    tmp_path,
+) -> None:
+    workspace_id = uuid.uuid4()
+    client, store = create_test_client(tmp_path=tmp_path, workspace_id=workspace_id)
+    seed_planning_input_reference(store, workspace_id=workspace_id)
+    create_response = client.post(
+        "/api/repository-connections",
+        json=create_connection_payload(),
+    )
+    connection_id = uuid.UUID(create_response.json()["id"])
+    dependencies = cast(Any, client.app).state.dependencies
+    verify_repository_connection(
+        VerifyRepositoryConnectionCommand(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        ),
+        dependencies=dependencies,
+    )
+    sync_run = create_initial_snapshot(
+        CreateInitialSnapshotCommand(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        ),
+        dependencies=dependencies,
+    )
+    snapshot = build_code_snapshot(
+        BuildCodeSnapshotCommand(
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+            sync_run_id=sync_run.id,
+        ),
+        dependencies=dependencies,
+    )
+
+    detail_response = client.get(f"/api/repository-connections/{connection_id}")
+
+    assert detail_response.status_code == 200
+    latest_snapshot = cast(dict[str, object], detail_response.json()["latestSnapshot"])
+    assert latest_snapshot["id"] == str(snapshot.id)
+    assert latest_snapshot["requestedRefType"] == "branch"
+    assert latest_snapshot["requestedRefName"] == "main"
+    assert latest_snapshot["resolvedCommitSha"] == "a" * 40
+    assert latest_snapshot["createdAt"] is not None
+    assert latest_snapshot["source"] == {
+        "kind": "repository_connection",
+        "provider": "github_cloud",
+        "connectionId": str(connection_id),
     }
 
 

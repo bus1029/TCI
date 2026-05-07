@@ -125,7 +125,10 @@ def serialize_repository_connection_detail(connection) -> dict[str, object]:
                 connection.last_processed_event_at
             ),
             "lastProcessedEvent": _serialize_last_processed_event(last_processed_event),
-            "latestSnapshot": _serialize_latest_snapshot_summary(latest_snapshot),
+            "latestSnapshot": _serialize_latest_snapshot_summary(
+                latest_snapshot,
+                connection=connection,
+            ),
             "latestSyncRun": _serialize_latest_sync_run_summary(latest_sync_run),
             "traceability": {
                 "planningInputReference": _serialize_planning_input_reference(
@@ -335,7 +338,11 @@ def _format_uuid(value: uuid.UUID | None) -> str | None:
     return str(value)
 
 
-def _serialize_latest_snapshot_summary(snapshot) -> dict[str, object] | None:
+def _serialize_latest_snapshot_summary(
+    snapshot,
+    *,
+    connection,
+) -> dict[str, object] | None:
     if snapshot is None:
         return None
     return {
@@ -344,6 +351,11 @@ def _serialize_latest_snapshot_summary(snapshot) -> dict[str, object] | None:
         "requestedRefName": snapshot.requested_ref_name,
         "resolvedCommitSha": snapshot.resolved_commit_sha,
         "createdAt": _format_datetime(snapshot.created_at),
+        "source": {
+            "kind": "repository_connection",
+            "provider": connection.provider.value,
+            "connectionId": str(connection.id),
+        },
     }
 
 

@@ -123,7 +123,7 @@
       </section>
 
       <section>
-        <h2>연결 목록</h2>
+        <h2>저장소 연결 출처</h2>
         {% if connections %}
         <ul>
           {% for connection in connections %}
@@ -159,6 +159,35 @@
         </ul>
         {% else %}
         <p>등록된 저장소 연결이 없습니다.</p>
+        {% endif %}
+      </section>
+
+      <section>
+        <h2>Local Upload 출처</h2>
+        <p>Local Upload는 저장소 연결이 아닙니다.</p>
+        {% if local_uploads %}
+        <ul>
+          {% for upload in local_uploads %}
+          <li>
+            <strong>{{ upload.original_filename_display }}</strong>
+            <div>상태: {{ upload.status.value }}</div>
+            <div>업로드한 사용자: {{ upload.created_by }}</div>
+            <div>업로드 시각: {{ upload.created_at }}</div>
+            <div>파일 수: {{ upload.file_count }}</div>
+            {% if upload.latest_snapshot_id %}
+            <div>최신 Local Upload 스냅샷: {{ upload.latest_snapshot_id }}</div>
+            <a
+              href="/local-uploads/{{ upload.id }}?workspaceId={{ workspace_id }}"
+              >Local Upload 상태 보기</a
+            >
+            {% else %}
+            <div>최신 Local Upload 스냅샷: 없음</div>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p>등록된 Local Upload가 없습니다.</p>
         {% endif %}
       </section>
     </main>

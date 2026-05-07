@@ -54,6 +54,28 @@
       </section>
 
       <section>
+        <h2>Local Upload 출처</h2>
+        <p>Local Upload는 저장소 연결이 아닙니다.</p>
+        {% if local_uploads %}
+        <ul>
+          {% for upload in local_uploads %}
+          <li>
+            <strong>{{ upload.original_filename_display }}</strong>
+            <div>상태: {{ upload.status.value }}</div>
+            {% if upload.latest_snapshot_id %}
+            <div>최신 Local Upload 스냅샷: {{ upload.latest_snapshot_id }}</div>
+            {% else %}
+            <div>최신 Local Upload 스냅샷: 없음</div>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p>등록된 Local Upload가 없습니다.</p>
+        {% endif %}
+      </section>
+
+      <section>
         <h2>최근 처리 이벤트</h2>
         {% if connection.lastProcessedEvent %}
         <p>이벤트 유형: {{ connection.lastProcessedEvent.providerEventType }}</p>
