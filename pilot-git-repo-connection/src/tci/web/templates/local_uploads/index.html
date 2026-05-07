@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>Local Upload 운영 화면</title>
+  </head>
+  <body>
+    <main>
+      <h1>Local Upload</h1>
+      <p>워크스페이스: {{ workspace_id }}</p>
+
+      {% if error_message %}
+      <section>
+        <strong>오류</strong>
+        <p>{{ error_message }}</p>
+      </section>
+      {% endif %}
+
+      <section>
+        <h2>ZIP 업로드</h2>
+        <form
+          method="post"
+          action="/local-uploads?workspaceId={{ workspace_id }}"
+          enctype="multipart/form-data"
+        >
+          <label>
+            ZIP 파일
+            <input type="file" name="file" accept=".zip,application/zip" />
+          </label>
+          <button type="submit">업로드</button>
+        </form>
+      </section>
+
+      {% if selected_upload %}
+      <section>
+        <h2>처리 상태</h2>
+        <div>업로드: {{ selected_upload.id }}</div>
+        <div>파일명: {{ selected_upload.original_filename_display }}</div>
+        <div>상태: {{ selected_upload.status.value }}</div>
+        <div>업로드한 사용자: {{ selected_upload.created_by }}</div>
+        <div>업로드 시각: {{ selected_upload.created_at }}</div>
+        <div>파일 수: {{ selected_upload.file_count }}</div>
+        <div>전체 바이트: {{ selected_upload.uncompressed_size_bytes }}</div>
+        {% if selected_upload.latest_snapshot_id %}
+        <div>최신 스냅샷: {{ selected_upload.latest_snapshot_id }}</div>
+        {% endif %}
+        {% if selected_upload.failure_message %}
+        <div>실패 사유: {{ selected_upload.failure_message }}</div>
+        <div>허용 한도를 줄이거나 ZIP 파일을 수정한 뒤 다시 업로드하세요.</div>
+        {% endif %}
+      </section>
+      {% endif %}
+
+      <section>
+        <h2>Local Upload 목록</h2>
+        {% if uploads %}
+        <ul>
+          {% for upload in uploads %}
+          <li>
+            <strong>{{ upload.original_filename_display }}</strong>
+            <div>상태: {{ upload.status.value }}</div>
+            <div>출처: Local Upload</div>
+            <div>업로드한 사용자: {{ upload.created_by }}</div>
+            <div>업로드 시각: {{ upload.created_at }}</div>
+            <div>파일 수: {{ upload.file_count }}</div>
+            {% if upload.latest_snapshot_id %}
+            <div>최신 스냅샷: {{ upload.latest_snapshot_id }}</div>
+            {% endif %}
+            {% if upload.failure_message %}
+            <div>실패 사유: {{ upload.failure_message }}</div>
+            <div>허용 한도를 줄이거나 ZIP 파일을 수정한 뒤 다시 업로드하세요.</div>
+            {% endif %}
+            <a href="/local-uploads/{{ upload.id }}?workspaceId={{ workspace_id }}"
+              >상태 보기</a
+            >
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p>등록된 Local Upload가 없습니다.</p>
+        {% endif %}
+      </section>
+    </main>
+  </body>
+</html>

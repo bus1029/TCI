@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+from contextlib import contextmanager
 from types import SimpleNamespace
 import uuid
 
@@ -11,6 +13,7 @@ def test_repository_ingestion_tasks_expose_stable_task_names_and_queue_names() -
     from tci.infrastructure.queue.repository_ingestion_tasks import (
         REPOSITORY_INGESTION_QUEUE_NAME,
         REPOSITORY_INGESTION_TASK_ROUTES,
+        RUN_LOCAL_UPLOAD_SNAPSHOT_TASK_NAME,
         RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME,
         RUN_WEBHOOK_SYNC_TASK_NAME,
         VERIFY_REPOSITORY_CONNECTION_TASK_NAME,
@@ -24,12 +27,16 @@ def test_repository_ingestion_tasks_expose_stable_task_names_and_queue_names() -
         "tci.repository_ingestion.run_manual_snapshot_sync"
     )
     assert RUN_WEBHOOK_SYNC_TASK_NAME == "tci.repository_ingestion.run_webhook_sync"
+    assert RUN_LOCAL_UPLOAD_SNAPSHOT_TASK_NAME == (
+        "tci.repository_ingestion.run_local_upload_snapshot"
+    )
     assert REPOSITORY_INGESTION_TASK_ROUTES == {
         VERIFY_REPOSITORY_CONNECTION_TASK_NAME: {
             "queue": REPOSITORY_INGESTION_QUEUE_NAME
         },
         RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME: {"queue": REPOSITORY_INGESTION_QUEUE_NAME},
         RUN_WEBHOOK_SYNC_TASK_NAME: {"queue": REPOSITORY_INGESTION_QUEUE_NAME},
+        RUN_LOCAL_UPLOAD_SNAPSHOT_TASK_NAME: {"queue": REPOSITORY_INGESTION_QUEUE_NAME},
     }
 
 
@@ -145,6 +152,131 @@ def test_run_manual_snapshot_sync_task_delegates_to_snapshot_builder(
         "task_name": "tci.repository_ingestion.run_manual_snapshot_sync",
         "connection_id": str(connection_id),
         "sync_run_id": str(sync_run_id),
+    }
+
+
+def test_run_local_upload_snapshot_task_delegates_and_removes_temp_zip(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from tci.infrastructure.queue import repository_ingestion_tasks as tasks
+
+    workspace_id = uuid.uuid4()
+    local_upload_id = uuid.uuid4()
+    queue_dir = tmp_path / "local-upload-queue"
+    queue_dir.mkdir()
+    zip_path = queue_dir / f"{local_upload_id}.zip"
+    zip_path.write_bytes(b"zip-bytes")
+    snapshot_id = uuid.uuid4()
+    dependencies = SimpleNamespace(
+        settings=SimpleNamespace(runtime_root=tmp_path),
+        session_factory=None,
+    )
+    captured: dict[str, object] = {}
+
+    def fake_create_snapshot(command, *, dependencies):
+        captured["workspace_id"] = command.workspace_id
+        captured["local_upload_id"] = command.local_upload_id
+        captured["zip_bytes"] = command.zip_bytes
+        captured["dependencies"] = dependencies
+        return SimpleNamespace(
+            succeeded=True,
+            snapshot_id=snapshot_id,
+            failure_code=None,
+        )
+
+    monkeypatch.setattr(tasks, "_build_snapshot_dependencies", lambda: dependencies)
+    monkeypatch.setattr(
+        tasks,
+        "_load_create_local_upload_snapshot_service",
+        lambda: (
+            type(
+                "LocalUploadCommand",
+                (),
+                {"__init__": lambda self, **kwargs: self.__dict__.update(kwargs)},
+            ),
+            fake_create_snapshot,
+        ),
+    )
+
+    result = tasks._run_local_upload_snapshot_task(
+        workspace_id=str(workspace_id),
+        local_upload_id=str(local_upload_id),
+    )
+
+    assert captured == {
+        "workspace_id": workspace_id,
+        "local_upload_id": local_upload_id,
+        "zip_bytes": b"zip-bytes",
+        "dependencies": dependencies,
+    }
+    assert not zip_path.exists()
+    assert result == {
+        "status": "completed",
+        "task_name": "tci.repository_ingestion.run_local_upload_snapshot",
+        "connection_id": "",
+        "local_upload_id": str(local_upload_id),
+        "snapshot_id": str(snapshot_id),
+    }
+
+
+def test_run_local_upload_snapshot_task_marks_failed_when_temp_zip_missing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from tci.infrastructure.queue import repository_ingestion_tasks as tasks
+
+    workspace_id = uuid.uuid4()
+    local_upload_id = uuid.uuid4()
+    marked_failed: dict[str, object] = {}
+
+    @contextmanager
+    def session_factory():
+        yield object()
+
+    class FakeLocalUploadRepository:
+        def get(self, *, workspace_id, local_upload_id):
+            return SimpleNamespace(status=SimpleNamespace(value="pending"))
+
+        def mark_failed(
+            self,
+            *,
+            workspace_id,
+            local_upload_id,
+            failure_code,
+            failure_message,
+        ):
+            marked_failed.update(
+                {
+                    "workspace_id": workspace_id,
+                    "local_upload_id": local_upload_id,
+                    "failure_code": failure_code,
+                    "failure_message": failure_message,
+                }
+            )
+
+    dependencies = SimpleNamespace(
+        settings=SimpleNamespace(runtime_root=tmp_path),
+        session_factory=session_factory,
+        local_upload_repository_factory=lambda session: FakeLocalUploadRepository(),
+    )
+    monkeypatch.setattr(tasks, "_build_snapshot_dependencies", lambda: dependencies)
+
+    result = tasks._run_local_upload_snapshot_task(
+        workspace_id=str(workspace_id),
+        local_upload_id=str(local_upload_id),
+    )
+
+    assert marked_failed == {
+        "workspace_id": workspace_id,
+        "local_upload_id": local_upload_id,
+        "failure_code": "local_upload_task_failed",
+        "failure_message": "Local Upload 스냅샷 작업을 완료하지 못했습니다.",
+    }
+    assert result == {
+        "status": "failed",
+        "task_name": "tci.repository_ingestion.run_local_upload_snapshot",
+        "connection_id": "",
+        "local_upload_id": str(local_upload_id),
+        "failure_code": "local_upload_task_failed",
     }
 
 

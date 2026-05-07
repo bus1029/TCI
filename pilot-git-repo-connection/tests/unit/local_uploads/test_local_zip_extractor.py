@@ -74,6 +74,22 @@ def test_local_zip_extractor_returns_snapshot_entry_drafts(tmp_path: Path) -> No
     assert result.entries[2].content == b"print('hello')\n"
 
 
+def test_local_zip_preflight_validates_metadata_without_reading_file_content(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import tci.infrastructure.snapshots.local_zip_extractor as extractor
+
+    def fail_read(*args, **kwargs):
+        raise AssertionError("preflight should not read ZIP entry content")
+
+    monkeypatch.setattr(extractor.ZipFile, "read", fail_read)
+
+    extractor.preflight_local_zip(
+        zip_bytes=build_project_zip(),
+        settings=_settings(tmp_path),
+    )
+
+
 @pytest.mark.parametrize(
     ("zip_bytes", "code"),
     (

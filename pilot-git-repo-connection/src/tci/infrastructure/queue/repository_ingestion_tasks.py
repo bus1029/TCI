@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 import inspect
+from pathlib import Path
 import uuid
 
 from celery import Celery  # type: ignore[import-untyped]
@@ -21,11 +22,15 @@ VERIFY_REPOSITORY_CONNECTION_TASK_NAME = (
 )
 RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME = "tci.repository_ingestion.run_manual_snapshot_sync"
 RUN_WEBHOOK_SYNC_TASK_NAME = "tci.repository_ingestion.run_webhook_sync"
+RUN_LOCAL_UPLOAD_SNAPSHOT_TASK_NAME = (
+    "tci.repository_ingestion.run_local_upload_snapshot"
+)
 
 REPOSITORY_INGESTION_TASK_ROUTES = {
     VERIFY_REPOSITORY_CONNECTION_TASK_NAME: {"queue": REPOSITORY_INGESTION_QUEUE_NAME},
     RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME: {"queue": REPOSITORY_INGESTION_QUEUE_NAME},
     RUN_WEBHOOK_SYNC_TASK_NAME: {"queue": REPOSITORY_INGESTION_QUEUE_NAME},
+    RUN_LOCAL_UPLOAD_SNAPSHOT_TASK_NAME: {"queue": REPOSITORY_INGESTION_QUEUE_NAME},
 }
 
 logger = get_task_logger(__name__)
@@ -53,6 +58,11 @@ def register_repository_ingestion_tasks(app: Celery) -> None:
         app,
         task_name=RUN_WEBHOOK_SYNC_TASK_NAME,
         func=_run_webhook_sync_task,
+    )
+    _register_task_if_missing(
+        app,
+        task_name=RUN_LOCAL_UPLOAD_SNAPSHOT_TASK_NAME,
+        func=_run_local_upload_snapshot_task,
     )
 
 
@@ -420,6 +430,116 @@ def _run_webhook_sync_task(
         result["status"] = "completed"
         result["snapshot_id"] = str(snapshot.id)
     return result
+
+
+def _run_local_upload_snapshot_task(
+    *, workspace_id: str = "", local_upload_id: str = "", zip_path: str = ""
+) -> dict[str, str]:
+    result = _registered_task_result(
+        task_name=RUN_LOCAL_UPLOAD_SNAPSHOT_TASK_NAME,
+        connection_id="",
+    )
+    if local_upload_id:
+        result["local_upload_id"] = local_upload_id
+    if not workspace_id or not local_upload_id:
+        return result
+
+    workspace_uuid = uuid.UUID(workspace_id)
+    local_upload_uuid = uuid.UUID(local_upload_id)
+    dependencies = _build_snapshot_dependencies()
+    zip_file: Path | None = None
+    try:
+        zip_file = _local_upload_queue_zip_path(
+            runtime_root=dependencies.settings.runtime_root,
+            local_upload_id=local_upload_uuid,
+        )
+        zip_bytes = zip_file.read_bytes()
+        command_type, service = _load_create_local_upload_snapshot_service()
+        snapshot_result = service(
+            command_type(
+                workspace_id=workspace_uuid,
+                local_upload_id=local_upload_uuid,
+                zip_bytes=zip_bytes,
+            ),
+            dependencies=dependencies,
+        )
+    except Exception as error:
+        _mark_local_upload_task_failed(
+            dependencies=dependencies,
+            workspace_id=workspace_uuid,
+            local_upload_id=local_upload_uuid,
+            failure_code="local_upload_task_failed",
+            failure_message="Local Upload 스냅샷 작업을 완료하지 못했습니다.",
+        )
+        logger.exception(
+            "local upload snapshot task failed workspace_id=%s local_upload_id=%s error=%s",
+            workspace_id,
+            local_upload_id,
+            error,
+        )
+        result["status"] = "failed"
+        result["failure_code"] = "local_upload_task_failed"
+        return result
+    finally:
+        if zip_file is not None:
+            zip_file.unlink(missing_ok=True)
+
+    result["status"] = "completed" if snapshot_result.succeeded else "failed"
+    if snapshot_result.snapshot_id is not None:
+        result["snapshot_id"] = str(snapshot_result.snapshot_id)
+    if snapshot_result.failure_code is not None:
+        result["failure_code"] = snapshot_result.failure_code
+    return result
+
+
+def _local_upload_queue_zip_path(
+    *, runtime_root: Path, local_upload_id: uuid.UUID
+) -> Path:
+    queue_dir = (runtime_root / "local-upload-queue").resolve()
+    candidate = (queue_dir / f"{local_upload_id}.zip").resolve()
+    candidate.relative_to(queue_dir)
+    if candidate.is_symlink():
+        raise ValueError("Local Upload queue ZIP path must not be a symlink.")
+    return candidate
+
+
+def _mark_local_upload_task_failed(
+    *,
+    dependencies,
+    workspace_id: uuid.UUID,
+    local_upload_id: uuid.UUID,
+    failure_code: str,
+    failure_message: str,
+) -> None:
+    if getattr(dependencies, "session_factory", None) is None:
+        return
+    try:
+        with dependencies.session_factory() as session:
+            repository = dependencies.local_upload_repository_factory(session)
+            upload = repository.get(
+                workspace_id=workspace_id,
+                local_upload_id=local_upload_id,
+            )
+            if upload is None:
+                return
+            if getattr(getattr(upload, "status", None), "value", upload.status) in {
+                "succeeded",
+                "failed",
+            }:
+                return
+            repository.mark_failed(
+                workspace_id=workspace_id,
+                local_upload_id=local_upload_id,
+                failure_code=failure_code,
+                failure_message=failure_message,
+            )
+    except Exception:
+        logger.warning(
+            "best-effort Local Upload failure bookkeeping failed "
+            "workspace_id=%s local_upload_id=%s",
+            workspace_id,
+            local_upload_id,
+        )
 
 
 def _dispatch_next_pending_sync_for_ref(
@@ -877,3 +997,12 @@ def _load_build_snapshot_service():
     )
 
     return BuildCodeSnapshotCommand, build_code_snapshot
+
+
+def _load_create_local_upload_snapshot_service():
+    from tci.domain.services.create_local_upload_snapshot import (
+        CreateLocalUploadSnapshotCommand,
+        create_local_upload_snapshot,
+    )
+
+    return CreateLocalUploadSnapshotCommand, create_local_upload_snapshot

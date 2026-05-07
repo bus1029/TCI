@@ -32,6 +32,7 @@ def test_create_celery_app_registers_repository_ingestion_queue_and_task_routes(
     from tci.infrastructure.queue.repository_ingestion_tasks import (
         REPOSITORY_INGESTION_QUEUE_NAME,
         REPOSITORY_INGESTION_TASK_ROUTES,
+        RUN_LOCAL_UPLOAD_SNAPSHOT_TASK_NAME,
         RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME,
         RUN_WEBHOOK_SYNC_TASK_NAME,
         VERIFY_REPOSITORY_CONNECTION_TASK_NAME,
@@ -50,6 +51,7 @@ def test_create_celery_app_registers_repository_ingestion_queue_and_task_routes(
     assert VERIFY_REPOSITORY_CONNECTION_TASK_NAME in app.tasks
     assert RUN_MANUAL_SNAPSHOT_SYNC_TASK_NAME in app.tasks
     assert RUN_WEBHOOK_SYNC_TASK_NAME in app.tasks
+    assert RUN_LOCAL_UPLOAD_SNAPSHOT_TASK_NAME in app.tasks
 
 
 def test_get_celery_app_uses_current_settings_after_cache_clear(

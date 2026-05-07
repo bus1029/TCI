@@ -23,6 +23,7 @@ from tci.api.routes.repository_candidates import (
 )
 from tci.api.routes.repository_scope import router as repository_scope_router
 from tci.api.routes.repository_snapshots import router as repository_snapshots_router
+from tci.api.routes.local_uploads import router as local_uploads_router
 from tci.domain.services.build_traceability_reference import (
     build_snapshot_traceability_reference,
 )
@@ -80,6 +81,7 @@ from tci.api.routes.gitlab_webhooks import router as gitlab_webhooks_router
 from tci.web.routes.repository_scope import router as repository_scope_web_router
 from tci.web.routes.repository_events import router as repository_events_web_router
 from tci.web.routes.operator_session import router as operator_session_web_router
+from tci.web.routes.local_uploads import router as local_uploads_web_router
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,11 +178,13 @@ def create_app(
     app.include_router(gitlab_webhooks_router)
     app.include_router(repository_scope_router)
     app.include_router(repository_snapshots_router)
+    app.include_router(local_uploads_router)
     app.include_router(repository_connections_web_router)
     app.include_router(repository_connection_detail_web_router)
     app.include_router(repository_scope_web_router)
     app.include_router(repository_events_web_router)
     app.include_router(operator_session_web_router)
+    app.include_router(local_uploads_web_router)
     app.openapi = lambda: _custom_openapi(app)  # type: ignore[method-assign]
     return app
 

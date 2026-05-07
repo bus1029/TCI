@@ -196,6 +196,12 @@ def serialize_webhook_secret_issued(
 
 def serialize_code_snapshot_detail(detail) -> dict[str, object]:
     snapshot = detail.snapshot
+    local_upload = getattr(detail, "local_upload", None)
+    if local_upload is not None:
+        return _serialize_local_upload_code_snapshot_detail(
+            snapshot=snapshot,
+            local_upload=local_upload,
+        )
     planning_input_reference = detail.planning_input_reference
     return {
         "id": str(snapshot.id),
@@ -228,6 +234,50 @@ def serialize_code_snapshot_detail(detail) -> dict[str, object]:
             "scopeRuleVersionId": str(snapshot.scope_rule_version_id),
             "syncRunId": str(snapshot.sync_run_id),
             "triggerEventId": _format_uuid(detail.trigger_event_id),
+        },
+    }
+
+
+def _serialize_local_upload_code_snapshot_detail(
+    *, snapshot, local_upload
+) -> dict[str, object]:
+    return {
+        "id": str(snapshot.id),
+        "workspaceId": str(snapshot.workspace_id),
+        "connectionId": None,
+        "requestedRefType": None,
+        "requestedRefName": None,
+        "resolvedCommitSha": None,
+        "scopeRuleVersionId": None,
+        "syncRunId": None,
+        "triggerEventId": None,
+        "source": {
+            "kind": "local_upload",
+            "localUploadId": str(local_upload.id),
+            "originalFilename": local_upload.original_filename_display,
+            "uploadedBy": local_upload.created_by,
+            "uploadedAt": _format_datetime(local_upload.created_at),
+        },
+        "fileCount": snapshot.file_count,
+        "totalBytes": snapshot.total_bytes,
+        "archivePath": snapshot.archive_path,
+        "files": [
+            {
+                "path": file.path,
+                "extension": file.extension,
+                "languageHint": file.language_hint,
+                "sizeBytes": file.size_bytes,
+                "contentSha256": file.content_sha256,
+                "archiveBlobPath": file.archive_blob_path,
+                "includedBy": file.included_by.value,
+            }
+            for file in sorted(snapshot.files, key=lambda item: item.path)
+        ],
+        "traceability": {
+            "sourceKind": "local_upload",
+            "localUploadId": str(local_upload.id),
+            "workspaceId": str(snapshot.workspace_id),
+            "planningInputReference": None,
         },
     }
 

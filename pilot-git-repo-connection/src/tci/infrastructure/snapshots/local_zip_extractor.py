@@ -72,6 +72,29 @@ def extract_local_zip(*, zip_bytes: bytes, settings: Settings) -> LocalZipExtrac
     )
 
 
+def preflight_local_zip(*, zip_bytes: bytes, settings: Settings) -> None:
+    if len(zip_bytes) > settings.local_upload_max_compressed_bytes:
+        _raise_limit("ZIP upload exceeds the compressed size limit.")
+    _preflight_central_directory_count(zip_bytes=zip_bytes, settings=settings)
+
+    try:
+        with ZipFile(BytesIO(zip_bytes)) as archive:
+            normalized = _validate_infos(infos=archive.infolist(), settings=settings)
+    except BadZipFile as error:
+        raise LocalZipValidationError(
+            code="corrupt_zip",
+            message="ZIP 파일을 읽을 수 없습니다.",
+        ) from error
+
+    if not any(
+        safe_path is not None and not info.is_dir() for info, safe_path in normalized
+    ):
+        raise LocalZipValidationError(
+            code="empty_zip",
+            message="ZIP 파일에 스냅샷으로 저장할 파일이 없습니다.",
+        )
+
+
 def _validate_infos(
     *, infos: list[ZipInfo], settings: Settings
 ) -> list[tuple[ZipInfo, PurePosixPath | None]]:
@@ -98,6 +121,12 @@ def _validate_infos(
             )
 
         if info.is_dir():
+            for index in range(1, len(safe_path.parts)):
+                _add_directory_path(
+                    seen_directories=seen_directories,
+                    directory_path=PurePosixPath(*safe_path.parts[:index]),
+                    settings=settings,
+                )
             directory_key = _directory_key(safe_path)
             if directory_key in seen_files:
                 raise LocalZipValidationError(
@@ -281,6 +310,8 @@ def _directory_paths(
         if safe_path is None:
             continue
         if info.is_dir():
+            for index in range(1, len(safe_path.parts)):
+                directories.add(PurePosixPath(*safe_path.parts[:index]).as_posix())
             directories.add(safe_path.as_posix().rstrip("/"))
             continue
         for index in range(1, len(safe_path.parts)):

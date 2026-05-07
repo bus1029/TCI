@@ -9,6 +9,7 @@ class CodeSnapshotDetail:
     snapshot: object
     planning_input_reference: object | None
     trigger_event_id: uuid.UUID | None = None
+    local_upload: object | None = None
 
 
 def get_code_snapshot_detail(
@@ -57,6 +58,45 @@ def get_code_snapshot_detail(
                 connection
             ),
             trigger_event_id=None if sync_run is None else sync_run.trigger_event_id,
+        )
+
+
+def get_local_upload_snapshot_detail(
+    *,
+    workspace_id: uuid.UUID,
+    local_upload_id: uuid.UUID,
+    snapshot_id: uuid.UUID,
+    dependencies,
+):
+    if dependencies.session_factory is None:
+        raise RuntimeError("스냅샷을 조회하려면 데이터베이스 세션이 필요합니다.")
+
+    with dependencies.session_factory() as session:
+        if not _workspace_is_active(
+            workspace_id=workspace_id,
+            dependencies=dependencies,
+            session=session,
+        ):
+            raise LookupError("코드 스냅샷을 찾을 수 없습니다.")
+        local_upload_repository = dependencies.local_upload_repository_factory(session)
+        snapshot_repository = dependencies.code_snapshot_repository_factory(session)
+        upload = local_upload_repository.get(
+            workspace_id=workspace_id,
+            local_upload_id=local_upload_id,
+        )
+        if upload is None:
+            raise LookupError("Local Upload을 찾을 수 없습니다.")
+        snapshot = snapshot_repository.get_for_local_upload(
+            workspace_id=workspace_id,
+            local_upload_id=local_upload_id,
+            snapshot_id=snapshot_id,
+        )
+        if snapshot is None:
+            raise LookupError("코드 스냅샷을 찾을 수 없습니다.")
+        return CodeSnapshotDetail(
+            snapshot=snapshot,
+            planning_input_reference=None,
+            local_upload=upload,
         )
 
 
